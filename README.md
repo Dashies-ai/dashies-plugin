@@ -1,6 +1,6 @@
 <div align="center">
 
-# Dashies
+# [Dashies](https://dashies.xyz/)
 
 **Publish AI-built dashboards to a shareable URL, then let them refresh themselves on a schedule - with no AI in the loop after the first build.**
 

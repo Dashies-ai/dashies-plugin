@@ -1,0 +1,1535 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashies usage</title>
+  <!--
+    Dashies usage metrics - the dogfood refreshable dashboard for Feature A.
+
+    Authored with the `dashies` skill. Single self-contained file: an inline
+    JSON data island (the cube), markup annotated with `data-dash` slots, and
+    the inlined runtime. NO external resources, NO network, NO browser storage,
+    so it renders correctly under `Content-Security-Policy: sandbox allow-scripts`.
+
+    Data source: public.dashies_usage_metrics (PR1) over the `self` connection -
+    a no-PII, day-grain aggregate over public.dashboards. The cube's only
+    dimension is the date (`day`), so this dashboard charts the trend rather than
+    offering a filter dropdown of every date. Every measure is an additive count;
+    the two share metrics are rendered as num/den ratios (correct under roll-up).
+
+    Refresh: the PR4 cron re-runs the manifest's cube_sql daily and rewrites ONLY
+    the #dashies-data island below; this markup and the runtime are never touched.
+    The cube embedded here is an initial PLACEHOLDER (clearly synthetic) so the
+    page renders before the first real refresh - the cron overwrites it on run 1.
+  -->
+  <style>
+    :root {
+      --blue: #2563eb;
+      --ink: #0f172a;
+      --muted: #475569;
+      --subtle: #64748b;
+      --line: #e2e8f0;
+      --canvas: #f6f8fa;
+      --surface: #fff;
+      --sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      font-optical-sizing: auto;
+    }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 24px 80px; }
+    header { margin-bottom: 24px; }
+    h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+    .sub { color: var(--subtle); font-size: 13px; margin: 0; }
+    .sub .stamp { color: var(--muted); font-weight: 500; }
+    .kpis {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;
+    }
+    .kpi {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 16px 18px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 10px;
+    }
+    .kpi-label {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--subtle);
+    }
+    .kpi-value {
+      font-family: var(--mono); font-variant-numeric: tabular-nums slashed-zero;
+      font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.05;
+    }
+    .section-h {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--subtle); margin: 4px 2px 12px;
+    }
+    .kpis.status .kpi-value { font-size: 22px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+    .card-h { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 14px; letter-spacing: -0.01em; }
+    @media (max-width: 760px) {
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Dashies usage</h1>
+      <p class="sub">Published dashboards across Dashies, refreshed daily &middot; Updated <span class="stamp" data-dash="updated-at">-</span></p>
+    </header>
+
+    <!-- Headline KPIs. Counts are additive sums over the whole window; the two
+         share metrics are sum(num)/sum(den) ratios, correct under any roll-up. -->
+    <div class="kpis">
+      <div class="kpi" data-dash="metric" data-measure="dashboards_published">
+        <span class="kpi-label">Total published</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-num="public_count" data-den="dashboards_published" data-format="percent">
+        <span class="kpi-label">Public share</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-num="scheduled_count" data-den="dashboards_published" data-format="percent">
+        <span class="kpi-label">Scheduled share</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-measure="scheduled_count">
+        <span class="kpi-label">Currently scheduled</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-h">Dashboards published per day</div>
+        <div data-dash="chart" data-type="area" data-x="day" data-measure="dashboards_published" data-height="240"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">Scheduled dashboards per day</div>
+        <div data-dash="chart" data-type="line" data-x="day" data-measure="scheduled_count" data-height="240"></div>
+      </div>
+    </div>
+
+    <div class="section-h">Status of published dashboards</div>
+    <div class="kpis status">
+      <div class="kpi" data-dash="metric" data-measure="active_count">
+        <span class="kpi-label">Active</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-measure="paused_count">
+        <span class="kpi-label">Paused</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-measure="failed_count">
+        <span class="kpi-label">Failed</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-measure="archived_count">
+        <span class="kpi-label">Archived</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <div class="card-h">Daily detail</div>
+      <!-- Grouped by day; one row per day, newest first. -->
+      <div data-dash="table"
+           data-group="day"
+           data-columns="day,dashboards_published,public_count,private_count,scheduled_count"
+           data-sort="day:desc"
+           data-limit="14"></div>
+    </div>
+  </div>
+
+  <!-- The data island. The PR4 refresh cron rewrites ONLY the inner text of this
+       block (same shape, fresh `cube` + `updated_at`); everything else is left
+       byte-for-byte unchanged. The rows below are an initial placeholder. -->
+  <script type="application/json" id="dashies-data">
+{
+  "version": 1,
+  "updated_at": "2026-06-28T00:00:00Z",
+  "dimensions": [
+    {
+      "key": "day",
+      "label": "Day",
+      "type": "date"
+    }
+  ],
+  "measures": [
+    {
+      "key": "dashboards_published",
+      "label": "Published",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "public_count",
+      "label": "Public",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "private_count",
+      "label": "Private",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "active_count",
+      "label": "Active",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "paused_count",
+      "label": "Paused",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "failed_count",
+      "label": "Failed",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "archived_count",
+      "label": "Archived",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    },
+    {
+      "key": "scheduled_count",
+      "label": "Scheduled",
+      "agg": "sum",
+      "additive": true,
+      "format": "integer"
+    }
+  ],
+  "cube": [
+    {
+      "day": "2026-05-29",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 2,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-05-30",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 2,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-05-31",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 1,
+      "paused_count": 0,
+      "failed_count": 1,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-01",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 1,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 1,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-02",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 1,
+      "paused_count": 1,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-03",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 2,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-04",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 1,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 1,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-05",
+      "dashboards_published": 2,
+      "public_count": 1,
+      "private_count": 1,
+      "active_count": 2,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-06",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 2,
+      "paused_count": 0,
+      "failed_count": 1,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-07",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-08",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-09",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-10",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-11",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-12",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-13",
+      "dashboards_published": 3,
+      "public_count": 2,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 1
+    },
+    {
+      "day": "2026-06-14",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-15",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-16",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 1,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-17",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-18",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-19",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 3,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 1,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-20",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-21",
+      "dashboards_published": 4,
+      "public_count": 3,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-22",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 1,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-23",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 1,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-24",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 1,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-25",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 5,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-26",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 5,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 0,
+      "scheduled_count": 2
+    },
+    {
+      "day": "2026-06-27",
+      "dashboards_published": 5,
+      "public_count": 4,
+      "private_count": 1,
+      "active_count": 4,
+      "paused_count": 0,
+      "failed_count": 0,
+      "archived_count": 1,
+      "scheduled_count": 2
+    }
+  ]
+}
+  </script>
+
+  <!-- The Dashies dashboard runtime (web/dashboard-runtime/runtime.js, contract
+       v1), inlined verbatim. Re-inline the current bytes at publish time. -->
+  <script>
+/*
+ * Dashies dashboard runtime (PR2)
+ * ---------------------------------
+ * A standalone, dependency-free client runtime that gets INLINED into a
+ * published Dashies dashboard's HTML. It reads an embedded JSON "data island",
+ * binds the cube to elements marked with `data-dash` attributes, aggregates the
+ * cube client-side per the active filters, and renders KPIs, tables, and sober
+ * SVG charts. On a filter change it re-aggregates and re-renders. No business
+ * logic lives here: derived measures are precomputed in the cube; the runtime
+ * only filters additive measures, formats, and renders.
+ *
+ * SANDBOX CONTRACT (load-bearing - see CONTRACT.md)
+ * Published dashboards are served under `Content-Security-Policy: sandbox
+ * allow-scripts`. Inline scripts run, but the document is an OPAQUE origin with
+ * NO `allow-same-origin`: there is no localStorage / sessionStorage / cookies /
+ * IndexedDB and no same-origin fetch. This runtime therefore:
+ *   - keeps ALL state in memory and the URL hash (never in storage);
+ *   - never calls fetch / XMLHttpRequest / WebSocket / localStorage / cookie;
+ *   - never replaces document.body wholesale (the serve-time "Powered by"
+ *     badge is appended as the last child of <body>; we only fill matched
+ *     slot elements and append a <style> to <head>).
+ *
+ * No build step: this file is plain ES2017+ and is concatenated verbatim into
+ * the dashboard <script> by the authoring side (the `dashies` skill / MCP).
+ */
+(function () {
+  'use strict';
+
+  // Run exactly once even if accidentally inlined twice.
+  if (window.__dashiesRuntime) return;
+  window.__dashiesRuntime = { version: 1 };
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var ALL = '__all__'; // filter sentinel meaning "no constraint on this dimension"
+
+  // ---------------------------------------------------------------------------
+  // Data island
+  // ---------------------------------------------------------------------------
+
+  function readIsland() {
+    var node = document.getElementById('dashies-data');
+    if (!node) return null;
+    try {
+      return JSON.parse(node.textContent || '{}');
+    } catch (err) {
+      // Surface a parse failure visibly rather than silently rendering nothing.
+      console.error('[dashies] data island is not valid JSON:', err);
+      return null;
+    }
+  }
+
+  // Normalize the spec so the rest of the runtime can assume shapes exist.
+  function normalizeSpec(raw) {
+    var spec = raw || {};
+    spec.cube = Array.isArray(spec.cube) ? spec.cube : [];
+    spec.dimensions = Array.isArray(spec.dimensions) ? spec.dimensions : [];
+    spec.measures = Array.isArray(spec.measures) ? spec.measures : [];
+    spec.format = spec.format && typeof spec.format === 'object' ? spec.format : {};
+    // Index measures/dimensions by key for O(1) lookup during binding.
+    spec._measureByKey = {};
+    spec.measures.forEach(function (m) {
+      if (m && m.key) spec._measureByKey[m.key] = m;
+    });
+    spec._dimByKey = {};
+    spec.dimensions.forEach(function (d) {
+      if (d && d.key) spec._dimByKey[d.key] = d;
+    });
+    return spec;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cube engine (the hand-rolled dataframe subset)
+  //
+  // The cube is pre-aggregated to the dashboard's grain, with LOW-CARDINALITY
+  // dimensions, so linear scans are more than fast enough (thousands of rows
+  // render in well under a frame). Every measure the runtime rolls up MUST be
+  // additive (sum / min / max / count / distinct). Averages and rates are
+  // expressed as a `ratio` of two additive measures so they stay correct under
+  // filtering - see CONTRACT.md "Additivity".
+  // ---------------------------------------------------------------------------
+
+  // Distinct values of a dimension, in first-seen order (stable filter menus).
+  function distinctValues(cube, key) {
+    var seen = Object.create(null);
+    var out = [];
+    for (var i = 0; i < cube.length; i++) {
+      var v = cube[i][key];
+      if (v === undefined || v === null) continue;
+      var s = String(v);
+      if (!seen[s]) {
+        seen[s] = true;
+        out.push(v);
+      }
+    }
+    return out;
+  }
+
+  // Rows matching every active filter (AND across dimensions). A value of ALL
+  // (or absent) imposes no constraint.
+  function filterRows(cube, filters) {
+    var keys = Object.keys(filters || {});
+    var active = keys.filter(function (k) {
+      return filters[k] !== undefined && filters[k] !== ALL;
+    });
+    if (active.length === 0) return cube;
+    return cube.filter(function (row) {
+      for (var i = 0; i < active.length; i++) {
+        var k = active[i];
+        if (String(row[k]) !== String(filters[k])) return false;
+      }
+      return true;
+    });
+  }
+
+  function toNum(v) {
+    var n = typeof v === 'number' ? v : parseFloat(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  // Reduce a set of rows to a single scalar for one measure under one agg.
+  function aggregate(rows, key, agg) {
+    if (!rows.length) return agg === 'min' || agg === 'max' ? null : 0;
+    var i;
+    switch (agg) {
+      case 'count':
+        return rows.length;
+      case 'distinct': {
+        var seen = Object.create(null);
+        var c = 0;
+        for (i = 0; i < rows.length; i++) {
+          var s = String(rows[i][key]);
+          if (!seen[s]) {
+            seen[s] = true;
+            c++;
+          }
+        }
+        return c;
+      }
+      case 'min': {
+        var mn = Infinity;
+        for (i = 0; i < rows.length; i++) mn = Math.min(mn, toNum(rows[i][key]));
+        return mn === Infinity ? null : mn;
+      }
+      case 'max': {
+        var mx = -Infinity;
+        for (i = 0; i < rows.length; i++) mx = Math.max(mx, toNum(rows[i][key]));
+        return mx === -Infinity ? null : mx;
+      }
+      case 'avg': {
+        // Unweighted mean of cube rows. Correct only when the cube grain equals
+        // the displayed grain (no roll-up). Prefer a `ratio` metric otherwise.
+        var sa = 0;
+        for (i = 0; i < rows.length; i++) sa += toNum(rows[i][key]);
+        return sa / rows.length;
+      }
+      case 'sum':
+      default: {
+        var s2 = 0;
+        for (i = 0; i < rows.length; i++) s2 += toNum(rows[i][key]);
+        return s2;
+      }
+    }
+  }
+
+  // Group rows by a dimension and reduce one measure per group.
+  // Returns [{ key, value }] in first-seen order (or date order if the
+  // dimension is declared type:"date").
+  function rollup(rows, groupKey, measureKey, agg, isDate) {
+    var order = [];
+    var buckets = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+      var gv = rows[i][groupKey];
+      var gk = String(gv);
+      if (!buckets[gk]) {
+        buckets[gk] = { key: gv, rows: [] };
+        order.push(gk);
+      }
+      buckets[gk].rows.push(rows[i]);
+    }
+    var result = order.map(function (gk) {
+      return { key: buckets[gk].key, value: aggregate(buckets[gk].rows, measureKey, agg) };
+    });
+    if (isDate) {
+      result.sort(function (a, b) {
+        return String(a.key) < String(b.key) ? -1 : String(a.key) > String(b.key) ? 1 : 0;
+      });
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Formatting (Intl only - pure, sandbox-safe). Numbers render in tabular
+  // mono figures via the injected CSS; here we only produce the string.
+  // ---------------------------------------------------------------------------
+
+  function makeFormatter(name, opts) {
+    opts = opts || {};
+    var locale = opts.locale || undefined;
+    try {
+      switch (name) {
+        case 'currency':
+          return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: opts.code || 'USD',
+            maximumFractionDigits: opts.decimals != null ? opts.decimals : 0,
+          }).format;
+        case 'percent':
+          return new Intl.NumberFormat(locale, {
+            style: 'percent',
+            maximumFractionDigits: opts.decimals != null ? opts.decimals : 1,
+          }).format;
+        case 'decimal':
+          return new Intl.NumberFormat(locale, {
+            minimumFractionDigits: opts.decimals != null ? opts.decimals : 2,
+            maximumFractionDigits: opts.decimals != null ? opts.decimals : 2,
+          }).format;
+        case 'compact':
+          return new Intl.NumberFormat(locale, {
+            notation: 'compact',
+            maximumFractionDigits: 1,
+          }).format;
+        case 'integer':
+          return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format;
+        default:
+          // Sober default: thousands-separated, no vanity compaction.
+          return new Intl.NumberFormat(locale).format;
+      }
+    } catch (err) {
+      return function (n) {
+        return String(n);
+      };
+    }
+  }
+
+  // A compact formatter is used only for chart AXIS ticks (brevity reduces
+  // chartjunk); tables / KPIs always use the full-precision formatter.
+  var fmtCompact = makeFormatter('compact');
+
+  function formatValue(spec, n, formatName, formatOpts) {
+    if (n === null || n === undefined || (typeof n === 'number' && !Number.isFinite(n))) {
+      return '-';
+    }
+    var opts = formatOpts || {};
+    if (formatName && spec.format[formatName]) {
+      // Island-level format overrides (e.g. currency code/decimals).
+      var ov = spec.format[formatName];
+      for (var k in ov) if (opts[k] === undefined) opts[k] = ov[k];
+    }
+    return makeFormatter(formatName, opts)(n);
+  }
+
+  // Relative time for the "updated at" stamp. Pure date math, no deps.
+  function timeAgo(iso) {
+    var then = Date.parse(iso);
+    if (!Number.isFinite(then)) return '';
+    var s = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (s < 45) return 'just now';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + (m === 1 ? ' minute ago' : ' minutes ago');
+    var h = Math.round(m / 60);
+    if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    var d = Math.round(h / 24);
+    if (d < 30) return d + (d === 1 ? ' day ago' : ' days ago');
+    var mo = Math.round(d / 30);
+    if (mo < 12) return mo + (mo === 1 ? ' month ago' : ' months ago');
+    var y = Math.round(mo / 12);
+    return y + (y === 1 ? ' year ago' : ' years ago');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Active-filter state: memory + URL hash (NO storage). The hash is the only
+  // persistence allowed under the sandbox, and it makes a filtered view a
+  // shareable link that survives reload.
+  // ---------------------------------------------------------------------------
+
+  function readHashFilters() {
+    var out = {};
+    var h = (window.location.hash || '').replace(/^#/, '');
+    if (!h) return out;
+    h.split('&').forEach(function (pair) {
+      if (!pair) return;
+      var idx = pair.indexOf('=');
+      if (idx < 0) return;
+      var k = decodeURIComponent(pair.slice(0, idx));
+      var v = decodeURIComponent(pair.slice(idx + 1));
+      if (k) out[k] = v;
+    });
+    return out;
+  }
+
+  function writeHashFilters(filters) {
+    var parts = [];
+    Object.keys(filters).forEach(function (k) {
+      if (filters[k] !== undefined && filters[k] !== ALL) {
+        parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(filters[k]));
+      }
+    });
+    var next = parts.length ? '#' + parts.join('&') : '';
+    // Use replaceState so filtering does not spam the back-button history.
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search + next);
+    } else {
+      window.location.hash = next;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Injected stylesheet. Scoped under .drt so it never fights the author's own
+  // page CSS. Tokens mirror the Dashies design system (one flat blue, slate
+  // ramp, hairline borders, mono figures) but are self-contained: the runtime
+  // does not depend on the SPA's tokens.css. Font stacks degrade gracefully if
+  // the author has not loaded Inter / JetBrains Mono (no network fetch here).
+  // ---------------------------------------------------------------------------
+
+  var STYLE = [
+    ':root{',
+    '--drt-blue:#2563eb;--drt-blue-700:#1d4ed8;--drt-blue-soft:#eff6ff;',
+    '--drt-ink:#0f172a;--drt-muted:#475569;--drt-subtle:#64748b;--drt-faint:#94a3b8;',
+    '--drt-line:#e2e8f0;--drt-line-strong:#cbd5e1;--drt-sunken:#f8fafc;--drt-surface:#fff;',
+    '--drt-grid:#eef2f6;',
+    "--drt-sans:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;",
+    "--drt-mono:ui-monospace,'JetBrains Mono','SF Mono',Menlo,monospace;}",
+    '.drt{font-family:var(--drt-sans);color:var(--drt-ink);}',
+    '.drt-num{font-family:var(--drt-mono);font-variant-numeric:tabular-nums slashed-zero;}',
+    // KPI default card (used only when a metric slot has no author chrome)
+    '.drt-kpi{display:flex;flex-direction:column;gap:6px;padding:16px 18px;background:var(--drt-surface);',
+    'border:1px solid var(--drt-line);border-radius:10px;}',
+    '.drt-kpi-label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--drt-subtle);}',
+    '.drt-kpi-value{font-family:var(--drt-mono);font-variant-numeric:tabular-nums slashed-zero;',
+    'font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--drt-ink);line-height:1.1;}',
+    // Filters
+    '.drt-filter{display:inline-flex;flex-direction:column;gap:6px;}',
+    '.drt-filter-label{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--drt-subtle);}',
+    '.drt-select{appearance:none;-webkit-appearance:none;font-family:var(--drt-sans);font-size:13px;',
+    'color:var(--drt-ink);background:var(--drt-surface);border:1px solid var(--drt-line-strong);',
+    'border-radius:6px;padding:7px 30px 7px 11px;line-height:1.2;cursor:pointer;',
+    "background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%2364748b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 6l4 4 4-4'/></svg>\");",
+    'background-repeat:no-repeat;background-position:right 9px center;}',
+    '.drt-select:focus-visible{outline:none;border-color:var(--drt-blue);box-shadow:0 0 0 3px rgba(37,99,235,.18);}',
+    // Tables
+    '.drt-table-wrap{overflow-x:auto;border:1px solid var(--drt-line);border-radius:10px;background:var(--drt-surface);}',
+    '.drt-table{width:100%;border-collapse:collapse;font-size:13px;}',
+    '.drt-table thead th{position:sticky;top:0;background:var(--drt-sunken);text-align:left;',
+    'font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--drt-subtle);',
+    'padding:9px 14px;border-bottom:1px solid var(--drt-line);white-space:nowrap;}',
+    '.drt-table tbody td{padding:9px 14px;border-bottom:1px solid var(--drt-grid);color:var(--drt-ink);}',
+    '.drt-table tbody tr:last-child td{border-bottom:none;}',
+    '.drt-table tbody tr:hover td{background:var(--drt-sunken);}',
+    '.drt-table th.drt-col-num,.drt-table td.drt-col-num{text-align:right;font-family:var(--drt-mono);',
+    'font-variant-numeric:tabular-nums slashed-zero;white-space:nowrap;}',
+    // Charts
+    '.drt-chart{width:100%;}',
+    '.drt-chart svg{display:block;width:100%;height:auto;overflow:visible;}',
+    '.drt-axis{font-family:var(--drt-mono);font-size:11px;fill:var(--drt-faint);font-variant-numeric:tabular-nums;}',
+    '.drt-cat{font-family:var(--drt-sans);font-size:11px;fill:var(--drt-subtle);}',
+    '.drt-bar{fill:var(--drt-blue);}',
+    '.drt-bar:hover{fill:var(--drt-blue-700);}',
+    '.drt-gridline{stroke:var(--drt-grid);stroke-width:1;}',
+    '.drt-baseline{stroke:var(--drt-line-strong);stroke-width:1;}',
+    '.drt-line{fill:none;stroke:var(--drt-blue);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}',
+    '.drt-area{fill:rgba(37,99,235,.10);stroke:none;}',
+    '.drt-dot{fill:var(--drt-blue);}',
+    // Empty state
+    '.drt-empty{padding:24px;text-align:center;color:var(--drt-subtle);font-size:13px;}',
+    // Motion: a single restrained fade on re-render, dropped under reduced motion.
+    '.drt-fade{animation:drt-fade .18s var(--drt-ease,ease);}',
+    '@keyframes drt-fade{from{opacity:.55}to{opacity:1}}',
+    '@media (prefers-reduced-motion: reduce){.drt-fade{animation:none}}',
+  ].join('');
+
+  function injectStyle() {
+    if (document.getElementById('dashies-runtime-style')) return;
+    var style = document.createElement('style');
+    style.id = 'dashies-runtime-style';
+    style.textContent = STYLE;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Small DOM helpers
+  // ---------------------------------------------------------------------------
+
+  function el(tag, attrs, kids) {
+    var node = document.createElement(tag);
+    if (attrs) for (var k in attrs) node.setAttribute(k, attrs[k]);
+    if (kids) (Array.isArray(kids) ? kids : [kids]).forEach(function (c) {
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function svg(tag, attrs) {
+    var node = document.createElementNS(SVGNS, tag);
+    for (var k in attrs) node.setAttribute(k, attrs[k]);
+    return node;
+  }
+
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function emptyState(node, msg) {
+    clear(node);
+    node.appendChild(el('div', { class: 'drt-empty' }, msg || 'No data for the current filters.'));
+  }
+
+  function num(v) {
+    return v == null ? 0 : typeof v === 'number' ? v : parseFloat(v) || 0;
+  }
+
+  function niceMax(max) {
+    if (!(max > 0)) return 1;
+    var pow = Math.pow(10, Math.floor(Math.log10(max)));
+    var n = max / pow;
+    var nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+    return nice * pow;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Renderers. Each takes the bound element, its parsed binding, and the
+  // currently-filtered rows. Metric / updated-at fill author-chromed slots;
+  // chart / table / filter own their subtree (sober defaults, overridable).
+  // ---------------------------------------------------------------------------
+
+  function readBinding(node) {
+    return {
+      role: node.getAttribute('data-dash'),
+      measure: node.getAttribute('data-measure'),
+      agg: node.getAttribute('data-agg'),
+      dim: node.getAttribute('data-dim'),
+      x: node.getAttribute('data-x'),
+      type: node.getAttribute('data-type'),
+      format: node.getAttribute('data-format'),
+      columns: node.getAttribute('data-columns'),
+      group: node.getAttribute('data-group'),
+      sort: node.getAttribute('data-sort'),
+      limit: node.getAttribute('data-limit'),
+      height: node.getAttribute('data-height'),
+      num: node.getAttribute('data-num'),
+      den: node.getAttribute('data-den'),
+      currency: node.getAttribute('data-currency'),
+      decimals: node.getAttribute('data-decimals'),
+      label: node.getAttribute('data-label'),
+    };
+  }
+
+  // Resolve the format + agg defaults for a measure from the island spec.
+  function measureMeta(spec, key) {
+    return spec._measureByKey[key] || {};
+  }
+
+  function metricValue(spec, rows, b) {
+    if (b.type === 'ratio' || (b.num && b.den)) {
+      // Additive ratio: sum(num) / sum(den). Keeps averages/rates correct
+      // under filtering. Defaults to percent unless told otherwise.
+      var den = aggregate(rows, b.den, 'sum');
+      if (!den) return null;
+      return aggregate(rows, b.num, 'sum') / den;
+    }
+    var meta = measureMeta(spec, b.measure);
+    var agg = b.agg || meta.agg || 'sum';
+    return aggregate(rows, b.measure, agg);
+  }
+
+  function metricFormat(spec, b) {
+    if (b.type === 'ratio' || (b.num && b.den)) {
+      return { name: b.format || 'percent', opts: formatOptsFrom(b) };
+    }
+    var meta = measureMeta(spec, b.measure);
+    return { name: b.format || meta.format || 'number', opts: formatOptsFrom(b) };
+  }
+
+  function formatOptsFrom(b) {
+    var opts = {};
+    if (b.currency) opts.code = b.currency;
+    if (b.decimals != null) opts.decimals = parseInt(b.decimals, 10);
+    return opts;
+  }
+
+  function renderMetric(node, spec, rows, b) {
+    var v = metricValue(spec, rows, b);
+    var f = metricFormat(spec, b);
+    var text = formatValue(spec, v, f.name, f.opts);
+    // Fill an author-provided [data-dash-value] slot if present (the author
+    // owns the card chrome); otherwise replace the element's own text.
+    var slot = node.querySelector('[data-dash-value]');
+    (slot || node).textContent = text;
+  }
+
+  function renderUpdatedAt(node, spec, b) {
+    var iso = spec.updated_at;
+    if (!iso) {
+      node.textContent = '';
+      return;
+    }
+    if (b.format === 'absolute') {
+      var d = new Date(iso);
+      node.textContent = Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+    } else {
+      node.textContent = timeAgo(iso);
+    }
+  }
+
+  function renderFilter(node, spec, b, onChange) {
+    var dimMeta = spec._dimByKey[b.dim] || {};
+    var values = distinctValues(spec.cube, b.dim);
+    // Build the control once; on subsequent renders just keep the selection.
+    if (!node.__drtSelect) {
+      clear(node);
+      node.classList.add('drt', 'drt-filter');
+      var labelText = b.label || dimMeta.label || b.dim;
+      var id = 'drt-f-' + b.dim;
+      node.appendChild(el('label', { class: 'drt-filter-label', for: id }, labelText));
+      var sel = el('select', { class: 'drt-select', id: id });
+      sel.appendChild(el('option', { value: ALL }, 'All'));
+      values.forEach(function (v) {
+        sel.appendChild(el('option', { value: String(v) }, String(v)));
+      });
+      sel.value = b.current || ALL;
+      sel.addEventListener('change', function () {
+        onChange(b.dim, sel.value);
+      });
+      node.appendChild(sel);
+      node.__drtSelect = sel;
+    } else {
+      node.__drtSelect.value = b.current || ALL;
+    }
+  }
+
+  function parseColumns(spec, b) {
+    if (b.columns) {
+      return b.columns.split(',').map(function (s) {
+        return s.trim();
+      }).filter(Boolean);
+    }
+    // Default: dimensions then measures, in declared order.
+    return spec.dimensions.map(function (d) {
+      return d.key;
+    }).concat(spec.measures.map(function (m) {
+      return m.key;
+    }));
+  }
+
+  function renderTable(node, spec, rows, b) {
+    node.classList.add('drt');
+    var cols = parseColumns(spec, b);
+    var dataRows = rows;
+
+    // Optional client-side grouping (group by one dimension; measures roll up).
+    if (b.group) {
+      var grouped = Object.create(null);
+      var order = [];
+      rows.forEach(function (r) {
+        var gk = String(r[b.group]);
+        if (!grouped[gk]) {
+          grouped[gk] = [];
+          order.push(gk);
+        }
+        grouped[gk].push(r);
+      });
+      dataRows = order.map(function (gk) {
+        var bucket = grouped[gk];
+        var out = {};
+        out[b.group] = bucket[0][b.group];
+        spec.measures.forEach(function (m) {
+          out[m.key] = aggregate(bucket, m.key, m.agg || 'sum');
+        });
+        return out;
+      });
+      cols = [b.group].concat(spec.measures.map(function (m) {
+        return m.key;
+      }));
+    }
+
+    // Optional sort "col:dir".
+    if (b.sort) {
+      var sp = b.sort.split(':');
+      var sk = sp[0];
+      var dir = (sp[1] || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+      dataRows = dataRows.slice().sort(function (a, c) {
+        var av = a[sk];
+        var cv = c[sk];
+        if (typeof av === 'number' || typeof cv === 'number') return (num(av) - num(cv)) * dir;
+        return (String(av) < String(cv) ? -1 : String(av) > String(cv) ? 1 : 0) * dir;
+      });
+    }
+    if (b.limit) dataRows = dataRows.slice(0, parseInt(b.limit, 10) || dataRows.length);
+
+    clear(node);
+    if (!dataRows.length) {
+      emptyState(node, 'No rows for the current filters.');
+      return;
+    }
+
+    var isNum = {};
+    cols.forEach(function (c) {
+      isNum[c] = !!spec._measureByKey[c];
+    });
+
+    var thead = el('thead');
+    var htr = el('tr');
+    cols.forEach(function (c) {
+      var meta = spec._measureByKey[c] || spec._dimByKey[c] || {};
+      var th = el('th', isNum[c] ? { class: 'drt-col-num' } : {}, meta.label || c);
+      htr.appendChild(th);
+    });
+    thead.appendChild(htr);
+
+    var tbody = el('tbody');
+    dataRows.forEach(function (r) {
+      var tr = el('tr');
+      cols.forEach(function (c) {
+        var td;
+        if (isNum[c]) {
+          var meta = spec._measureByKey[c] || {};
+          td = el('td', { class: 'drt-col-num' }, formatValue(spec, r[c], meta.format || 'number'));
+        } else {
+          td = el('td', {}, r[c] == null ? '-' : String(r[c]));
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    var table = el('table', { class: 'drt-table' }, [thead, tbody]);
+    var wrap = el('div', { class: 'drt-table-wrap' }, table);
+    node.appendChild(wrap);
+  }
+
+  // --- Charts (hand-rolled SVG; sober, single accent, hairline axes) ----------
+
+  function chartData(spec, rows, b) {
+    var meta = measureMeta(spec, b.measure);
+    var agg = b.agg || meta.agg || 'sum';
+    var dim = spec._dimByKey[b.x] || {};
+    var isDate = dim.type === 'date';
+    var data = rollup(rows, b.x, b.measure, agg, isDate);
+    if (b.sort && !isDate) {
+      var dir = b.sort.indexOf('asc') >= 0 ? 1 : -1;
+      data = data.slice().sort(function (a, c) {
+        return (num(a.value) - num(c.value)) * dir;
+      });
+    }
+    if (b.limit) data = data.slice(0, parseInt(b.limit, 10) || data.length);
+    return data;
+  }
+
+  function chartWidth(node) {
+    var w = Math.round(node.getBoundingClientRect().width);
+    return w > 0 ? w : 640; // sensible fallback before layout
+  }
+
+  function axisLabel(spec, b, v) {
+    var meta = measureMeta(spec, b.measure);
+    // Compact ticks for currency keep the symbol but drop the long digits.
+    if ((b.format || meta.format) === 'currency') {
+      try {
+        return new Intl.NumberFormat(undefined, {
+          style: 'currency',
+          currency: b.currency || (spec.format.currency && spec.format.currency.code) || 'USD',
+          notation: 'compact',
+          maximumFractionDigits: 1,
+        }).format(v);
+      } catch (e) {
+        return fmtCompact(v);
+      }
+    }
+    return fmtCompact(v);
+  }
+
+  function renderChart(node, spec, rows, b) {
+    node.classList.add('drt', 'drt-chart');
+    if (!b.x || !b.measure) {
+      emptyState(node, 'Chart needs data-x and data-measure.');
+      return;
+    }
+    var data = chartData(spec, rows, b);
+    clear(node);
+    if (!data.length) {
+      emptyState(node, 'No data for the current filters.');
+      return;
+    }
+    var type = b.type || 'bar';
+    var W = chartWidth(node);
+    var H = parseInt(b.height, 10) || 240;
+    if (type === 'hbar') {
+      node.appendChild(drawHBars(spec, b, data, W));
+    } else if (type === 'line' || type === 'area') {
+      node.appendChild(drawLine(spec, b, data, W, H, type === 'area'));
+    } else {
+      node.appendChild(drawBars(spec, b, data, W, H));
+    }
+  }
+
+  function chartTitle(spec, b) {
+    var meta = measureMeta(spec, b.measure);
+    var dim = spec._dimByKey[b.x] || {};
+    return (meta.label || b.measure) + ' by ' + (dim.label || b.x);
+  }
+
+  function drawBars(spec, b, data, W, H) {
+    var pad = { top: 16, right: 12, bottom: 34, left: 52 };
+    var iw = Math.max(10, W - pad.left - pad.right);
+    var ih = Math.max(10, H - pad.top - pad.bottom);
+    var max = niceMax(Math.max.apply(null, data.map(function (d) {
+      return num(d.value);
+    })));
+    var root = svg('svg', {
+      viewBox: '0 0 ' + W + ' ' + H,
+      role: 'img',
+      'aria-label': chartTitle(spec, b),
+    });
+    root.appendChild(svgTitle(chartTitle(spec, b)));
+
+    // Y gridlines + ticks at 0, half, max (sober - three lines only).
+    [0, 0.5, 1].forEach(function (t) {
+      var y = pad.top + ih - ih * t;
+      root.appendChild(svg('line', {
+        x1: pad.left, y1: y, x2: pad.left + iw, y2: y,
+        class: t === 0 ? 'drt-baseline' : 'drt-gridline',
+      }));
+      var lbl = svg('text', { x: pad.left - 8, y: y + 3.5, 'text-anchor': 'end', class: 'drt-axis' });
+      lbl.textContent = axisLabel(spec, b, max * t);
+      root.appendChild(lbl);
+    });
+
+    var step = iw / data.length;
+    var bw = Math.max(2, Math.min(step * 0.62, 56));
+    data.forEach(function (d, i) {
+      var v = num(d.value);
+      var h = max > 0 ? (v / max) * ih : 0;
+      var x = pad.left + step * i + (step - bw) / 2;
+      var y = pad.top + ih - h;
+      var rect = svg('rect', {
+        x: x, y: y, width: bw, height: Math.max(0, h), rx: 2, class: 'drt-bar',
+      });
+      rect.appendChild(svgTitle(String(d.key) + ': ' + formatValue(spec, v, b.format || measureMeta(spec, b.measure).format || 'number')));
+      root.appendChild(rect);
+      // Category label (only if there is room; otherwise rely on hover title).
+      if (step >= 26) {
+        var t = svg('text', {
+          x: pad.left + step * i + step / 2, y: H - pad.bottom + 16,
+          'text-anchor': 'middle', class: 'drt-cat',
+        });
+        t.textContent = truncate(String(d.key), Math.max(3, Math.floor(step / 7)));
+        root.appendChild(t);
+      }
+    });
+    return root;
+  }
+
+  function drawHBars(spec, b, data, W) {
+    var rowH = 30;
+    var pad = { top: 8, right: 56, bottom: 8, left: 120 };
+    var H = pad.top + pad.bottom + data.length * rowH;
+    var iw = Math.max(10, W - pad.left - pad.right);
+    var max = niceMax(Math.max.apply(null, data.map(function (d) {
+      return num(d.value);
+    })));
+    var root = svg('svg', {
+      viewBox: '0 0 ' + W + ' ' + H,
+      role: 'img',
+      'aria-label': chartTitle(spec, b),
+    });
+    root.appendChild(svgTitle(chartTitle(spec, b)));
+    var fmt = b.format || measureMeta(spec, b.measure).format || 'number';
+    data.forEach(function (d, i) {
+      var v = num(d.value);
+      var w = max > 0 ? (v / max) * iw : 0;
+      var y = pad.top + i * rowH + 5;
+      var bh = rowH - 12;
+      // Category label (left, sans).
+      var cat = svg('text', { x: pad.left - 10, y: y + bh / 2 + 4, 'text-anchor': 'end', class: 'drt-cat' });
+      cat.textContent = truncate(String(d.key), 16);
+      root.appendChild(cat);
+      var rect = svg('rect', { x: pad.left, y: y, width: Math.max(0, w), height: bh, rx: 2, class: 'drt-bar' });
+      rect.appendChild(svgTitle(String(d.key) + ': ' + formatValue(spec, v, fmt)));
+      root.appendChild(rect);
+      // Value label (right of bar, mono).
+      var val = svg('text', { x: pad.left + w + 8, y: y + bh / 2 + 4, class: 'drt-axis', 'text-anchor': 'start' });
+      val.textContent = formatValue(spec, v, fmt);
+      root.appendChild(val);
+    });
+    return root;
+  }
+
+  function drawLine(spec, b, data, W, H, area) {
+    var pad = { top: 16, right: 16, bottom: 34, left: 52 };
+    var iw = Math.max(10, W - pad.left - pad.right);
+    var ih = Math.max(10, H - pad.top - pad.bottom);
+    var max = niceMax(Math.max.apply(null, data.map(function (d) {
+      return num(d.value);
+    })));
+    var root = svg('svg', {
+      viewBox: '0 0 ' + W + ' ' + H,
+      role: 'img',
+      'aria-label': chartTitle(spec, b),
+    });
+    root.appendChild(svgTitle(chartTitle(spec, b)));
+
+    [0, 0.5, 1].forEach(function (t) {
+      var y = pad.top + ih - ih * t;
+      root.appendChild(svg('line', {
+        x1: pad.left, y1: y, x2: pad.left + iw, y2: y,
+        class: t === 0 ? 'drt-baseline' : 'drt-gridline',
+      }));
+      var lbl = svg('text', { x: pad.left - 8, y: y + 3.5, 'text-anchor': 'end', class: 'drt-axis' });
+      lbl.textContent = axisLabel(spec, b, max * t);
+      root.appendChild(lbl);
+    });
+
+    var n = data.length;
+    var x = function (i) {
+      return n <= 1 ? pad.left + iw / 2 : pad.left + (iw * i) / (n - 1);
+    };
+    var y = function (v) {
+      return pad.top + ih - (max > 0 ? (num(v) / max) * ih : 0);
+    };
+    var line = data.map(function (d, i) {
+      return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(d.value).toFixed(1);
+    }).join(' ');
+
+    if (area) {
+      var areaPath = line + ' L' + x(n - 1).toFixed(1) + ' ' + (pad.top + ih) +
+        ' L' + x(0).toFixed(1) + ' ' + (pad.top + ih) + ' Z';
+      root.appendChild(svg('path', { d: areaPath, class: 'drt-area' }));
+    }
+    root.appendChild(svg('path', { d: line, class: 'drt-line' }));
+
+    // First / mid / last x labels only (avoid axis clutter).
+    var fmt = b.format || measureMeta(spec, b.measure).format || 'number';
+    [0, Math.floor((n - 1) / 2), n - 1].filter(function (v, i, a) {
+      return a.indexOf(v) === i && v >= 0;
+    }).forEach(function (i) {
+      var t = svg('text', { x: x(i), y: H - pad.bottom + 16, 'text-anchor': 'middle', class: 'drt-cat' });
+      t.textContent = truncate(String(data[i].key), 12);
+      root.appendChild(t);
+    });
+    // Endpoint dot for scannability.
+    root.appendChild(svg('circle', { cx: x(n - 1), cy: y(data[n - 1].value), r: 3, class: 'drt-dot' }));
+    var last = svg('title');
+    last.textContent = chartTitle(spec, b);
+    return root;
+  }
+
+  function svgTitle(text) {
+    var t = document.createElementNS(SVGNS, 'title');
+    t.textContent = text;
+    return t;
+  }
+
+  function truncate(s, n) {
+    return s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Binding + lifecycle
+  // ---------------------------------------------------------------------------
+
+  function boot() {
+    var spec = normalizeSpec(readIsland());
+    if (!spec) return;
+    injectStyle();
+
+    // Collect bound nodes once.
+    var nodes = Array.prototype.slice.call(document.querySelectorAll('[data-dash]'));
+    var filters = {};
+    // Seed active filters from the URL hash, constrained to declared dims.
+    var hashFilters = readHashFilters();
+    spec.dimensions.forEach(function (d) {
+      if (hashFilters[d.key] !== undefined) filters[d.key] = hashFilters[d.key];
+    });
+
+    var reducedMotion = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function onFilterChange(dim, value) {
+      if (value === ALL) delete filters[dim];
+      else filters[dim] = value;
+      writeHashFilters(filters);
+      renderAll();
+    }
+
+    function renderAll() {
+      var rows = filterRows(spec.cube, filters);
+      nodes.forEach(function (node) {
+        var b = readBinding(node);
+        b.current = filters[b.dim];
+        try {
+          switch (b.role) {
+            case 'metric':
+              renderMetric(node, spec, rows, b);
+              break;
+            case 'updated-at':
+              renderUpdatedAt(node, spec, b);
+              break;
+            case 'filter':
+              renderFilter(node, spec, b, onFilterChange);
+              break;
+            case 'table':
+              renderTable(node, spec, rows, b);
+              if (!reducedMotion) flash(node);
+              break;
+            case 'chart':
+              renderChart(node, spec, rows, b);
+              if (!reducedMotion) flash(node);
+              break;
+            default:
+              break;
+          }
+        } catch (err) {
+          console.error('[dashies] render failed for', b.role, err);
+        }
+      });
+    }
+
+    function flash(node) {
+      node.classList.remove('drt-fade');
+      // Force reflow so the animation restarts on each re-render.
+      void node.offsetWidth;
+      node.classList.add('drt-fade');
+    }
+
+    renderAll();
+
+    // Re-render charts/tables on width change (responsive, no layout thrash).
+    if (window.ResizeObserver) {
+      var raf = 0;
+      var ro = new ResizeObserver(function () {
+        if (raf) return;
+        raf = window.requestAnimationFrame(function () {
+          raf = 0;
+          var rows = filterRows(spec.cube, filters);
+          nodes.forEach(function (node) {
+            var b = readBinding(node);
+            if (b.role === 'chart') renderChart(node, spec, rows, b);
+          });
+        });
+      });
+      nodes.forEach(function (node) {
+        if (node.getAttribute('data-dash') === 'chart') ro.observe(node);
+      });
+    }
+
+    // Reflect external hash changes (e.g. shared link / back-forward).
+    window.addEventListener('hashchange', function () {
+      var hf = readHashFilters();
+      var changed = false;
+      spec.dimensions.forEach(function (d) {
+        var nv = hf[d.key];
+        if (nv === undefined && filters[d.key] !== undefined) {
+          delete filters[d.key];
+          changed = true;
+        } else if (nv !== undefined && filters[d.key] !== nv) {
+          filters[d.key] = nv;
+          changed = true;
+        }
+      });
+      if (changed) renderAll();
+    });
+
+    window.__dashiesRuntime.spec = spec;
+    window.__dashiesRuntime.rerender = renderAll;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+  </script>
+</body>
+</html>

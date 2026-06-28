@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dashies": {
+      "type": "http",
+      "url": "https://mcp.dashies.xyz/mcp"
+    }
+  }
+}

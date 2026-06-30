@@ -1,0 +1,14 @@
+{
+  "name": "dashies",
+  "displayName": "Dashies",
+  "version": "0.1.0",
+  "description": "Publish AI-built dashboards to a stable dashies.xyz URL and keep them refreshed on a schedule. Bundles the dashies authoring skill and the Dashies publish MCP (OAuth 2.1 + PKCE, no tokens to paste).",
+  "author": {
+    "name": "Trievox Studio"
+  },
+  "homepage": "https://dashies.xyz",
+  "repository": "https://github.com/MickeyBinnoon/dashies-plugin",
+  "license": "MIT",
+  "keywords": ["dashboards", "bi", "data-visualization", "mcp", "dashies"],
+  "logo": "assets/logo.svg"
+}

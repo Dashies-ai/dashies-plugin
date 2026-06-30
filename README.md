@@ -4,7 +4,7 @@
 
 **Publish AI-built dashboards to a shareable URL, then let them refresh themselves on a schedule - with no AI in the loop after the first build.**
 
-A one-install plugin for [Claude Code](https://claude.com/claude-code) and [Codex](https://developers.openai.com/codex): the `dashies` authoring skill plus the Dashies publish MCP server, bundled together.
+A one-install plugin for [Claude Code](https://claude.com/claude-code), [Codex](https://developers.openai.com/codex), and [Cursor](https://cursor.com): the `dashies` authoring skill plus the Dashies publish MCP server, bundled together.
 
 [Website](https://dashies.xyz) ·
 [Marketplace](https://dashies.xyz/marketplace.json) ·
@@ -14,6 +14,7 @@ A one-install plugin for [Claude Code](https://claude.com/claude-code) and [Code
 ![License MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)
 ![Codex plugin](https://img.shields.io/badge/Codex-plugin-4F46E5?style=flat-square)
+![Cursor plugin](https://img.shields.io/badge/Cursor-plugin-111111?style=flat-square)
 ![MCP server](https://img.shields.io/badge/MCP-server-3b82f6?style=flat-square)
 ![OAuth 2.1 PKCE + DCR](https://img.shields.io/badge/OAuth%202.1-PKCE%20%2B%20DCR-2563eb?style=flat-square)
 
@@ -54,7 +55,11 @@ codex plugin add dashies@dashies
 
 If the marketplace clone fails on SSH host-key verification, use the explicit HTTPS URL: `codex plugin marketplace add https://github.com/MickeyBinnoon/dashies-plugin.git`.
 
-Either way, the plugin bundles the `dashies` authoring skill and wires up the Dashies MCP server, so there is nothing to configure by hand and no token to paste.
+### Cursor
+
+Install Dashies from the [Cursor marketplace](https://cursor.com/marketplace) (Cursor 2.5+) - search **Dashies** under Customize -> Plugins, or run `/add-plugin` in the editor. _(Marketplace listing pending Cursor's review; until it lands, the one-click MCP below works today.)_
+
+In every case, the plugin bundles the `dashies` authoring skill and wires up the Dashies MCP server, so there is nothing to configure by hand and no token to paste.
 
 > [!TIP]
 > This replaces the older manual MCP setup (`claude mcp add dashies ...` or `codex mcp add dashies --url ...`). If you ran that before, the plugin install supersedes it.
@@ -65,9 +70,9 @@ Dashies uses the standard MCP **OAuth 2.1 + PKCE** flow with **Dynamic Client Re
 
 ### Using another AI tool?
 
-This plugin makes Claude Code and Codex one-install paths, but Dashies is a plain remote MCP server, so any MCP-capable client can publish to it. Point your tool at the same URL - `https://mcp.dashies.xyz/mcp`:
+This plugin makes Claude Code, Codex, and Cursor one-install paths, but Dashies is a plain remote MCP server, so any MCP-capable client can publish to it. Point your tool at the same URL - `https://mcp.dashies.xyz/mcp`:
 
-- **Cursor** - one-click **Add to Cursor** on [dashies.xyz](https://dashies.xyz), or add `{ "dashies": { "url": "https://mcp.dashies.xyz/mcp" } }` under `mcpServers` in `~/.cursor/mcp.json`.
+- **Cursor (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, one-click **Add to Cursor** on [dashies.xyz](https://dashies.xyz), or add `{ "dashies": { "url": "https://mcp.dashies.xyz/mcp" } }` under `mcpServers` in `~/.cursor/mcp.json`.
 - **Codex (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, run `codex mcp add dashies --url https://mcp.dashies.xyz/mcp`, then `codex mcp login dashies`.
 - **Claude web, desktop, and Cowork** - add a custom connector for that URL under Settings -> Connectors.
 

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Dashies">
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <g transform="translate(32 32) scale(0.82) translate(-32 -32)">
+    <polyline points="16,19 27,32 16,45" fill="none" stroke="#ffffff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="34" y="37" width="3.2" height="8" rx="1.6" fill="#ffffff"/>
+    <rect x="40" y="32" width="3.2" height="13" rx="1.6" fill="#ffffff"/>
+    <rect x="46" y="26" width="3.2" height="19" rx="1.6" fill="#ffffff"/>
+  </g>
+</svg>

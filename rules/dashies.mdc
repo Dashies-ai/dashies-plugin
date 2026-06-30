@@ -1,0 +1,16 @@
+---
+description: Use when publishing a dashboard to Dashies or building a refreshable dashboard backed by a connected data source. Pairs with the dashies authoring skill and the Dashies publish MCP.
+alwaysApply: false
+---
+
+# Dashies
+
+Dashies publishes a self-contained HTML dashboard to a stable `https://dashies.xyz/<handle>/<slug>` URL through the `dashies` MCP, and - when the dashboard is backed by a connected data source - re-runs its SQL on a schedule with no AI in the loop.
+
+Reach for this when the user wants to publish a dashboard, build a refreshable dashboard, rename or list their dashboards, or keep a dashboard current.
+
+- Use the bundled `dashies` skill for the full authoring flow: the connected-data gate, cube design (low-cardinality grain, additive measures), the data-island binding contract, the sandbox CSP, choosing a schedule, and the `source_config` manifest.
+- Generate the dashboard as a single self-contained HTML file (inline CSS/JS, embedded data) and publish it with the `publish_dashboard` MCP tool, then share the returned URL.
+- A refreshable dashboard requires a connected data source; introspect the schema, design the cube, and validate with `validate_cube_sql` before publishing.
+
+The MCP signs in over OAuth on first use - no token to paste.

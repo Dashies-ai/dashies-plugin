@@ -194,6 +194,6 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 
 <div align="center">
 
-Built by [Trievox Studio](https://dashies.xyz). Dashboards that keep themselves up to date.
+Built by [Dashies](https://dashies.xyz). Dashboards that keep themselves up to date.
 
 </div>

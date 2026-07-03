@@ -1,0 +1,91 @@
+---
+description: Use when making a Dashies dashboard beautiful and tailored to a company's brand - deriving brand colors and type, retinting the runtime widgets, and elevating the page chrome (hero hierarchy, header identity). Reach for this whenever a dashboard looks generic / plain / "AI-generated", or the user asks to brand it, theme it, add dark mode, or make it look like a specific company. Pairs with the dashies skill and MCP.
+alwaysApply: false
+---
+
+# Dashies - beautiful, on-brand dashboards
+
+A Dashies dashboard from the default flow is correct but characterless: default
+blue on white, equal-weight KPIs, a plain header. This makes it look like a
+specific company built it on purpose. Two decisions and their execution:
+
+1. **Whose brand?** Almost always the user's own company (you usually know it).
+   Commit to one identity.
+2. **Spend it with discipline.** One accent, a real neutral ramp, deliberate
+   hierarchy, a header with identity. Tailor the brand; keep the discipline.
+
+## Mental model: chrome you own, widgets you retint
+
+- **Chrome (header, KPI cards, layout, type, color) is 100% your CSS** - this is
+  where brand identity lives.
+- **Charts, tables, and selects are runtime-rendered but fully retintable** by
+  redefining the runtime's `:root` tokens. Retint them, then build chrome around.
+
+## 1. Derive the brand system
+
+From the company, decide four things: **accent** (one brand hue), **neutral
+temperature** (warm / cool / near-black, matched to the accent), **type** (embed
+the real font when it is open / on Google Fonts, else the closest free match; a
+system stack only as a last resort), and **light/dark + logo** (inline the
+company's real SVG logo, or fall back to a monogram tile / wordmark). When a brand
+is ambiguous, default to near-black or tinted off-white ground + one accent - the
+hardest look to get wrong. Plan the palette in words, critique it against the
+anti-slop list, then code.
+
+**Real assets (CSP-safe, verified):** inline the logo as `<svg>`; embed the font
+as `@font-face { src: url(data:font/woff2;base64,...) format('woff2') }` and point
+`--drt-sans` at it. Only embed fonts you may (open-license / Google Fonts / a file
+the user has); proprietary brand fonts -> closest free match. No network is needed
+or allowed.
+
+## 2. Retint the runtime (the highest-leverage move)
+
+The runtime sets tokens on `:root` and injects its style last, so override with
+`!important`. Two colors are hardcoded (area fill, focus ring) - override those
+classes directly. Swap the values for the brand:
+
+```css
+:root {
+  --drt-blue: #635bff !important;      /* accent: charts, focus, dots         */
+  --drt-blue-700: #4b45d6 !important;  /* darker hover                        */
+  --drt-ink: #0f1637 !important;       /* near-black text                     */
+  --drt-muted: #45507a !important; --drt-subtle: #6b769c !important; --drt-faint: #9aa2be !important;
+  --drt-surface: #fff !important; --drt-sunken: #f5f6fc !important;
+  --drt-line: #e7e9f3 !important; --drt-line-strong: #ced2e6 !important; --drt-grid: #eef0f8 !important;
+  --drt-sans: Avenir, Montserrat, Corbel, system-ui, sans-serif !important;
+  --drt-mono: ui-monospace, 'SF Mono', Menlo, monospace !important;
+}
+.drt-area { fill: color-mix(in srgb, var(--drt-blue) 12%, transparent) !important; }
+.drt-select:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--drt-blue) 22%, transparent) !important; }
+```
+
+Reuse `var(--drt-*)` in your chrome so the whole page shares one palette. For
+dark, invert surface/ink and brighten the accent.
+
+## 3. Elevate the chrome
+
+- **Hierarchy:** one hero metric, ~3x its label, everything else quieter.
+- **Header identity:** a monogram/wordmark + a thin accent rule; a real subtitle
+  and the `data-dash="updated-at"` stamp.
+- **One surface treatment** (hairline border OR one soft shadow, not both), one
+  radius, an 8-based spacing rhythm, tinted canvas behind white cards.
+- **Accent discipline:** spend it on the primary series, the hero, links, focus -
+  not on every border and label.
+
+## Avoid (anti-slop)
+
+Default blue charts; copying the default tokens into your chrome; equal-weight
+KPIs; a text-only header; borders and shadows mixed at random; rainbow bars;
+gradient/glow/glass everywhere; colored left-border on every card; card-on-card
+nesting; low-contrast gray-on-gray; inventing deltas the data lacks.
+
+## Constraints
+
+Single self-contained HTML, strict CSP (inline CSS/JS/SVG, system fonts, no CDN
+or network, no storage). Never edit or move `<script id="dashies-data">`; keep
+charts runtime-rendered on refreshable dashboards; ASCII hyphens only, never em
+dashes; sober copy; do not invent data.
+
+For the full method, the ~24-brand palette + font-stack lookup, the complete
+token map with a dark scaffold, and two worked example dashboards, see the
+bundled `dashies-design` skill.

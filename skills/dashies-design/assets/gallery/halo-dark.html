@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <!--
+    dashies-design gallery reference. This is the CHROME + BRAND RETINT only:
+    Halo - a DARK near-black + electric-cyan brand (accent #56c7fb, neo-grotesque type).
+    It shows the header identity, the hero-metric hierarchy, the KPI + chart-card
+    layout, and the :root retint block that recolours the Dashies runtime widgets.
+    To make it a real dashboard, build the data + widgets with the `dashies` skill
+    and drop its <script id="dashies-data"> island + the inlined runtime.js where
+    marked at the bottom of <body>. Swap the brand values for your own company.
+  -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Halo - Revenue Analytics</title>
+  <style>
+    /* ---- Brand retint of the Dashies runtime (Halo: near-black + cyan) ------
+       Dark-first brand. Invert surface/ink, drop lines to low-contrast dark,
+       brighten the accent so it reads on dark. Chrome reuses the same tokens. */
+    :root {
+      --drt-blue:        #56c7fb !important;
+      --drt-blue-700:    #83d6fc !important;   /* hover = lighter on dark */
+      --drt-blue-soft:   #10202e !important;
+      --drt-ink:         #e9eef5 !important;
+      --drt-muted:       #9fb0c4 !important;
+      --drt-subtle:      #74839a !important;
+      --drt-faint:       #55627a !important;
+      --drt-surface:     #12161f !important;
+      --drt-sunken:      #0c0f17 !important;
+      --drt-line:        #232a38 !important;
+      --drt-line-strong: #333c4e !important;
+      --drt-grid:        #1b2230 !important;
+      --drt-sans: 'Helvetica Neue', 'Arial Nova', 'Nimbus Sans', Arial, sans-serif !important;
+      --drt-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace !important;
+      --canvas: #0a0d14;
+      --radius: 12px;
+    }
+    .drt-area { fill: color-mix(in srgb, var(--drt-blue) 16%, transparent) !important; }
+    .drt-select:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--drt-blue) 30%, transparent) !important; }
+    /* dark selects need dark chrome (runtime select bg = --drt-surface, already dark) */
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--canvas); color: var(--drt-ink);
+      font-family: var(--drt-sans); -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1160px; margin: 0 auto; padding: 36px 28px 96px; }
+
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .mark {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--drt-blue); color: #08131b;
+      font: 800 18px/1 var(--drt-sans); letter-spacing: -.03em;
+      box-shadow: 0 0 0 1px rgba(86,199,251,.4), 0 4px 14px rgba(86,199,251,.25);
+    }
+    .wordmark { font: 700 19px/1 var(--drt-sans); letter-spacing: -.01em; color: var(--drt-ink); }
+    .stamp-wrap { font-size: 12.5px; color: var(--drt-subtle); }
+    .stamp-wrap .stamp { color: var(--drt-muted); font-weight: 600; }
+    .rule { height: 3px; border-radius: 3px; margin: 18px 0 4px;
+      background: linear-gradient(90deg, var(--drt-blue), color-mix(in srgb, var(--drt-blue) 25%, transparent) 55%, transparent); }
+    h1 { font-size: 25px; font-weight: 700; letter-spacing: -.02em; margin: 16px 0 4px; }
+    .sub { color: var(--drt-subtle); font-size: 13.5px; margin: 0; }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+      padding: 14px 16px; margin: 22px 0; background: var(--drt-surface);
+      border: 1px solid var(--drt-line); border-radius: var(--radius); }
+    .filters [data-dash="filter"] { display: flex; flex-direction: column; gap: 6px; }
+    .filters .spacer { flex: 1; }
+    .reset { font-size: 12.5px; color: var(--drt-subtle); text-decoration: none; align-self: center; padding: 8px; font-weight: 500; }
+    .reset:hover { color: var(--drt-blue); }
+
+    .hero { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 1px;
+      background: var(--drt-line); border: 1px solid var(--drt-line);
+      border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; }
+    .hero > div { background: var(--drt-surface); padding: 22px 24px; }
+    .hero .stat { display: flex; flex-direction: column; justify-content: center; }
+    .hero .primary { background: linear-gradient(135deg, color-mix(in srgb, var(--drt-blue) 15%, var(--drt-surface)), var(--drt-surface) 72%); }
+    .hlabel { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--drt-subtle); }
+    .hero .primary .hlabel { color: var(--drt-blue); }
+    .hvalue { font-family: var(--drt-mono); font-variant-numeric: tabular-nums slashed-zero;
+      font-weight: 600; letter-spacing: -.02em; color: var(--drt-ink); }
+    .hero .primary .hvalue { font-size: 46px; line-height: 1.05; margin-top: 10px; }
+    .hero .stat .hvalue { font-size: 27px; line-height: 1.1; margin-top: 8px; }
+    .hnote { font-size: 12px; color: var(--drt-subtle); margin-top: 8px; }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+    .kpi { display: flex; flex-direction: column; gap: 8px; padding: 15px 17px;
+      background: var(--drt-surface); border: 1px solid var(--drt-line); border-radius: var(--radius); }
+    .kpi-label { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--drt-subtle); }
+    .kpi-value { font-family: var(--drt-mono); font-variant-numeric: tabular-nums slashed-zero;
+      font-size: 22px; font-weight: 600; letter-spacing: -.01em; color: var(--drt-ink); line-height: 1.05; }
+
+    .section-h { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      color: var(--drt-subtle); margin: 4px 2px 12px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .card { background: var(--drt-surface); border: 1px solid var(--drt-line); border-radius: var(--radius); padding: 18px 20px; }
+    .card-h { font-size: 13.5px; font-weight: 650; color: var(--drt-ink); margin-bottom: 14px; letter-spacing: -.01em; }
+
+    @media (max-width: 880px) {
+      .hero { grid-template-columns: 1fr; }
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <span class="mark">H</span>
+        <span class="wordmark">Halo</span>
+      </div>
+      <div class="stamp-wrap">Updated <span class="stamp" data-dash="updated-at">-</span></div>
+    </div>
+    <div class="rule"></div>
+    <h1>Revenue Analytics</h1>
+    <p class="sub">Orders across regions, plans, and fulfilment status</p>
+
+    <div class="filters">
+      <div data-dash="filter" data-dim="region"></div>
+      <div data-dash="filter" data-dim="plan"></div>
+      <div data-dash="filter" data-dim="status"></div>
+      <div class="spacer"></div>
+      <a class="reset" href="#">Reset filters</a>
+    </div>
+
+    <div class="hero">
+      <div class="primary" data-dash="metric" data-measure="revenue" data-format="currency" data-decimals="0">
+        <div class="hlabel">Total revenue</div>
+        <div class="hvalue" data-dash-value>-</div>
+        <div class="hnote">Across all regions, last 12 months</div>
+      </div>
+      <div class="stat" data-dash="metric" data-measure="orders">
+        <div class="hlabel">Orders</div>
+        <div class="hvalue" data-dash-value>-</div>
+      </div>
+      <div class="stat" data-dash="metric" data-measure="customers">
+        <div class="hlabel">Unique customers</div>
+        <div class="hvalue" data-dash-value>-</div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi" data-dash="metric" data-num="revenue" data-den="orders" data-format="currency" data-decimals="2">
+        <span class="kpi-label">Avg order value</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-num="discount" data-den="revenue" data-format="percent">
+        <span class="kpi-label">Discount rate</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-num="items" data-den="orders" data-format="decimal" data-decimals="2">
+        <span class="kpi-label">Items per order</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+      <div class="kpi" data-dash="metric" data-num="revenue" data-den="customers" data-format="currency" data-decimals="0">
+        <span class="kpi-label">Revenue / customer</span>
+        <span class="kpi-value" data-dash-value>-</span>
+      </div>
+    </div>
+
+    <div class="section-h">Trends</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-h">Revenue by month</div>
+        <div data-dash="chart" data-type="area" data-x="month" data-measure="revenue" data-height="230"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">Orders by month</div>
+        <div data-dash="chart" data-type="line" data-x="month" data-measure="orders" data-height="230"></div>
+      </div>
+    </div>
+
+    <div class="section-h">Breakdowns</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-h">Revenue by region</div>
+        <div data-dash="chart" data-type="bar" data-x="region" data-measure="revenue" data-sort="value-desc" data-height="230"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">Revenue by plan</div>
+        <div data-dash="chart" data-type="hbar" data-x="plan" data-measure="revenue" data-sort="value-desc" data-height="230"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Top cells by revenue</div>
+      <div data-dash="table" data-columns="month,region,plan,status,revenue,orders" data-sort="revenue:desc" data-limit="10"></div>
+    </div>
+  </div>
+
+  <!-- The `dashies` skill's data island goes here:
+         <script type="application/json" id="dashies-data">{ ...cube spec... }</script>
+       ...immediately followed by the inlined runtime:
+         <script> /* contents of dashboard-runtime/runtime.js */ </script>
+       Do not restyle either; the retint above already themes the widgets. -->
+</body>
+</html>

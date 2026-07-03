@@ -57,14 +57,30 @@ nothing to re-run, so there is nothing to keep fresh.**
   source is connected. Attaching a manifest with no connection behind it produces a
   dashboard the cron cannot ever refresh, which is worse than an honest static one.
 
-In Phase 1 the only connection is Dashies' own database, seeded as a connection
-named `self`. "Connect your own warehouse" arrives later; design the manifest's
-`connection` field now so it generalises (see Manifest v1).
+Two kinds of data source can back a refreshable dashboard:
 
-There is no list-connections tool. The gate is simply: **call `introspect_schema`
-(Step 1) and see whether it returns tables.** If it returns a usable schema, you
-have a connection to build against; in Phase 1 that is always the seeded `self`
-connection's no-PII metrics view.
+- **`self`** - Dashies' own database, a built-in connection named `self` that is
+  always available and needs no setup. It exposes a curated, no-PII metrics view.
+  Pass `connection: "self"`, or omit `connection` entirely - it is the default.
+- **A warehouse connection you own** - a paid user connects their own Postgres
+  warehouse in the Dashies web app, on the **Connections** page
+  (`/app/connections`). Credentials are entered through that SPA form only; they
+  never pass through the AI or the MCP, so you cannot connect a warehouse for the
+  user - if they need one and have not connected it, they do that in the app
+  first. Once connected, the tables they imported are readable for cube SQL.
+
+Use **`list_connections`** to see the warehouse connections the user owns; it
+returns each connection's `id`, label, engine, and status, and never returns
+secrets. Pass that `id` to `introspect_schema` (Step 1) and `validate_cube_sql`
+(Step 3) to design and check the cube against that warehouse, then set the
+manifest's `connection` to the same `id` when you publish (see Manifest v1).
+`self` needs no lookup and is not listed.
+
+The gate, then: pick the data source the dashboard's numbers live in. For the
+user's own business data, confirm a warehouse connection exists with
+`list_connections` (if none, they connect one in the app first). For Dashies' own
+metrics, use `self`. Either way, `introspect_schema` on the chosen connection
+returning tables confirms you have a real schema to build a cube from.
 
 ---
 
@@ -76,7 +92,8 @@ tool to enumerate the tables, columns, and types of the connected source.
 ```
 introspect_schema({ connection: "self" })
 ```
-`connection` is optional and defaults to `"self"` (the only connection in Phase 1).
+`connection` is optional and defaults to `"self"`; pass a warehouse connection `id`
+(from `list_connections`) to introspect one of your own warehouses instead.
 The response is a per-table column list, then a `BEGIN_JSON ... END_JSON` block:
 `{ connection, tables: [{ name, columns: [{ name, type }] }] }`. It returns column
 names and types only - not row counts or cardinality - so judge cardinality from
@@ -439,7 +456,7 @@ as the source of truth for the manifest shape; flag changes as a version bump.
 | Field | Required | Meaning |
 |---|---|---|
 | `manifest_version` | yes | Manifest contract version. `1` today. Distinct from the data island's `version`. |
-| `connection` | yes | Which data source to run `cube_sql` against, by name (a string). Phase 1: `"self"` (Dashies' own no-PII metrics view). Future warehouse connections add more names; it stays a string. |
+| `connection` | yes | Which data source to run `cube_sql` against, as a string. Either `"self"` (Dashies' own no-PII metrics view, the built-in default) or the `id` of a warehouse connection you own (from `list_connections`; requires a paid plan and is validated server-side). Only the connection reference lives here - never credentials. |
 | `schedule` | yes | One of `manual` / `hourly` / `daily` / `weekly` / `monthly`. Sets the refresh cadence. |
 | `cube_sql` | yes | The single read-only `SELECT` from Step 3. Its `GROUP BY` columns must equal `dimensions[].key`; its output columns must equal `dimensions[].key` + `measures[].key`. |
 | `dimensions` | yes | The grain. Same shape as the data island's dimension specs (`key`, optional `label`, `type` of `category` (default) or `date`). |
@@ -517,6 +534,12 @@ manifest, and a README). Copy its assembly when you build your own.
   en dashes, in any dashboard copy or your prose. Do not give time estimates ("a few
   minutes", "quick") - describe scope, not duration. Do not invent features the data
   does not support.
+- **Beauty and brand:** the default template is intentionally plain. To make a
+  dashboard genuinely beautiful and tailored to the user's company (brand colors
+  and type, a real header, hero-metric hierarchy, and the runtime charts retinted
+  to the brand), use the companion `dashies-design` skill once the structure and
+  data here are in place. It layers styling only; it never changes the cube, the
+  data island, or how the dashboard refreshes.
 
 For the exhaustive binding reference read `web/dashboard-runtime/CONTRACT.md`. The
 tool calls in Steps 1, 3, and 6 (`introspect_schema`, `validate_cube_sql`, and

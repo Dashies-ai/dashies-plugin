@@ -147,16 +147,21 @@ OAuth triggers on first use of any tool below (one browser click).
 | `list_dashboards` | Enumerate your active dashboards, newest first, with cursor pagination. |
 | `list_dashboard_versions` | List the saved prior body snapshots of one of your personal dashboards, each with a `version_id`. |
 | `restore_dashboard_version` | Roll a personal dashboard back to a prior snapshot. The current body is snapshotted first, so the restore is normally reversible. |
-| `introspect_schema` | Inspect a connected data source's schema while authoring a cube. |
-| `validate_cube_sql` | Check a cube's SQL against the connected source before publishing a refreshable dashboard. |
+| `get_dashboard_version` | Read back the body of a prior snapshot of a personal dashboard, to inspect or diff it before restoring. |
+| `update_dashboard_version` | Set or clear a snapshot's label (a short name like "Before redesign"). Metadata only; the body is untouched. |
+| `introspect_schema` | Inspect a connected data source's schema while authoring a cube - the built-in `self` metrics view, or a warehouse connection you own. |
+| `validate_cube_sql` | Check a cube's SQL against a connection (`self` or a warehouse you own) before publishing a refreshable dashboard. |
+| `list_connections` | List the Postgres warehouse connections you own (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
+| `get_refresh_status` | Check whether a personal dashboard is refreshing on schedule: cadence, next run, last run, and recent run history. Read-only. |
+| `get_source_config` | Read back the stored refresh manifest (`source_config`) of a personal dashboard, exactly as saved. Read-only. |
 
 ## Build your first refreshable dashboard
 
 A refreshable dashboard needs a connected data source, so the authoring flow starts there.
 
-1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Without it you can still publish a static dashboard, but it will not refresh on its own.
+1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Connect a Postgres warehouse in the Dashies web app (the Connections page) - credentials go through the app, never the AI - or build against Dashies' own built-in `self` metrics. Without a source you can still publish a static dashboard, but it will not refresh on its own.
 2. **Ask Claude to build it.** For example: *"Build a refreshable dashboard of weekly active users by plan, and refresh it daily."* The `dashies` skill takes over from here.
-3. **Design the cube.** Claude uses `introspect_schema` to read your tables, then defines a cube: a low-cardinality grain (the dimensions you slice by) and additive measures (counts, sums) that can be re-aggregated safely every cycle.
+3. **Design the cube.** Claude finds your connection with `list_connections`, uses `introspect_schema` to read its tables, then defines a cube: a low-cardinality grain (the dimensions you slice by) and additive measures (counts, sums) that can be re-aggregated safely every cycle.
 4. **Validate the SQL.** `validate_cube_sql` confirms the cube runs against your source before anything is published.
 5. **Publish with a schedule.** Claude calls `publish_dashboard` with the HTML plus the `source_config` manifest and your chosen cadence (hourly / daily / weekly / monthly). You get back `https://dashies.xyz/<your-handle>/<slug>`.
 6. **Walk away.** The cron re-runs the cube SQL on schedule and writes fresh numbers into the data island. The dashboard stays current with no further AI involvement.

@@ -594,6 +594,11 @@ left untouched. Keep the island shape and the manifest contract intact (same
 `dimensions` / `measures` / `cube` keys), and stay within the sandbox CSP (4d). See
 `web/dashboard-runtime/CONTRACT.md` for the island shape and binding contract.
 
+Freshness-stamp caveat: render the island's `updated_at` from the full ISO timestamp
+(`new Date(updated_at)` / `Date.parse`), never a date-only slice, or the "refreshed N
+ago" stamp anchors to midnight and reads stale; the simplest path is to keep the
+`data-dash="updated-at"` binding for the stamp.
+
 ### 4d. Respect the sandbox CSP (load-bearing)
 
 Published dashboards are served under `Content-Security-Policy: sandbox

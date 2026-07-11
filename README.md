@@ -151,7 +151,7 @@ OAuth triggers on first use of any tool below (one browser click).
 | `update_dashboard_version` | Set or clear a snapshot's label (a short name like "Before redesign"). Metadata only; the body is untouched. |
 | `introspect_schema` | Inspect a connected data source's schema while authoring a cube - the built-in `self` metrics view, or a warehouse connection you own. |
 | `validate_cube_sql` | Check a cube's SQL against a connection (`self` or a warehouse you own) before publishing a refreshable dashboard. |
-| `list_connections` | List the warehouse connections you own - Postgres or BigQuery (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
+| `list_connections` | List the warehouse connections you own - Postgres, BigQuery, or Snowflake (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
 | `get_refresh_status` | Check whether a personal dashboard is refreshing on schedule: cadence, next run, last run, and recent run history. Read-only. |
 | `get_source_config` | Read back the stored refresh manifest (`source_config`) of a personal dashboard, exactly as saved. Read-only. |
 
@@ -159,7 +159,7 @@ OAuth triggers on first use of any tool below (one browser click).
 
 A refreshable dashboard needs a connected data source, so the authoring flow starts there.
 
-1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Connect a warehouse - a Postgres database or a BigQuery project - in the Dashies web app (the Connections page), credentials go through the app, never the AI - or build against Dashies' own built-in `self` metrics. Without a source you can still publish a static dashboard, but it will not refresh on its own.
+1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Connect a warehouse - a Postgres database, a BigQuery project, or a Snowflake account - in the Dashies web app (the Connections page), credentials go through the app, never the AI - or build against Dashies' own built-in `self` metrics. Without a source you can still publish a static dashboard, but it will not refresh on its own.
 2. **Ask Claude to build it.** For example: *"Build a refreshable dashboard of weekly active users by plan, and refresh it daily."* The `dashies` skill takes over from here.
 3. **Design the cube.** Claude finds your connection with `list_connections`, uses `introspect_schema` to read its tables, then defines a cube: a low-cardinality grain (the dimensions you slice by) and additive measures (counts, sums) that can be re-aggregated safely every cycle.
 4. **Validate the SQL.** `validate_cube_sql` confirms the cube runs against your source before anything is published.

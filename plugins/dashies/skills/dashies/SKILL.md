@@ -83,17 +83,19 @@ Two kinds of data source can back a refreshable dashboard:
   always available and needs no setup. It exposes a curated, no-PII metrics view.
   Pass `connection: "self"`, or omit `connection` entirely - it is the default.
 - **A warehouse connection you own** - a paid user connects their own warehouse (a
-  **Postgres** database or a **BigQuery** project) in the Dashies web app, on the
-  **Connections** page (`/app/connections`). Credentials are entered through that
-  SPA form only; they never pass through the AI or the MCP, so you cannot connect a
-  warehouse for the user - if they need one and have not connected it, they do that
-  in the app first. Once connected, the tables they imported (Postgres) or the
-  datasets they allowlisted (BigQuery) are readable for cube SQL. The cube SQL
-  **dialect follows the engine**: a Postgres connection takes PostgreSQL (the
-  examples throughout this skill); a BigQuery connection takes **GoogleSQL** (see
-  "GoogleSQL dialect" in Step 3). `list_connections` returns each connection's
-  `engine` (`postgres` / `bigquery`), so you know which dialect to write - the
-  connection is otherwise chosen, introspected, and validated exactly the same way.
+  **Postgres** database, a **BigQuery** project, or a **Snowflake** account) in the
+  Dashies web app, on the **Connections** page (`/app/connections`). Credentials are
+  entered through that SPA form only; they never pass through the AI or the MCP, so
+  you cannot connect a warehouse for the user - if they need one and have not
+  connected it, they do that in the app first. Once connected, the tables they
+  imported (Postgres) or the datasets/databases they allowlisted (BigQuery /
+  Snowflake) are readable for cube SQL. The cube SQL **dialect follows the engine**:
+  a Postgres connection takes PostgreSQL (the examples throughout this skill); a
+  BigQuery connection takes **GoogleSQL**; a Snowflake connection takes **Snowflake
+  SQL** (see "GoogleSQL dialect" and "Snowflake SQL dialect" in Step 3).
+  `list_connections` returns each connection's `engine` (`postgres` / `bigquery` /
+  `snowflake`), so you know which dialect to write - the connection is otherwise
+  chosen, introspected, and validated exactly the same way.
 
 Use **`list_connections`** to see the warehouse connections the user owns; it
 returns each connection's `id`, label, engine, and status, and never returns
@@ -369,17 +371,76 @@ v2 measure over row-level rows just as on Postgres. Keep windows relative -
 GoogleSQL's `current_*` functions evaluate per run, so the window slides without a
 hardcoded date.
 
+### Snowflake SQL dialect (Snowflake connections)
+
+Same story as BigQuery: everything above is engine-independent, only the **SQL
+dialect** changes. A Snowflake connection runs the cube as **Snowflake SQL** on the
+Snowflake SQL API v2 (not PostgreSQL through an FDW), so author against
+`validate_cube_sql` for the Snowflake connection, not from memory.
+
+| Need | PostgreSQL (the examples above) | Snowflake SQL (a Snowflake connection) |
+|---|---|---|
+| Table reference | unqualified `from orders` | database-qualified `` from DASHIES_DOGFOOD.APP.ORDERS `` (the databases `introspect_schema` lists) |
+| Identifier case | as written | **unquoted identifiers fold to UPPERCASE**; quote `"exact_case"` only for a column created with mixed case |
+| Output alias case | `count(*) as orders` | `count(*) as "orders"` - **quote the alias to the exact manifest key**; an unquoted alias folds to `ORDERS` and blanks the dashboard on refresh (see below) |
+| Bucket a date | `date_trunc('month', created_at)::date` | `date_trunc('month', created_at)::date` (Snowflake `date_trunc(part, expr)`, part first - same order as Postgres) |
+| Current time | `now()` | `current_timestamp()` / `current_date()` |
+| Relative window | `where created_at >= now() - interval '12 months'` | `where created_at >= dateadd('month', -12, current_timestamp())` (or `dateadd('day', -90, current_date())`) - `dateadd(part, n, expr)`, evaluated natively per run |
+| Conditional count | `count(*) filter (where is_signup)` | `count_if(is_signup)` |
+| Distinct count | `count(distinct customer_id)` | `count(distinct customer_id)` (same) |
+
+Three Snowflake constraints the cube must respect:
+
+- **Quote output aliases to match your manifest keys** (the most common Snowflake
+  authoring mistake). Snowflake folds an UNQUOTED output alias to UPPERCASE -
+  `count(*) as orders` produces a column keyed `ORDERS`, not `orders`. The v1 refresh
+  cron writes the executor's rows into the data island **verbatim** (it does NOT
+  re-key them to your manifest's `dimensions[].key` / `measures[].key`), and the
+  runtime binds `data-dash` keys **case-sensitively**, so an uppercased cube key will
+  not match a lowercase manifest key and the dashboard renders **blank on its first
+  scheduled refresh**. It looks fine at publish time - you baked the initial island by
+  hand - so the break only surfaces when the cron first runs. Fix: quote every output
+  alias to the exact case your manifest uses - `count(*) as "orders"`,
+  `sum(amount) as "revenue"` (quoted-lowercase is the recommended default) - or keep
+  every manifest key UPPERCASE to match the fold. Confirm it by re-reading the
+  `validate_cube_sql` `columns` and checking they match your `dimensions`/`measures`
+  keys exactly.
+- **One read-only statement.** The cube must be exactly ONE `SELECT` (or `WITH ...
+  SELECT`). A Snowflake-lexical guard rejects anything else BEFORE the SQL reaches the
+  API (the SQL API happily runs `INSERT`/`DELETE`/`CALL`, and rejects `USE` / `ALTER
+  SESSION` / `BEGIN`), so keep the cube a single query and pass no session or context
+  statements - the connection's warehouse/role/database are supplied per request. The
+  guard understands Snowflake's lexical forms (`--` and `//` line comments, `/* */`
+  blocks, `'...'` with `''` doubling, `"..."` quoted identifiers, `$$...$$`
+  dollar-quoted strings), so a `;` hidden in a comment or string will not sneak a
+  second statement past it.
+- **Keep windows relative.** `current_date()` / `current_timestamp()` / `dateadd(...)`
+  evaluate natively per run (there is no `now()`-splice on a Snowflake cube), so a
+  relative window slides on every refresh without a hardcoded date.
+
+The additivity gate is dialect-independent here too: a v1 publish still rejects
+`count(distinct ...)`, `avg`, `median`, percentiles, `stddev`, `variance`, and
+`mode()` in `cube_sql`, so a non-additive Snowflake metric is a v2 measure over
+row-level rows.
+
+**Cost note (Snowflake only).** Each refresh runs on the user's Snowflake warehouse,
+and a warehouse **auto-resume bills a 60-second minimum** - so recommend a dedicated
+**X-Small warehouse with `AUTO_SUSPEND=60`** for a Dashies connection, and prefer a
+coarser cadence (daily over hourly) on an expensive cube. The connect/verify step
+itself burns zero warehouse credits (it uses metadata-only `SHOW` statements).
+
 ### Warehouse scale rules (read before authoring against a big table)
 
 **These pushdown rules are specific to a Postgres connection** (its cube reads
-remote tables through `postgres_fdw`). A **BigQuery** connection does not use the
-FDW at all: its cube runs as GoogleSQL directly on BigQuery through the REST query
-API, so the aggregation always happens on BigQuery natively and there is no pushdown
-cliff - a `date_trunc(...)` group-by or a join is evaluated server-side, not
-streamed. Design a BigQuery cube against bytes scanned and the island/parquet caps
-(below), not FDW pushdown; a BigQuery cube too large to inline uses the same **v2 +
-parquet** path, extracted by paging the query result and encoding Parquet in-Worker
-(no FDW, no `COPY`). The rest of this subsection applies to Postgres connections.
+remote tables through `postgres_fdw`). A **BigQuery** or **Snowflake** connection does
+not use the FDW at all: its cube runs as GoogleSQL / Snowflake SQL directly on the
+warehouse through the REST query API, so the aggregation always happens on the
+warehouse natively and there is no pushdown cliff - a `date_trunc(...)` group-by or a
+join is evaluated server-side, not streamed. Design a BigQuery/Snowflake cube against
+bytes (or warehouse credits) scanned and the island/parquet caps (below), not FDW
+pushdown; a BigQuery/Snowflake cube too large to inline uses the same **v2 + parquet**
+path, extracted by paging the query result and encoding Parquet in-Worker (no FDW, no
+`COPY`). The rest of this subsection applies to Postgres connections.
 
 On a Postgres connection the cube SQL reads remote tables through `postgres_fdw`,
 and at scale **pushdown decides everything**: either the aggregation runs ON the

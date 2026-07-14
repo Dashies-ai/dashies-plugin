@@ -9,7 +9,7 @@ A one-install plugin for [Claude Code](https://claude.com/claude-code), [Codex](
 [Website](https://dashies.xyz) ·
 [Marketplace](https://dashies.xyz/marketplace.json) ·
 [MCP server](https://mcp.dashies.xyz/mcp) ·
-[Report an issue](https://github.com/MickeyBinnoon/dashies-plugin/issues)
+[Report an issue](https://github.com/Dashies-ai/dashies-plugin/issues)
 
 ![License MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square)
@@ -49,11 +49,11 @@ Two commands inside Claude Code:
 Two commands in your shell:
 
 ```sh
-codex plugin marketplace add MickeyBinnoon/dashies-plugin
+codex plugin marketplace add Dashies-ai/dashies-plugin
 codex plugin add dashies@dashies
 ```
 
-If the marketplace clone fails on SSH host-key verification, use the explicit HTTPS URL: `codex plugin marketplace add https://github.com/MickeyBinnoon/dashies-plugin.git`.
+If the marketplace clone fails on SSH host-key verification, use the explicit HTTPS URL: `codex plugin marketplace add https://github.com/Dashies-ai/dashies-plugin.git`.
 
 ### Cursor
 
@@ -184,7 +184,7 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 - Home: https://dashies.xyz
 - Marketplace manifest: https://dashies.xyz/marketplace.json
 - MCP server: https://mcp.dashies.xyz/mcp
-- Issues: https://github.com/MickeyBinnoon/dashies-plugin/issues
+- Issues: https://github.com/Dashies-ai/dashies-plugin/issues
 
 ## License
 

@@ -2,14 +2,16 @@
 
 Part of the `dashies` skill (Steps 4 + 6). Once the cube is designed and validated
 (`cube.md`), you assemble one self-contained HTML file that renders it, and you
-attach a **manifest** that lets Dashies rebuild the cube on a schedule. The exact,
-authoritative binding spec is `web/dashboard-runtime/CONTRACT.md`; this condenses
-what you need.
+attach a **manifest** that lets Dashies rebuild the cube on a schedule. This
+reference condenses the binding contract you need to author a dashboard; the full
+source-of-truth, `web/dashboard-runtime/CONTRACT.md`, is maintainer depth for the
+monorepo, not required reading here.
 
-## The HTML: markup + island + runtime
+## The HTML: markup + island + runtime marker
 
 A refreshable dashboard is one self-contained HTML file with three parts in the
-`<body>`: your marked-up content, the data island, then the runtime.
+`<body>`: your marked-up content, the data island, then the runtime marker Dashies
+fills on serve.
 
 ```html
 <!doctype html>
@@ -20,8 +22,8 @@ A refreshable dashboard is one self-contained HTML file with three parts in the
     ...
     <!-- 2. the data island (the cube) -->
     <script type="application/json" id="dashies-data"> { ...spec... } </script>
-    <!-- 3. the runtime, inlined verbatim -->
-    <script> /* contents of runtime.js */ </script>
+    <!-- 3. the runtime marker - Dashies fills this on serve -->
+    <script data-dashies-runtime></script>
   </body>
 </html>
 ```
@@ -85,16 +87,26 @@ that id and rewrites its contents wholesale.
 - `dimensions` / `measures` / `format` must be **byte-identical to the manifest**,
   since Dashies rebuilds the island on refresh from `manifest + fresh rows`.
 
-### Inline the runtime
+### Emit the runtime marker
 
-The runtime is the canonical `web/dashboard-runtime/runtime.js` in this repo (it
-implements contracts v1 and v2; the island's `version` picks the path). Publish
-stores your HTML byte-for-byte, so replace the `<script src="runtime.js">` placeholder
-with `<script>` + the file's contents + `</script>`. It injects its own CSS at boot,
-and it is small, so the cube gets essentially the whole size budget.
+Do not ship the runtime yourself. Emit a single empty marker where it belongs:
 
-You may instead hand-roll a **custom vanilla-JS renderer** that reads the
-`#dashies-data` island directly - reach for one when you need UI the built-in
+```html
+<script data-dashies-runtime></script>
+```
+
+Dashies fills that placeholder with the current client runtime at serve time, on
+every request, then drops the marker attribute - so your published HTML stays tiny
+(no ~93 KB blob) and every dashboard always runs the latest runtime instead of
+freezing whatever was inlined at authoring time. The runtime implements island
+contracts v1 and v2 (the island's `version` picks the path), injects its own CSS at
+boot, and makes no network calls; since it is not in your published body, the cube
+gets essentially the whole publish size budget. Leave the marker empty and
+valueless: one `<script data-dashies-runtime></script>` with nothing inside it.
+
+You may instead hand-roll a **custom vanilla-JS renderer**: **omit** the
+`data-dashies-runtime` marker and ship your own `<script>` that reads the
+`#dashies-data` island directly. Reach for one when you need UI the built-in
 bindings do not cover (multi-select filters, date-range pickers, tabs, bespoke
 charts). It stays refreshable because the refresh rewrites **only** the
 `#dashies-data` island; your markup and scripts are untouched. Keep the island shape
@@ -117,8 +129,11 @@ markup and any script MUST:
   Dashies" badge as the last child of `<body>`; never script-replace `document.body`
   wholesale. Filling slots and appending to `<head>` is fine.
 
-Preview over a local `http://` server, not `file://` (relative-path behavior
-differs). A `private` dashboard only renders for its signed-in owner.
+To see it rendered, open the **published Dashies URL** - the client runtime is
+injected on serve, so a marker-only file opened locally (`file://` or a local
+`http://` server) shows empty `data-dash` slots. For a quick offline visual check,
+temporarily paste the runtime inline, then revert to the marker before publishing. A
+`private` dashboard only renders for its signed-in owner.
 
 ## Make it beautiful, not just correct
 
@@ -144,13 +159,13 @@ island, or how the dashboard refreshes.
 
 ## Publish with the manifest
 
-Publish the inlined HTML with the manifest attached as `source_config`:
+Publish the self-contained HTML with the manifest attached as `source_config`:
 
 ```
 publish_dashboard({
   path: "<slug>/index.html",
   content_type: "text/html",
-  body: "<inlined HTML>",
+  body: "<self-contained HTML>",
   source_config: { ...manifest... }
 })
 ```

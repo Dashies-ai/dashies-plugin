@@ -9,7 +9,7 @@ description: >-
   they just say "build me a dashboard" and a data connection exists. It covers the
   gate (a refreshable dashboard needs a connected data source), cube design
   (low-cardinality grain, additive vs non-additive measures), the data-island +
-  data-dash binding contract, the inlined client runtime, the sandbox CSP
+  data-dash binding contract, the serve-time runtime marker, the sandbox CSP
   constraints, choosing a schedule, and the source_config manifest - both
   manifest v1 (additive cube; the additive-only rule is enforced at publish) and
   manifest v2 (row-level, for distinct counts / medians / percentiles /
@@ -27,14 +27,17 @@ three things that let Dashies keep it fresh on its own forever:
 
 1. An embedded JSON **data cube** - the data, pre-aggregated to the dashboard's
    grain - inside a `<script type="application/json" id="dashies-data">` island.
-2. An inlined client **runtime** (vanilla JS, no dependencies) that reads the
-   cube, fills the marked-up slots, and re-slices the cube in the browser when a
-   filter changes - with zero network calls and no browser storage.
+2. An empty **runtime placeholder** - a one-line
+   `<script data-dashies-runtime></script>` marker. You do not ship the runtime;
+   Dashies injects its current client runtime (vanilla JS, no dependencies, zero
+   network calls, no browser storage) into that marker on every serve. The runtime
+   reads the cube, fills the marked-up slots, and re-slices the cube in the browser
+   when a filter changes.
 3. A **manifest** (the cube SQL + the dimensions, measures, format,
    and schedule) stored in the dashboard's `source_config`.
 
 Dashies then re-runs the manifest's SQL on the chosen cadence and rewrites **only**
-the data island in the stored HTML. The runtime and your markup are never touched.
+the data island in the stored HTML. Your markup and the runtime placeholder are never touched.
 No model is in the refresh loop, so the dashboard stays correct and cheap.
 
 This skill is how you produce that initial dashboard correctly. The hard parts are
@@ -56,10 +59,10 @@ path for purely-additive cubes (a ratio of two additive measures still fits v1 v
 `derived`).
 
 > The binding layer (the exact data-island JSON shape and every `data-dash`
-> attribute) is specified in **`web/dashboard-runtime/CONTRACT.md`** (contracts
-> v1 and v2 - its section 8 is the v2 row-level contract). That document is
-> authoritative; this skill teaches you how to *use* it and condenses the parts
-> you need into the references below. When in doubt, read CONTRACT.md.
+> attribute) is condensed into the references below - that is all you need to author
+> a dashboard. The full source-of-truth, **`web/dashboard-runtime/CONTRACT.md`**
+> (contracts v1 and v2 - its section 8 is the v2 row-level contract), is maintainer
+> depth for the Dashies monorepo; you do not need it to build a dashboard.
 
 ## How this skill is organized
 
@@ -133,7 +136,7 @@ Steps 0-6 build the dashboard. Load the reference for each step when you reach i
   that makes or breaks a refreshable dashboard.
 - **Step 4 - Build the HTML and attach the manifest** -> **`references/dashboard.md`**.
   Assemble the one self-contained HTML file - your markup with `data-dash` slots,
-  the `#dashies-data` island, the inlined runtime, all under the sandbox CSP - then
+  the `#dashies-data` island, the runtime marker, all under the sandbox CSP - then
   publish it with the `source_config` manifest (v1 additive, or v2 row-level for
   distinct counts / medians / percentiles / true averages).
 - **Step 5 - Pick a schedule** (inline below).
@@ -166,14 +169,14 @@ zone.
 
 ## Step 6 - Publish with the manifest
 
-Produce the inlined HTML (Step 4) and publish it with the manifest attached as
+Produce the self-contained HTML (Step 4) and publish it with the manifest attached as
 `source_config`, the slug, and the schedule.
 
 ```
 publish_dashboard({
   path: "<slug>/index.html",
   content_type: "text/html",
-  body: "<inlined HTML>",
+  body: "<self-contained HTML>",
   source_config: { ...manifest, including its schedule... }
 })
 ```
@@ -237,8 +240,10 @@ Load the one you need for the step you are on; do not front-load them all.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/cube.md` | Introspection; cube grain, low-cardinality dimensions, timezone bucketing, sensitivity, additive-vs-non-additive measures; the read-only `SELECT`, `validate_cube_sql`, the PostgreSQL / GoogleSQL / Snowflake dialects, and large-warehouse guidance | Steps 1-3 |
-| `references/dashboard.md` | The self-contained HTML (`data-dash` bindings, the data island, inlining the runtime, sandbox CSP) and the `source_config` manifest - v1 (additive) and v2 (row-level, the placeholder flow, caps, parquet mode) | Steps 4 + 6 |
+| `references/dashboard.md` | The self-contained HTML (`data-dash` bindings, the data island, the serve-time runtime marker, sandbox CSP) and the `source_config` manifest - v1 (additive) and v2 (row-level, the placeholder flow, caps, parquet mode) | Steps 4 + 6 |
 
-For the exhaustive binding reference read `web/dashboard-runtime/CONTRACT.md`. The
-tool calls in Steps 1, 3, and 6 (`introspect_schema`, `validate_cube_sql`, and
-`publish_dashboard` with `source_config`) match the shipped MCP tools.
+The two references above carry the condensed binding contract you need to author a
+dashboard; the full source-of-truth, `web/dashboard-runtime/CONTRACT.md`, is
+maintainer depth for the monorepo, not required reading here. The tool calls in
+Steps 1, 3, and 6 (`introspect_schema`, `validate_cube_sql`, and `publish_dashboard`
+with `source_config`) match the shipped MCP tools.

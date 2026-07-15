@@ -35,6 +35,16 @@ The part that makes Dashies different: **a dashboard can keep itself up to date.
 
 ## Install
 
+### One command (recommended)
+
+```sh
+npx plugins add Dashies-ai/dashies-plugin
+```
+
+This is the command on [dashies.xyz](https://dashies.xyz). The vendor-neutral [`plugins`](https://github.com/vercel-labs/open-plugin-spec) CLI auto-detects the AI coding agents you have installed and sets up Dashies in each - the `dashies` authoring skill plus the publish MCP - in one step.
+
+It installs into **Claude Code** and **Cursor** out of the box. For **Codex** specifically, or on **Windows**, use the matching per-tool command below - the `plugins` CLI's Codex install and Windows agent-detection are still maturing.
+
 ### Claude Code
 
 Two commands inside Claude Code:

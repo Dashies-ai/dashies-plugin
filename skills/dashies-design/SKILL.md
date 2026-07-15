@@ -397,8 +397,3 @@ Acme's own team designed it.
 - `references/runtime-theme.md` - every `--drt-*` token and what it paints, the
   two hardcoded overrides, a full light + dark retint scaffold, and the cascade
   gotchas. **Read it while theming.**
-- `assets/gallery/` - two worked reference dashboards (chrome + retint only):
-  `meridian-light.html` (light indigo fintech) and `halo-dark.html` (dark
-  near-black + cyan). Read or copy one as a starting point - they show the header
-  identity, hero hierarchy, card layout, and the retint block in context. Drop in
-  the `dashies` data island + runtime to make them live.

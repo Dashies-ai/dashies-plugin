@@ -9,8 +9,8 @@ Dashies publishes a self-contained HTML dashboard to a stable `https://dashies.x
 
 Reach for this when the user wants to publish a dashboard, build a refreshable dashboard, rename or list their dashboards, or keep a dashboard current.
 
-- Use the bundled `dashies` skill for the full authoring flow: the connected-data gate, cube design (low-cardinality grain, additive measures), the data-island binding contract, the sandbox CSP, choosing a schedule, and the `source_config` manifest.
-- Generate the dashboard as a single self-contained HTML file (inline CSS/JS, embedded data) and publish it with the `publish_dashboard` MCP tool, then share the returned URL.
-- A refreshable dashboard requires a connected data source; introspect the schema, design the cube, and validate with `validate_cube_sql` before publishing.
+- Use the bundled `dashies` skill for the full authoring flow: the connected-data gate, cube design (low-cardinality grain, additive measures), filling in the Dashies **spec** (datasets + tiles), and choosing a schedule. The server compiles the spec into the HTML + data island + `source_config` manifest, validates it, and seeds it live - you never hand-write the data-island binding contract, the sandbox CSP, or the manifest.
+- For a one-off **static** dashboard (no live data source), generate a single self-contained HTML file (inline CSS/JS, embedded data) and publish it with `publish_dashboard`'s `body` argument. For a **refreshable** dashboard, pass a **spec** via `publish_dashboard`'s `spec` argument instead (see the `dashies` skill) - never hand-roll the HTML or the manifest. Either way, share the returned URL.
+- A refreshable dashboard requires a connected data source; introspect the schema, design the cube, and validate with `validate_cube_sql` before writing the spec.
 
 The MCP signs in over OAuth on first use - no token to paste.

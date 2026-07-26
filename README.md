@@ -111,7 +111,7 @@ The model runs once, at authoring time. After that, refresh is pure server-side 
 ```mermaid
 flowchart LR
     subgraph once["Authored once (AI in the loop)"]
-      A["You describe the dashboard"] --> B["Claude builds HTML + manifest:<br/>cube SQL, dimensions,<br/>additive measures"]
+      A["You describe the dashboard"] --> B["Claude writes a spec:<br/>cube SQL, dimensions,<br/>measures, tiles"]
       B --> C["publish_dashboard"]
     end
     C --> D[("dashies.xyz/your-handle/slug")]
@@ -136,13 +136,13 @@ Why this design holds up:
 - **Safe renames.** Renaming a dashboard preserves the old URL with a 301 redirect, so links you already shared keep working.
 - **Versioned bodies.** Republishing snapshots the prior body automatically (up to 20 retained). List and roll back to any snapshot.
 - **Sandboxed by design.** Published dashboards render under a strict sandbox CSP, isolated from the rest of the origin.
-- **Guided authoring.** The bundled `dashies` skill walks you through the connected-data gate, cube design, the data-island binding contract, the sandbox constraints, schedule choice, and the manifest.
+- **Guided authoring.** The bundled `dashies` skill walks you through the connected-data gate, cube design, and filling in the spec (datasets, tiles, schedule) - the server compiles, validates, and seeds it for you.
 
 ## What's bundled
 
 ### The `dashies` authoring skill
 
-Loads automatically after install. It is the playbook for building a *refreshable* dashboard: the connected-database gate, designing a cube with a low-cardinality grain and additive measures, the data-island and data-dash binding contract, the inlined client runtime, the sandbox CSP constraints, choosing a schedule, and writing the `source_config` manifest.
+Loads automatically after install. It is the playbook for building a *refreshable* dashboard: the connected-database gate, designing a cube with a low-cardinality grain and additive measures, filling in the Dashies **spec** (datasets + tiles), and choosing a schedule. The server compiles the spec into the HTML, the data island, and the `source_config` manifest, validates it, and seeds it live - you never hand-write the data-dash binding contract, the runtime, or the manifest.
 
 ### The MCP tools
 
@@ -150,7 +150,7 @@ OAuth triggers on first use of any tool below (one browser click).
 
 | Tool | What it does |
 |---|---|
-| `publish_dashboard` | Upload a self-contained HTML / JSON / CSV / image file (up to ~5 MB) and get a stable URL back. |
+| `publish_dashboard` | Upload a self-contained HTML / JSON / CSV / image file (up to ~5 MB) and get a stable URL back - or, for a refreshable dashboard, pass a **spec** (YAML) instead and the server compiles, validates, and seeds it into the HTML for you. |
 | `update_dashboard` | Edit metadata (name, tags, chart, visibility) or rename the slug without re-uploading the body. Renames keep the old URL alive via a 301 redirect. |
 | `get_dashboard` | Read back a previously published file. |
 | `delete_dashboard` | Retire a dashboard by slug. The URL stops resolving and the bytes are removed. |
@@ -160,20 +160,24 @@ OAuth triggers on first use of any tool below (one browser click).
 | `get_dashboard_version` | Read back the body of a prior snapshot of a personal dashboard, to inspect or diff it before restoring. |
 | `update_dashboard_version` | Set or clear a snapshot's label (a short name like "Before redesign"). Metadata only; the body is untouched. |
 | `introspect_schema` | Inspect a connected data source's schema while authoring a cube - the built-in `self` metrics view, or a warehouse connection you own. |
-| `validate_cube_sql` | Check a cube's SQL against a connection (`self` or a warehouse you own) before publishing a refreshable dashboard. |
-| `list_connections` | List the warehouse connections you own - Postgres, BigQuery, Snowflake, or Amazon Redshift (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
+| `validate_cube_sql` | Check a cube's SQL against a connection (`self` or a warehouse you own) before writing it into a spec. |
+| `list_connections` | List the warehouse connections you own - Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks, or Microsoft SQL Server (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
 | `get_refresh_status` | Check whether a personal dashboard is refreshing on schedule: cadence, next run, last run, and recent run history. Read-only. |
+| `set_refresh_schedule` | Set a refreshable dashboard's exact cadence: interval, day/hour, and timezone. |
+| `trigger_refresh` | Refresh a dashboard right now instead of waiting for its schedule (paid plans). |
 | `get_source_config` | Read back the stored refresh manifest (`source_config`) of a personal dashboard, exactly as saved. Read-only. |
+| `get_dashboard_spec` | Read back a spec-backed dashboard's stored spec (the YAML), exactly as saved - your starting point for an edit. Read-only. |
+| `derive_dashboard_spec` | Reconstruct a draft spec from an existing refreshable dashboard that isn't spec-backed yet - a read-only migration aid that stores nothing. Publish the draft to convert the dashboard to spec-backed. Read-only. |
 
 ## Build your first refreshable dashboard
 
 A refreshable dashboard needs a connected data source, so the authoring flow starts there.
 
-1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Connect a warehouse - a Postgres database, a BigQuery project, a Snowflake account, or an Amazon Redshift warehouse - in the Dashies web app (the Connections page), credentials go through the app, never the AI - or build against Dashies' own built-in `self` metrics. Without a source you can still publish a static dashboard, but it will not refresh on its own.
+1. **Connect a data source.** Auto-refresh re-runs SQL against a live source, so this is the gate. Connect a warehouse - a Postgres database, a BigQuery project, a Snowflake account, an Amazon Redshift warehouse, a Databricks workspace, or a Microsoft SQL Server database - in the Dashies web app (the Connections page), credentials go through the app, never the AI - or build against Dashies' own built-in `self` metrics. Without a source you can still publish a static dashboard, but it will not refresh on its own.
 2. **Ask Claude to build it.** For example: *"Build a refreshable dashboard of weekly active users by plan, and refresh it daily."* The `dashies` skill takes over from here.
 3. **Design the cube.** Claude finds your connection with `list_connections`, uses `introspect_schema` to read its tables, then defines a cube: a low-cardinality grain (the dimensions you slice by) and additive measures (counts, sums) that can be re-aggregated safely every cycle.
 4. **Validate the SQL.** `validate_cube_sql` confirms the cube runs against your source before anything is published.
-5. **Publish with a schedule.** Claude calls `publish_dashboard` with the HTML plus the `source_config` manifest and your chosen cadence (hourly / daily / weekly / monthly). You get back `https://dashies.xyz/<your-handle>/<slug>`.
+5. **Publish with a schedule.** Claude writes a **spec** (the cube's dimensions and measures as datasets, tiles to show them, and your chosen cadence) and calls `publish_dashboard` with it. The server compiles the spec into the HTML, validates it, and seeds it with real numbers from your connection before the URL goes live: `https://dashies.xyz/<your-handle>/<slug>`.
 6. **Walk away.** The cron re-runs the cube SQL on schedule and writes fresh numbers into the data island. The dashboard stays current with no further AI involvement.
 
 > [!TIP]

@@ -118,6 +118,26 @@ nothing to re-run, so there is nothing to keep fresh.**
   auto-refresh because no data source is connected. A spec with no connection behind
   it cannot seed, so it cannot publish - an honest static dashboard is the answer.
 
+**The second half of the gate: a spec publishes to a PERSONAL dashboard only.**
+File-format (`spec`) dashboards are personal-only in v1, and the grant your MCP
+connection was authorized with decides this - not a flag you can pass. A connection
+authorized for a **workspace** is refused at publish with:
+
+> `spec (file-format) dashboards are personal-only in v1; this grant is authorized
+> for a workspace, so it cannot publish a spec. Use a personal grant.`
+
+This is a **prerequisite, not a spec error**: no edit to the YAML fixes it, and no
+`workspace` argument helps (passing one alongside `spec` is itself rejected). If you
+hit it, say so plainly - the user has to authorize a personal connection, which only
+they can do. To publish into a workspace at all today, drop to the hand-authored
+`body` + `source_config` path in `references/dashboard.md`; that path does support
+`workspace`, at the cost of the compile / validate / seed guarantees above.
+
+Worth checking BEFORE you design a cube, because everything up to the publish call
+succeeds either way: `introspect_schema` and `validate_cube_sql` do not care about
+grant scope, so a workspace grant lets you author a whole dashboard and only learns
+at the last step.
+
 Two kinds of data source can back a refreshable dashboard:
 
 - **`self`** - Dashies' own database, a built-in connection named `self` that is

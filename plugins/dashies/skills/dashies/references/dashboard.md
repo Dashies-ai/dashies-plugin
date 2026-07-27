@@ -414,8 +414,8 @@ and exact.
 | `schedule` | yes | `manual` / `hourly` / `daily` / `weekly` / `monthly` - the refresh cadence. |
 | `cube_sql` | yes | The single read-only `SELECT` from `cube.md`. |
 | `timezone` | no | IANA business zone the time buckets are in (absent = UTC). `cube_sql` must bucket in this zone explicitly. |
-| `dimensions` | yes | The grain: `{ key, label?, type: "category" | "date" }`. |
-| `measures` | yes | The aggregate columns: `{ key, label, agg: sum|count|min|max, additive: true, format }`. |
+| `dimensions` | yes | The grain: `{ key, label?, type: "category" \| "date" }`. |
+| `measures` | yes | The aggregate columns: `{ key, label, agg: sum\|count\|min\|max, additive: true, format }`. |
 | `format` | no | Global format defaults, copied into the island. |
 | `derived` | no | Documents ratio metrics (`{ label, kind: "ratio", num, den, format }`) - rendered from your `data-num`/`data-den` bindings, not from this field. |
 

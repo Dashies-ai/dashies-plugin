@@ -135,7 +135,10 @@ naming each construct. Handle non-additive metrics one of these ways:
   grouping. Otherwise it is a v3 or v2 `count_distinct` measure.
 - **Medians, percentiles, true averages under filters** cannot be reconstructed from
   sums at all - they mean **v3** (precomputed exactly per filter state) or **v2**
-  (recomputed from row-level rows), never a stored v1 measure.
+  (recomputed from row-level rows), never a stored v1 measure. On a **warehouse**
+  connection, read **"Exact medians and percentiles"** below before you write one: the
+  percentile syntax is per-engine, and on BigQuery the obvious form is silently
+  approximate.
 
 **When any needed metric is non-additive, leave v1 - and prefer v3.** The additivity
 rules here are what v1's re-summing runtime demands. The richer v4 dataset modes lift
@@ -301,6 +304,15 @@ from (
 group by cube(month, region, plan)
 ```
 
+**That example is PostgreSQL, and its median is the one line in it that does not
+travel.** `GROUP BY CUBE` and single-arg `GROUPING` ARE portable across every engine;
+the aggregates you put inside are not. `percentile_cont(...) WITHIN GROUP (ORDER BY
+...)` is PostgreSQL syntax, and **BigQuery rejects it outright** with `percentile_cont
+aggregate function is not supported.` Before you put a median or a percentile in a
+lattice on any non-PostgreSQL engine, read **"Exact medians and percentiles"** below:
+the obvious BigQuery substitute is silently approximate, and nothing in the toolchain
+warns you.
+
 **3. Obey the constraints (a v3 publish rejects otherwise; `validate_cube_sql`
 checks them too):**
 
@@ -343,8 +355,26 @@ it). Everything above is engine-independent; only the syntax changes. Author aga
 |---|---|---|---|
 | Table reference | `from orders` | backtick `` `project.dataset.table` `` | database-qualified `from DB.SCHEMA.ORDERS` |
 | Bucket a date (business zone) | `date_trunc('month', ts AT TIME ZONE 'America/Los_Angeles')::date` | `timestamp_trunc(ts, MONTH, 'America/Los_Angeles')` (zone is the 3rd arg) | `date_trunc('MONTH', convert_timezone('UTC','America/Los_Angeles', ts))` |
-| Relative window | `now() - interval '12 months'` | `timestamp_sub(current_timestamp(), interval 12 month)` | `dateadd('month', -12, current_timestamp())` |
+| Relative window | `now() - interval '12 months'` | `timestamp(date_sub(current_date('America/Los_Angeles'), interval 12 month))` | `dateadd('month', -12, current_timestamp())` |
 | Conditional count | `count(*) filter (where c)` | `countif(c)` | `count_if(c)` |
+| Exact median | `percentile_cont(0.5) within group (order by x)` | `array_agg(x ignore nulls order by x)[safe_offset(div(count(x), 2))]` - there is NO aggregate percentile; see "Exact medians and percentiles" | `percentile_cont(0.5) within group (order by x)` (not verified) |
+
+**BigQuery gotchas.** Three, all of which cost real authoring time:
+
+- **The obvious relative window does not run.** `timestamp_sub(current_timestamp(),
+  interval 12 month)` fails with `TIMESTAMP_SUB does not support the MONTH date part
+  when the argument is TIMESTAMP type` - `TIMESTAMP_SUB` accepts only MICROSECOND
+  through DAY on a `TIMESTAMP`. Go through `DATE` as the table shows, or use
+  `interval 365 day`.
+- **A `TIMESTAMP` reads back as a raw epoch string.** `validate_cube_sql` returns it as
+  seconds-since-epoch in scientific notation - `"1.721210317969462E9"` - not an ISO
+  string, so you cannot eyeball a date range while authoring, and a raw timestamp is
+  useless as a dimension label. Format it in SQL:
+  `format_timestamp('%Y-%m', ts, 'America/Los_Angeles')` for a month bucket, or
+  `date(ts, 'America/Los_Angeles')` for a date. (Databricks, by contrast, returns
+  ISO-8601 UTC - see its note below.)
+- **`introspect_schema` reports no row estimate.** See "Large warehouse tables" below
+  for the count-it-yourself fallback.
 
 **Snowflake gotcha:** an unquoted output alias folds to UPPERCASE (`as orders` ->
 `ORDERS`), and the runtime binds keys case-sensitively, so the dashboard renders
@@ -403,11 +433,81 @@ login** (the connect test refuses a login with any write/admin privilege), so th
 connects a `dash_ro`-style login, never an admin. Only your allowlisted schemas (plus the
 `sys`/`INFORMATION_SCHEMA` catalogs) are readable.
 
+### Exact medians and percentiles
+
+A lattice cell promises the **exact** aggregate for that filter state. A median or a
+percentile is the easiest place to break that promise without noticing, because the
+substitute that looks right on every engine is not exact on all of them.
+
+**`percentile_cont(...) WITHIN GROUP (ORDER BY ...)` is not portable.** It is what the
+v3 example above uses and it is correct for PostgreSQL. **BigQuery rejects it** -
+`percentile_cont aggregate function is not supported.` GoogleSQL's `PERCENTILE_CONT`
+is an analytic (`OVER ()`) function only, so **there is no exact aggregate percentile
+in GoogleSQL at all**.
+
+**Never back a declared `median` / `percentile_cont` measure with `APPROX_QUANTILES`.**
+It is the obvious BigQuery substitute and it is wrong twice over:
+
+- It is **approximate**. A lattice cell is supposed to be the exact answer; this is not.
+- Its answer **changes with the CUBE's dimension count**. Measured on a live 300k-row
+  table: the identical `region = 'eu'` population returned **22518** from a
+  two-dimension `GROUP BY CUBE` and **22164** from a three-dimension one, against a
+  true median of **22785**. Two cells of one lattice can disagree about the same rows.
+
+`validate_cube_sql` does not warn about this. It runs clean, it publishes clean, and
+the dashboard ships a plausible wrong number that no later step re-derives.
+
+**The exact GoogleSQL form** (verified cell for cell against an independent rank-based
+median on a 300k-row table):
+
+```sql
+array_agg(x ignore nulls order by x)[safe_offset(div(count(x), 2))] as median_x
+```
+
+Three details in it are load-bearing, and the middle one is a trap the correct form
+still leaves open:
+
+- **`ignore nulls`** - `ARRAY_AGG` otherwise keeps NULLs and sorts them FIRST.
+- **`count(x)`, never `count(*)`.** `count(*)` counts the NULL rows too, so it indexes
+  past the midpoint of a NULL-free array. On a column with 8917 NULLs in 296104 rows
+  that returned **21409** where the true median was **22767** - about 6 percent low,
+  validating and publishing clean. Only an independent cross-check caught it. On a
+  column with no NULLs the two forms agree exactly, which is precisely why this
+  survives casual testing and reaches production.
+- **`safe_offset`, not `offset`.** A cell whose values are all NULL yields an empty
+  array, and bare `offset` THROWS. This query re-runs unattended forever, so it must
+  not fail on a cell that the data happens to empty out later.
+
+Per engine, and marked honestly:
+
+| Engine | Exact median | Status |
+|---|---|---|
+| PostgreSQL | `percentile_cont(0.5) within group (order by x)` | The dialect the examples above are written in |
+| BigQuery | `array_agg(x ignore nulls order by x)[safe_offset(div(count(x), 2))]` | **Verified** on a live connection |
+| Redshift | `percentile_cont(0.5) within group (order by x)` | Not verified - confirm before relying on it |
+| Snowflake | `percentile_cont(0.5) within group (order by x)` | Not verified - confirm before relying on it |
+| Databricks | `percentile(x, 0.5)` | Not verified - confirm before relying on it |
+| SQL Server | Unknown - no aggregate form confirmed | Not verified - confirm before relying on it |
+
+**Whatever engine you are on, prove the median before you publish.** Run the cube
+through `validate_cube_sql`, then compute the same median a second, independent way -
+a rank-based `row_number()` query, or the engine's analytic `percentile_cont` over the
+same rows - and compare the two numbers. This is the same cross-check **"Verify the
+numbers"** above demands of every additive measure, and a non-additive measure needs it
+MORE, not less: nothing downstream re-derives a median, so a wrong one is invisible
+forever.
+
 ### Large warehouse tables
 
 Against a big table, keep the cube cheap and let it validate fast:
 
-- **Check the table's approximate size** with `introspect_schema` before you design.
+- **Check the table's approximate size** with `introspect_schema` before you design -
+  where it reports one. The estimate is not available on every engine: a **BigQuery**
+  connection came back with no `row_estimate`, `size_band` or `recommended_mode` on any
+  of 40+ tables, so there is simply nothing to read. When it is absent, measure it
+  yourself with
+  `validate_cube_sql({ sql: 'select count(*) as n from <table>', connection })` - a bare
+  full-table aggregate pushes down to the remote and is fast even at millions of rows.
 - **Keep the grain small and the time window tight.**
 - **Group on real columns where you can.** If the warehouse can carry a
   pre-bucketed `day`/`week`/`month` column, group on it rather than truncating a
@@ -418,3 +518,19 @@ Against a big table, keep the cube cheap and let it validate fast:
 
 If `validate_cube_sql` is slow or times out, the cube is too big or too expensive
 for the inline path - tighten the window, coarsen the grain, or move to v2 + parquet.
+
+**The inline island has a hard ceiling, and a `hybrid` is the dataset most likely to
+reach it.** A `hybrid` ships its `GROUP BY CUBE` lattice AND a row-level slice inline,
+so its projected size grows on both axes at once - adding one dimension or one
+`rows_sql` column can push it over. Publish warns as the projection approaches the
+8388608-byte island ceiling, and crossing it fails the publish. The remedy is
+**`rows_window: N`** on the dataset, which bounds the row slice (its `rows_sql` must
+then end in a top-level ORDER BY - see above). That remedy is often free: a
+`rows_window` set at or above the current row count keeps **every** row and still
+bounds the projection.
+
+Read that projection as a **conservative upper bound, not a measurement.** It
+extrapolates future growth and can run an order of magnitude above the bytes actually
+emitted - 7204320 projected against a 213196-byte island, roughly 34x, in one measured
+case. Check the `bytes` a dry run actually reports before you bound or coarsen a cube
+that would have fit comfortably.

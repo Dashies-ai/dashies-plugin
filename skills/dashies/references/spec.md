@@ -39,6 +39,15 @@ ignored.
   fake zeros never reaches the URL.
 - **Numeric honesty is automatic.** The runtime renders every value exactly or shows `-`
   (unavailable) - never a rounded-wrong number. You do not manage precision.
+- **Declare only what a tile uses.** A measure or dimension no tile reads raises
+  ``[L3] /datasets/<ds>/measures/<key>: measure `<key>` is not referenced by any tile.``
+  (and the same wording for a dimension). This one is a WARNING, not a blocking error: a
+  spec whose only issues are these still publishes, and the advisory arrives on the SUCCESS
+  report prefixed `warning:`. A FAILED publish lists only real errors, so its count is the
+  number of things you actually have to fix - an advisory never pads it. Two things
+  that are NOT unreferenced: a measure used only as a ratio's `num`/`den` (the ratio is the
+  reference - the operands need no tile of their own), and a dimension in a dataset with no
+  tile that could have shown it (a KPI-only dataset never warns about its grain dim).
 - **No em/en dashes** in any spec string (titles, notes, labels, text tiles) - plain ASCII
   hyphens only.
 
@@ -128,6 +137,19 @@ list: 1-200 unique entries, each a string / number / boolean); a `date` dim may 
 `units`, if it is integer cents use `cents`; the wrong scale is a 100x display error the
 format cannot catch (it is a display choice, not a structural fault).
 
+**Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind`
+always reaches the tile (a `percent` measure renders as a percent, a `count` as an
+integer), but `decimals` currently rides the dashboard's CURRENCY descriptor: the compiler
+emits it only as an override against the first `currency` unit it finds. So in a dashboard
+with no `currency` measure at all there is no descriptor to override, and `decimals: 1` on
+a `percent` or `number` measure is dropped from the emitted tile - while adding an
+unrelated `currency` measure somewhere else makes that same `decimals` start applying.
+Separately, on a `combo` tile the SECONDARY measure never carries its own `decimals` or
+`currency`: the runtime reads one unsuffixed pair and applies it to both axes. This is a
+known gap, not intended behaviour - treat `decimals` as a hint rather than a guarantee,
+and do not restructure a spec around it. (`scale` is not part of this gap: `fraction` and
+`units` are the identity, so there is nothing for them to emit.)
+
 ## tiles
 
 A closed set of eighteen types; `type` is REQUIRED (a role-less tile is a `[L2]` error - it can
@@ -138,7 +160,6 @@ schema is closed, so an unaccepted key is a `[L2]` error naming it:
 - `dataset` (which dataset it reads; omit = the first/default) on all EXCEPT `text` (it has
   no data) and `custom` (which names its datasets in `reads` instead).
 - `title` (<=120 chars) and `note` (<=1000) on `kpi` / `chart` / `table` / `matrix` / `heatmap` / `scatter` / `treemap` / `waterfall` / `funnel` / `drilldown` / `stacked` / `combo` / `pie` / `donut` / `gauge` / `custom` only (NOT on `filter` or `text`).
-- `title` (<=120 chars) and `note` (<=1000) on `kpi` / `chart` / `table` / `matrix` / `heatmap` / `scatter` / `treemap` / `drilldown` / `stacked` / `combo` / `pie` / `donut` / `gauge` / `custom` only (NOT on `filter` or `text`).
 
 The per-type "Key fields" column lists each type's own fields. A tile binding that names a
 measure/dimension no dataset declares is an `[L3]` reference error.
@@ -151,9 +172,8 @@ measure/dimension no dataset declares is an `[L3]` reference error.
 | `matrix` | `rows`, `cols`, `measure` | A pivot: two dimensions crossed, one measure, with margins. `rows` and `cols` are DIFFERENT dimensions of the tile's dataset; `measure` is one measure key (a `ratio` measure works, and renders the ratio per cell). Optional `subtotals` (`both` (default) / `row` / `col` / `none` - the token names the axis whose members get a total, so `row` adds the per-row Total COLUMN and `col` adds the per-column Total ROW; the grand total sits at their intersection and so appears only under `both`), `limit` (1-1000, rendered rows before truncation; default 200), `color` (`heat` / `diverging` - conditional formatting, off by default). See "The matrix" below. |
 | `heatmap` | `rows`, `cols`, `measure` | The matrix with a colour scale. Every `matrix` field means the same thing here; the only difference is that `color` defaults to `heat` instead of off. See "The heatmap" below. |
 | `drilldown` | `levels`, `measure` | A ranked breakdown of ONE dimension at a time, with an optional exact residual. `levels` is the hierarchy outermost-first (1-6 DIFFERENT dimensions of the tile's dataset) - one level is a plain Top-N list, two or more make each row a drill target. `measure` is one measure key (a `ratio` measure works). Optional `top_n` (1-1000, show only the top N by that measure), `other` (boolean, add the residual row - REQUIRES `top_n`), `total` (boolean, add the total row). See "The drill-down" below. |
-| `heatmap` | `rows`, `cols`, `measure` | The matrix with a colour scale. Every `matrix` field means the same thing here; the only difference is that `color` defaults to `heat` instead of off. See "The heatmap" below. || `scatter` | `point`, `x_measure`, `y_measure` | An AGGREGATE scatter: one point per member of `point` (a dimension), positioned by two measures. `x_measure` and `y_measure` are DIFFERENT declared agg measures (not ratios). Optional `limit` (1-2000, plotted points; default 500), `height` (120-800), `drill`. See "The scatter and the treemap" below. |
+| `scatter` | `point`, `x_measure`, `y_measure` | An AGGREGATE scatter: one point per member of `point` (a dimension), positioned by two measures. `x_measure` and `y_measure` are DIFFERENT declared agg measures (not ratios). Optional `limit` (1-2000, plotted points; default 500), `height` (120-800), `drill`. See "The scatter and the treemap" below. |
 | `treemap` | `x`, `measure` | One rectangle per member of `x` (a dimension), its AREA being that member's share of the total. `measure` must DECOMPOSE - `sum` or `count` only. Optional `limit` (1-200, rectangles; default 24), `height` (120-800), `drill`. See below. |
-
 | `stacked` | `x`, `series`, `measure` | A stacked column or area: `x` (a dimension), `series` (a DIFFERENT dimension whose values are the segments, at most 5 declared `domains`), `measure` (one measure key, which must be a `sum` or a `count` - see "Stacked charts" below). Optional `stack` (`normal` (default) / `percent` for the 100% stack), `chart` (`bar` (default) / `area`), `limit` (1-400 x categories; default 60), `height` (120-800). |
 | `combo` | `x`, `measure`, `measure2` | A dual-axis chart: `x` (a dimension), `measure` on the LEFT axis and `measure2` on the RIGHT, two DIFFERENT measure keys (either may be a `ratio`). Optional `chart` (`bar` (default) / `line` / `area`), `chart2` (`line` (default) / `bar` / `area`), `axis_sync` (boolean - put both on one shared scale), `limit` (1-400), `height` (120-800). See "Dual-axis (combo) charts" below. |
 | `pie` / `donut` | `x`, `measure` | A share of a whole. `x` is the slice dimension (at most 5 members); `measure` must be ADDITIVE (`sum`/`count`) - a ratio, a `min`/`max` or any non-additive aggregate is refused, because its parts do not add up to its whole. Optional `height` (120-800). No `limit`: a wider dimension is refused, not truncated. `pie` and `donut` differ only in the hole. See "Pie, donut and gauge" below. |
@@ -631,6 +651,33 @@ tiles:
 For a multi-dataset report (a KPI strip + a distinct-count lattice trend + a row-level
 table), declare each grain as its own dataset and route each data tile with `dataset:` - the
 same `mode` choice per dataset (Steps 1-3), several datasets under one `source`.
+
+## What a publish WARNING means
+
+Errors block; warnings do not. A warning on the publish report is the server telling you it
+seeded the dashboard, looked at the REAL values that came back, and found something that will
+read wrong at view time. Read them - they are the cheapest signal you will get, and several
+describe a tile that publishes clean and then refuses to draw.
+
+| warning | what the seed found | what to do |
+|---|---|---|
+| `slice_cardinality` | the `pie`/`donut` slice dimension seeded more than 5 distinct members | declare `domains` to pick 5, or use a `chart` (bar), which has no colour limit. The renderer REFUSES a wider set rather than dropping a slice, so this tile would show its reason instead of your data |
+| `series_cardinality` | a `chart`/`stacked` `series` dimension seeded more than 5 | declare `domains` to pick 5. A `chart` reuses a colour; a `stacked` refuses outright |
+| `funnel_stage_absent` | a `stages` entry is not one of the seeded values of the funnel's `x` | fix the spelling, or drop the stage. An absent stage renders as `-`, which reads like a 100% drop-off |
+| `stack_percent_mixed_sign` | a `stack: percent` column seeded both positive and negative segments | use `stack: normal` (same exact values, signed axis) or a `chart`. No share of a mixed-sign column is a true proportion, and the runtime refuses that column |
+| `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. The runtime filter drops it |
+| `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | declare `scale: points` |
+| `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |
+| `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
+| `col_extra` | the query outputs a column nothing declared reads, so it ships world-readable and read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship as island bytes is an ERROR, not this warning) |
+| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced |
+
+The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,
+`stack_percent_mixed_sign`) are warnings rather than errors ON PURPOSE: they are judged against
+the data as it was AT PUBLISH, and the next refresh can move it. Where you declare `domains`,
+the same rules become blocking errors - a declared bound is a claim you wrote down, so the
+server holds you to it. That is the tradeoff: declare `domains` and get a hard gate, leave it
+off and get an advisory plus the runtime's own refusal as the backstop.
 
 ## Publish + edit
 

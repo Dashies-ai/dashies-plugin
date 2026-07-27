@@ -257,8 +257,9 @@ publish_dashboard({ path: "<slug>", spec: "<the YAML spec>" })
 Read the report back in plain words: `mode_choices` tells the user what each dataset resolved
 to and why (e.g. `main -> lattice: a distinct count over low-cardinality dimensions`);
 `warnings` are non-blocking advisories; `obligations` is the one place the format asks you to
-run the Step-3 manual additivity cross-check (an opaque measure over a JOIN/CTE the static
-checks cannot fully judge - see the guardrail below). Share the returned `url`.
+run the Step-3 manual additivity cross-check (a cube built over more than one row source - a
+JOIN, a CTE, a comma join or a derived table - which no static check can judge; see the
+guardrail below). Share the returned `url`.
 
 The metadata args `name`, `tags`, `chart`, `visibility` work as usual; `name` defaults to the
 spec's `title`. Two read-only tools inspect a personal dashboard by slug afterwards:
@@ -332,8 +333,12 @@ or inconsistent.
   additive-declared measure's summed cube total against an independent direct aggregate; if
   they differ it is non-additive or double-counting - fix it (a `ratio` measure, a
   `lattice`/`hybrid` dataset, or pre-aggregate the join). The publish report surfaces this as
-  an **`obligation`** when a cube has an opaque measure over a JOIN/CTE - that is a PROMPT to
-  run this cross-check, never a substitute for it. A required correctness gate, not a nicety.
+  an **`obligation`** whenever a cube is built over MORE THAN ONE ROW SOURCE - a JOIN, a CTE,
+  a comma join, or a derived table - however the measure is written. That is a PROMPT to run
+  this cross-check, never a substitute for it. A required correctness gate, not a nicety.
+  Read the converse carefully: an EMPTY `obligations` means the cube reads one row source, so
+  it cannot fan out. It is NOT a statement that your numbers are right - a non-additive
+  aggregate or a mis-declared measure on a single-source cube is still yours to check.
 - **The spec is inline-only + a `lattice`/`hybrid` is bounded.** No `parquet` in a spec. A
   `lattice`/`hybrid` dimension must declare its bound (`domains` for a category, `buckets` for
   a date); its cell count is about the product of each dimension's (cardinality + 1), so keep

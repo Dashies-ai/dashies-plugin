@@ -170,6 +170,33 @@ Two differences from a personal publish, both deliberate:
   A connection belongs permanently to the space it was created in, so if
   `list_connections` shows nothing usable from inside a workspace, the user has to
   add the warehouse from inside that workspace - you cannot move an existing one.
+- **A workspace connection can only be bound by a dashboard in that SAME workspace - so the
+  publish has to target it, via `workspace:` or a workspace-locked grant - and on a SPEC
+  publish getting that wrong does NOT stop the publish, it ships a dashboard that can never
+  refresh.** (A `body` REpublish is refused before anything is written; a spec publish, and
+  a `body` publish of a brand-new dashboard, both go live first.) Publish a spec
+  whose `source.connection` is a workspace warehouse without passing `workspace`, and
+  everything upstream succeeds: `validate_cube_sql` passes, the seed runs against that very
+  connection, and the dashboard is WRITTEN and live at a real URL. Only the refresh manifest
+  is then refused, leaving a live but permanently STATIC dashboard. The reason the first
+  steps pass is that authoring is scoped to YOU while binding is scoped to the DASHBOARD.
+  **What you read back depends on the publish mode, so match on the meaning and not on a
+  string.** A `spec` publish returns `refresh installation failed` plus a sentence naming
+  the mismatch and the `workspace` argument, and the database's own message is logged
+  server-side rather than shown to you. A `body` + `source_config` publish quotes that
+  message to you verbatim, with the same advice sentence appended.
+  **A refusal on an id `list_connections` just showed you is a SCOPE MISMATCH rather than a
+  wrong id whenever that connection is still ACTIVE:** re-fetching the id returns the same
+  id, so the fix is to publish into the connection's own space (`workspace: "<slug>"`), or
+  to point the spec at a connection created in the space you are publishing into. That is a
+  claim about the CAUSE, not about which message shape you get: the bind can refuse for four
+  reasons - the id is unknown, it is not a warehouse, it is not active, or it is the wrong
+  scope - so once the connection exists, is a warehouse and is active, scope is the only one
+  left. If the message instead says the connection is **not active**, that is a different
+  failure with a different fix - test it in the web app; changing scope will not help.
+  `dry_run` catches
+  neither: it stops before the manifest install, so a clean dry run is not evidence the
+  connection is bindable in the scope you are publishing into.
 
 *(Historical note, because it was true until recently and the refusal text is still
 findable: a spec publish into a workspace used to be rejected with "spec
@@ -386,6 +413,19 @@ or inconsistent.
   shrink cycles there, dropping a whole dataset, three dimensions, half the time window and 35
   of 60 detail rows to fit. If you find yourself deleting real content to make a payload fit,
   that is the signal you are on the wrong path - go back to `spec` rather than shrinking.
+- **A REFUSED spec is a bug report, not a signal to hand-author. Never fall back to a
+  hand-authored `body` because a spec publish was rejected - fix the refusal.** Every
+  rejection is pointered at the exact field or names the exact gate, so the fix is in the
+  spec, the SQL, or the publish arguments (a scope mismatch on the connection is the
+  commonest one - see Step 0). Falling back is the most expensive wrong turn on this path
+  and it is silent: you lose the compiler EMITTING and VALIDATING the richer tiles for you
+  (waterfall, matrix, treemap, heatmap, drilldown - those roles are `data-dash` markup the
+  runtime renders whoever wrote it, so what you give up is the emission and the checking,
+  not the capability) and the publish-time structural validation, you take over
+  hand-maintaining the data island and the manifest the refresh loop rewrites, and the whole
+  dataset moves into your context. That is not hypothetical - it is exactly
+  what one real session did after a single scope refusal, and the shrink spiral described in
+  the bullet above is where it ended up.
 - **You write the SPEC; the server writes the dashboard.** No hand-rolled `data-dash` markup,
   no `#dashies-data` island, no runtime marker, no `source_config` manifest - the compiler
   emits and enforces all of them. A structural fault (a role-less tile, a binding to a column

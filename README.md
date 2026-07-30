@@ -161,7 +161,7 @@ OAuth triggers on first use of any tool below (one browser click).
 | `update_dashboard_version` | Set or clear a snapshot's label (a short name like "Before redesign"). Metadata only; the body is untouched. |
 | `introspect_schema` | Inspect a connected data source's schema while authoring a cube - the built-in `self` metrics view, or a warehouse connection you own. |
 | `validate_cube_sql` | Check a cube's SQL against a connection (`self` or a warehouse you own) before writing it into a spec. |
-| `list_connections` | List the warehouse connections you own - Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks, or Microsoft SQL Server (id, label, engine, status). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
+| `list_connections` | List the warehouse connections you own - Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks, or Microsoft SQL Server (id, label, engine, status, and observed health). Read-only, never returns secrets; warehouses are connected in the Dashies web app. |
 | `get_refresh_status` | Check whether a personal dashboard is refreshing on schedule: cadence, next run, last run, and recent run history. Read-only. |
 | `set_refresh_schedule` | Set a refreshable dashboard's exact cadence: interval, day/hour, and timezone. |
 | `trigger_refresh` | Refresh a dashboard right now instead of waiting for its schedule (paid plans). |

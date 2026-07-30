@@ -89,7 +89,8 @@ Each dataset is one materialization (Steps 1-3 chose its `mode`). Required: `sql
 | `mode` | `cube`\|`lattice`\|`hybrid`\|`rows` | Optional. Omit and the server auto-selects `cube` or `lattice` from the measures + dimensions; declare `rows` or `hybrid` explicitly (they ship row-level bytes). The report's `mode_choices` tells you what each resolved to and why. |
 | `sql` | string (8-100000) | The single read-only cube SELECT from Step 3 (already validated). For `lattice`/`hybrid` it is the `GROUP BY CUBE` lattice. |
 | `rows_sql` | string (8-100000) | REQUIRED for `hybrid` (the row-level slice), forbidden otherwise. |
-| `rows_window` | int (100-8e6) | `rows`/`hybrid` only: bound the inline slice to the first N rows of the windowed statement's ORDER BY (`sql` for `rows`, `rows_sql` for `hybrid`). That top-level ORDER BY is REQUIRED and enforced at publish - see cube.md. Order by time descending for "the most recent N". |
+| `rows_window` | int (100-8e6) | `rows`/`hybrid` only: bound the inline slice to the first N rows of the windowed statement's ORDER BY (`sql` for `rows`, `rows_sql` for `hybrid`). That top-level ORDER BY is REQUIRED and enforced at publish - see cube.md. Order by time descending for "the most recent N". Refused alongside `data: { mode: parquet }` (below). |
+| `data` | `{ mode: inline\|parquet }` | `rows` only. Where that dataset's rows live. Omit for `inline` (the default). `parquet` offloads them to R2 - see **Parquet-backed rows** below. |
 | `dimensions` | map, 1-12 | Each key `^[a-z][a-z0-9_]{0,63}$` = an output column of `sql`. Value: `{ type?, label?, domains?, buckets?, intent? }`. |
 | `measures` | map, 1-24 | Each key `^[a-z][a-z0-9_]{0,63}$` = a measure. Value: an **agg measure** or a **ratio measure** (below). |
 | `intent` | string (<=2000) | Optional semantic hint for this dataset. |
@@ -118,6 +119,20 @@ list: 1-200 unique entries, each a string / number / boolean); a `date` dim may 
   (the compiler maps a cube measure's `count` to a `sum` re-aggregation - it never "counts
   the cells"). This is why `cube.md`'s additive table shows a `count(*)` column
   re-aggregating by `sum`.
+  Optional **`stock: true`** declares that this measure reads a **point-in-time STOCK** -
+  a level measured at an instant (ARR, headcount, a balance, open tickets, inventory on
+  hand) - rather than a per-period **FLOW** that accumulates (new ARR, hires, deposits,
+  tickets opened). Nothing else changes: it does not affect the SQL, the mode, the
+  refresh, or the render. It is the ONE input the server's sum-over-stock check needs,
+  and nothing can infer it - `sum(ending_arr)` and `sum(new_arr)` are identical to any
+  static analysis, so an undeclared stock is invisible. Declare it whenever a measure is
+  a level, and the publish report warns (never blocks) if the cube sums it across the
+  grain. **This is a real, shipped wrong number, not a hypothetical:** a cohort lattice
+  summing `ending_arr_usd` over 24 tenure months reported $596M against a real $36M,
+  because summing a snapshot recounts the same customers in every period. If you want the
+  level, read the latest period or use `max`; if you want a trend, use a per-period
+  `avg`/`min`/`max`; if the sum really is intentional (the rows do not overlap), ignore
+  the warning.
 - **ratio measure** (`ratio` required): `{ num: <measure key>, den: <measure key> }` - a
   ratio of two other declared measures, recomputed correctly under filters (never a stored
   pre-divided average); each side may optionally set `num_scope`/`den_scope: all` to divide
@@ -149,6 +164,87 @@ Separately, on a `combo` tile the SECONDARY measure never carries its own `decim
 known gap, not intended behaviour - treat `decimals` as a hint rather than a guarantee,
 and do not restructure a spec around it. (`scale` is not part of this gap: `fraction` and
 `units` are the identity, so there is nothing for them to emit.)
+
+## Parquet-backed rows (`data: { mode: parquet }`)
+
+The whole dashboard's inline island is capped at **8 MiB / 100k rows**. A `rows` dataset on a
+**warehouse** connection can step out of that shared budget: declare `data: { mode: parquet }`
+and its rows are extracted to a content-addressed Parquet object in R2 on every refresh and
+read back by the runtime with HTTP range reads, contributing **zero** bytes to the island the
+other datasets share.
+
+### Two ceilings - know which one you declare against
+
+> **Parquet does not change what you can declare. It changes where the bytes go and how large
+> the dataset may grow.**
+
+| | rows | bytes | enforced by |
+|---|---|---|---|
+| **Publish / republish** (the SQL you DECLARE) | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`CUBE_VALIDATE_MAX_ROWS`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
+| an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB) |
+| **Refresh** (what the dataset may GROW to) | 50,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
+
+**The publish envelope does not move, and it is not optional.** Every publish seeds the parquet
+dataset's own `sql` exactly like an inline one, because that is what proves the SQL runs on the
+real warehouse and reads the real column types the extractor needs. Note the middle row: the
+row cap is IDENTICAL to inline and the byte cap is 388,608 bytes LOWER, so declaring parquet
+buys you nothing at authoring time. `data: { mode: parquet }` is **not** a way to declare a
+5M-row detail table today - bound the declared statement exactly as you would an inline one (a
+time window, fewer columns, a narrower grain), and expect a hard publish failure if it
+overflows. Making the 50M ceiling declarable is tracked in #797.
+
+What it does buy, all three real - you publish a SMALL dataset that can GROW large on refresh:
+
+- the rows leave the **shared 8 MiB island budget**, so every other dataset gets all of it -
+  this is the composite-model value and usually the reason to reach for it;
+- the dataset may **GROW** past the inline caps between publishes without breaking, since only
+  publish is capped and refresh is not;
+- the runtime **range-reads** the object rather than downloading it whole.
+
+**Use it as the composite model, not as a bigger island.** The pattern this exists for is the
+one Power BI calls a composite model, and Dashies has both halves already:
+
+```yaml
+datasets:
+  summary:                       # the aggregation table: exact under any filter, no engine
+    mode: lattice
+    sql: select month, segment, grouping(month) as __g_month, grouping(segment) as __g_segment,
+         sum(arr) as arr, count(distinct account_id) as accounts from contracts
+         group by cube(month, segment)
+    dimensions: { month: { type: date, buckets: 24 }, segment: { domains: [Enterprise, SMB] } }
+    measures:   { arr: { agg: sum, column: arr }, accounts: { agg: count_distinct, column: account_id } }
+  detail:                        # the drill-through: row-level, offloaded
+    mode: rows
+    data: { mode: parquet }
+    # BOUNDED on purpose. Unbounded account-level detail overflows the 100k-row publish
+    # envelope above and fails the seed - parquet does not exempt the declared statement.
+    sql: select month, segment, account_id, arr from contracts
+         where month >= date_trunc('month', current_date) - interval '11 months'
+    dimensions: { segment: { type: category } }
+    measures:   { arr: { agg: sum, column: arr } }
+```
+
+Most tiles bind to `summary` and resolve from precomputed cells; the detail table binds to
+`detail`. The 2-per-dashboard cap is sized for exactly this shape.
+
+**The rules, each a pointered publish error rather than a surprise:**
+
+| Rule | Why |
+|---|---|
+| `rows` mode only | `cube`/`lattice` have no row-level slice - their cells always ride in the island. A `hybrid` DOES have one, but v4.0 ships it inline; split the detail into its own `rows` dataset. |
+| A **warehouse** `source.connection` | `self` has no offload path (its no-PII view is small by construction). |
+| At most **2** per dashboard | The extract runs them sequentially inside one refresh deadline. |
+| No `rows_window` alongside it | The window bounds the INLINE slice; an extract never passes through it, so a `rows_window` here would be silently ignored and you would get the whole extract. Bound the rows in the SQL instead. |
+
+**The first publish is deliberately empty, and says so.** A parquet dataset has no data until
+its first refresh produces the object, so it publishes with a pending pointer and its tiles
+render "Updating. The first refresh will fill this in." rather than a number. The seed still
+runs - it proves the SQL executes on the real warehouse, checks every binding against the real
+result columns, and reads the real column types the extractor needs - but its rows are **not**
+baked into the island, because at publish they are only that moment's snapshot of a dataset the
+refresh is about to re-extract in full. Baking them would put a partial payload in front of the
+runtime and read as the whole truth for a refresh interval. Trigger a refresh (or wait for the
+schedule) and check `get_refresh_status`; a parquet refresh runs asynchronously.
 
 ## tiles
 

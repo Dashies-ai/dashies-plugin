@@ -218,8 +218,20 @@ bindings must name into that same set. The name-bearing bindings include (not li
 - On a `table`: each key in `data-columns`, the `data-group` dimension, and the author `data-sort` column -> a declared **dimension** / **measure** key (a `data-group` on a missing key silently collapses every row into one bogus "undefined" group).
 
 You hand-write the cube SQL, the manifest declarations, and this markup as three separate things,
-so they drift: a typo or a renamed column leaves a binding pointing at nothing. This is the
-dangerous case because it is **not** guarded like a bad shape is - a wrong *shape* renders an
+so they drift: a typo or a renamed column leaves a binding pointing at nothing.
+
+**The server now REFUSES this at publish, and you should let it.** A refreshable HTML publish
+runs a cross-namespace consistency gate that resolves every binding against the island and the
+executed cube, on the final post-seed bytes and **before any R2 or database write**, so a
+mismatch persists nothing and returns a pointered error naming the binding - for a missing
+measure it says the tile "would render a fake 0 (or an empty tile) that never refreshes - fix
+the binding or declare the measure". **Do not hand-roll your own binding checker; check the
+publish error instead.** Two exemptions, and they are the cases where you are still on your
+own: a **static** dashboard (no `source_config` - there is nothing to cross-check against) and
+a **custom-renderer** dashboard are both skipped by the validator.
+
+What follows is what the runtime does when a bad binding is NOT caught - which is now only the
+two exempt cases above, and is why the gate exists. A wrong *shape* renders an
 honest "unavailable", but a wrong *name* has nothing to resolve against, so the runtime
 **overwrites** the slot with a wrong or empty value: most dangerously a **mis-summed `0`** (a
 metric sums a missing measure key as 0, so a typo'd `data-measure` shows `0` / `$0`), and
@@ -227,9 +239,11 @@ otherwise a bare `-`, an empty control, a table mis-grouped under one "undefined
 honest empty tile for an unknown dataset - but **never the real number, and never a signal that
 the binding failed**. A fabricated `0` is worse than a blank: the author sees a number and assumes
 it resolved; it publishes clean and looks right while the value is silently wrong, which is the
-worst way a dashboard can fail. **Self-check before publishing:** for every binding above, confirm
-the name is declared in that dataset's manifest `dimensions`/`measures`, and that the cube actually
-produces it with `validate_cube_sql`. Read its output columns per mode: for a `cube` / `lattice`
+worst way a dashboard can fail. **Self-check to get the error EARLIER, not because you are
+unprotected:** on a refreshable publish the gate above is the safety net and it fails closed, so
+this is about a faster loop, not about catching what the server misses. For every binding above,
+confirm the name is declared in that dataset's manifest `dimensions`/`measures`, and that the cube
+actually produces it with `validate_cube_sql`. Read its output columns per mode: for a `cube` / `lattice`
 they are the dim keys + measure keys (the SQL aliases each measure to its key), but for a `rows`
 dataset they are the raw selected columns - a dim key (a rows dim must be a real column) and each
 measure's underlying `column`, which can differ from its `key` (measure `customers` over column
@@ -455,6 +469,8 @@ widened aggregate set:
     { "key": "customers",    "label": "Customers",    "agg": "count_distinct",  "column": "customer_id" },
     { "key": "median_order", "label": "Median order", "agg": "percentile_cont", "column": "amount", "percentile": 0.5 }
   ],
+  "domains":    { "region": ["AMER", "EMEA", "APAC"], "plan": ["Free", "Pro", "Enterprise"] },
+  "buckets":    { "month": 12 },
   "format": { "currency": { "code": "USD", "decimals": 0 } }
 }
 ```
@@ -467,6 +483,16 @@ widened aggregate set:
   `count_distinct` / `median` / `percentile_cont` / `percentile_disc` / `stddev` /
   `variance` / `mode` - each is exact per CUBE cell, so there is **no additivity
   requirement**. `column` and `percentile` work exactly as in v2.
+- **`domains` (per category dimension) and `buckets` (per date dimension) are
+  REQUIRED**, and they are what the publish checks the lattice's size against: a
+  category dimension's `domains` is a non-empty array of its values, a date
+  dimension's `buckets` is the max number of buckets (a positive integer). The
+  lattice materializes about `prod(cardinality_i + 1)` cells - one per combination of
+  the dimensions' values, plus each dimension's rolled-up state - and a publish over
+  **50,000** cells is REJECTED, naming the count and the dimension to bound. Omitting
+  them is also rejected: the size cannot be computed without them, and a lattice
+  nobody can measure is not a lattice known to fit. This is the same ceiling, checked
+  the same way, as a v4 `lattice`/`hybrid` dataset.
 - **No `schema`, no `data`** - v3 stores its cells under the island `cube`, like v1.
 - **Inline-only.** v3 is never offloaded to parquet or auto-promoted; keep the
   lattice under the inline cap by bounding dimensions.
@@ -512,7 +538,10 @@ rolled up). Your `data-dash` markup is unchanged from v1 - `metric`, `filter`,
 returned straight into `cube`; they already carry the `__g_<dim>` flags because your
 SELECT projects them. Optionally add a top-level `"domains": { "region":
 ["AMER","EMEA","APAC"], ... }` to fix filter-menu order and membership; otherwise the
-runtime derives each menu from the single-dimension cells.
+runtime derives each menu from the single-dimension cells. This is the ISLAND's
+`domains` and it is a rendering choice, separate from the MANIFEST's required
+`domains`/`buckets` above, which the server reads only to size the lattice - keep them
+consistent, but do not expect one to stand in for the other.
 
 ### Manifest v2 - row-level metrics
 
@@ -602,18 +631,47 @@ materializations.** You author each dataset's SQL exactly as you would a standal
 that mode; v4 just groups them under one connection + schedule and lets each tile pick its
 dataset. A single-metric dashboard is simply a v4 manifest with one dataset.
 
-> **Emit inline-only for now.** Emit `cube`, `lattice`, `hybrid`, and inline `rows`
-> datasets. Do **not** set any dataset's `data.mode` to `"parquet"` - v4's parquet refresh
-> path is not live yet, so a dataset emitted with it would never refresh. That includes
-> `hybrid`, which is **inline-only**: it ships both its lattice and its row-level slice in
-> the island (a `hybrid` + `parquet` publish is rejected). For a large row-level warehouse
-> cube, publish a single-manifest v2 + parquet dashboard (above) instead. Existing v1/v2/v3
-> dashboards keep refreshing on their own contracts unchanged.
+> **Inline is the default; `parquet` is live for one specific case.** Emit `cube`,
+> `lattice`, `hybrid` and inline `rows` datasets by default. **v4's parquet refresh path
+> IS live** (A6 / #510, 2026-07-17): the cron diverts any non-`hybrid` v4 dataset carrying
+> `data.mode: "parquet"` to the extract queue, and the delegate is wired for all five
+> warehouse engines. An earlier version of this note said the path "is not live yet"; that
+> was already wrong when it was written.
+>
+> **Reach for it only for a row-level slice too large to inline, and leave aggregates
+> alone.** `cube` and `lattice` datasets are inline *by design* - the grain compiler
+> precomputes them precisely so the numbers ship as small static bytes, and moving one to
+> parquet trades that away for nothing. A real seven-dataset dashboard had exactly one
+> row-level dataset, so parquet would have cut about 9% of its bytes; if you are reaching
+> for parquet to shrink a lattice, the shape is wrong, not the storage. Constraints:
+> **warehouse-only** (a `self` connection is rejected on any dataset mode), at most
+> **`PARQUET_DATASETS_MAX` = 2** parquet datasets per dashboard, and `hybrid` is still
+> **inline-only** - it ships both its lattice and its row-level slice in the island, and a
+> `hybrid` + `parquet` publish is rejected.
+>
+> **Author it through the SPEC, not by hand (#772).** A spec can now declare
+> `data: { mode: parquet }` on a `rows` dataset, and the compiler emits the island's pending
+> pointer (`{ "mode": "parquet", "url": null }`), the top-level `"reader": "range"`
+> capability tag, and the `_pending` marker for you. On THIS hand-authored path you must emit
+> all three yourself - and omitting the `reader` tag silently caps that dataset at the 128 MiB
+> legacy floor instead of 256 MiB, with no error anywhere. The spec is also deliberately
+> stricter than this path: it accepts parquet on `rows` alone (this path would also let a
+> `cube`/`lattice` divert to an extract whose object nothing reads) and refuses a
+> `rows_window` beside it (inert on an extract). Prefer the spec.
+>
+> **Maturity, stated plainly so you can weigh it:** this path is live and unit-tested with
+> injected deps, but it has **no end-to-end test against a real warehouse** - `parquet`
+> appears in none of the 12 `*.live.test.ts` files. It is not battle-tested, and it is not
+> a reason to avoid it either; the fail-safe is real, because a parquet pointer whose `url`
+> is still `null` renders `_pending` ("Updating") rather than summing an empty payload to a
+> fake 0. Prefer inline when inline fits, and verify the first parquet dashboard you ship.
+>
+> Existing v1/v2/v3 dashboards keep refreshing on their own contracts unchanged.
 
 **The manifest.** Dashboard-level `connection` + `schedule` + `timezone` + `format`
 (one connection, one snapshot per run), then a `datasets` **array** (1..8, ordered, the
 first is the default). Each dataset is a per-mode cube: the field is **`sql`** (not
-`cube_sql`), `mode` is `cube` / `lattice` / `hybrid` / `rows` (inline-only today), and a
+`cube_sql`), `mode` is `cube` / `lattice` / `hybrid` / `rows` (only a `rows` dataset may offload to parquet), and a
 `lattice` **or `hybrid`** dataset must declare `domains` (the value list per category
 dim) + `buckets` (the max bucket count per date dim, e.g. `24` - a number, not a grain
 string). A `hybrid` (like a `rows` dataset) additionally carries `schema` + `data` and a

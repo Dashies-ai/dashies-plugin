@@ -105,12 +105,20 @@ underlying column is a **flow** - a quantity that accrues over the grain and is 
 add up (revenue booked in the period, orders placed, a `count(*)` of events). It is **wrong**
 for a **stock** - a point-in-time level read as-of each period (accounts open, headcount,
 inventory on hand, an account balance, any gauge): summing a stock across periods
-double-counts what merely persisted and yields a meaningless total. Like the
-CTE/subquery-hidden non-additive measure and the fan-out JOIN double-count that
-**"Verify the numbers"** below covers, this is an additivity error the publish gate
-**cannot** catch - `sum(active_accounts)` passes every check and still ships a
-silently-wrong number - so confirm a column is a flow before declaring it a `sum` measure. Carry a stock as a `min` / `max` / period-end value, or model
-it on a `lattice` / `rows` dataset that recomputes the as-of figure under filters.
+double-counts what merely persisted and yields a meaningless total. This is not a
+hypothetical - a cohort lattice summing `ending_arr_usd` over 24 tenure months reported
+$596M against a real $36M, a 16x overstatement that passed every gate.
+
+**Declare it and the server checks it: put `stock: true` on the measure.** No static
+analysis can infer this - `sum(ending_arr)` and `sum(new_arr)` are indistinguishable - so
+the declaration is the only thing that makes the check possible, and an undeclared stock
+stays exactly as invisible as it was. Once declared, a publish that sums it across the
+grain returns a **warning** (never a block, since a latest-snapshot sum can be
+intentional). Carry a stock as a `min` / `max` / period-end value, or model it on a
+`lattice` / `rows` dataset that recomputes the as-of figure under filters. Unlike the
+CTE/subquery-hidden non-additive measure and the fan-out JOIN double-count that **"Verify
+the numbers"** below covers, this one the server WILL catch for you - but only if you
+declare it.
 
 `introspect_schema` on the `self` connection now surfaces this same classification directly:
 each column comes back tagged with a `role` (`dimension` / `flow` / `stock`) plus a short
@@ -233,6 +241,15 @@ separate `rows_sql` with `mode: "rows"`), and `mode: "rows"` blesses any aggrega
 (DuckDB recomputes it from the rows). Omitting `mode` keeps the version-agnostic advisory
 for a single-manifest v1/v2/v3 cube.
 
+If the SQL sums a **stock** column (a level, not a flow - see the flow-vs-stock rule
+above), pass it as `stock_columns` too: `validate_cube_sql({ sql, connection,
+stock_columns: ["ending_arr_usd"] })`. Name the raw **column as it appears inside the
+`sum()`**, not the output alias. You get the sum-over-stock advisory here, at the earliest
+point in authoring, instead of discovering it at publish. This is the validate-surface
+twin of the spec measure's `stock: true`; declare it in **both** places, because
+`stock_columns` checks this one call while `stock: true` is stored in the manifest and
+therefore re-checked on every future republish.
+
 **Confirm categorical values before filtering on them.** Introspection does not
 return the values a column holds, so a `where col = 'X'` with a wrong literal does
 not error - it silently matches nothing and the measure reads zero. Read the real
@@ -329,12 +346,23 @@ checks them too):**
   quoted identifiers** in the CUBE list.
 - **CUBE covers exactly the declared dimensions** - no declared dimension missing, no
   extra column.
+- **Every dimension declares its BOUND** - `domains` (the value list) for a category
+  dimension, `buckets` (the max bucket count) for a date dimension. The publish
+  computes the lattice's size from those declarations and REJECTS a lattice over
+  **50,000** cells, naming the count and the widest dimension; it also rejects a
+  lattice that declares no bounds, because then the size cannot be computed at all.
+  In the spec these are the dimension's own `domains` (its bounded value set) /
+  `buckets` (an integer); hand-authored, they are the manifest's top-level `domains` /
+  `buckets` maps, keyed by dimension (`dashboard.md`).
 
 **4. Validate.** `validate_cube_sql({ sql, connection })` runs it and, because it
 recognizes the `GROUP BY CUBE` + `__g_` shape, blesses the non-additive aggregates
 with a v3 note (not the v2 warning). Confirm `row_count` is the lattice size you
 expect (about `prod(cardinality_i + 1)`) and that it fits inline - v3 has no parquet
-offload, so if the lattice is too big, drop or bound a dimension. Then carry the SQL,
+offload, so if the lattice is too big, drop or bound a dimension. `row_count` is also
+the reality check on the bounds you are about to declare: it is what the source
+actually returns today, while `domains`/`buckets` are what you promise it stays under,
+and the publish budget believes the declaration. Then carry the SQL,
 dimensions, and measures into a `lattice`-mode dataset in the spec (`spec.md`, Step 4) -
 the compiler seeds the island from it, so you never hand-build it. (The same lattice
 shape, as a hand-authored single-manifest v3, is documented in `dashboard.md` for
@@ -514,10 +542,13 @@ Against a big table, keep the cube cheap and let it validate fast:
   raw timestamp in the cube.
 - **For a star schema, aggregate the fact table first, then join the small
   dimension table** and re-aggregate (sums of sums stay exact).
-- **A row-level cube too large to inline uses v2 + parquet** (see `dashboard.md`).
+- **A row-level dataset too large to inline declares `data: { mode: parquet }`**
+  (warehouse only, `rows` mode only; see `spec.md`). Its rows leave the island
+  budget and its ceiling becomes 256 MiB / 50M rows.
 
 If `validate_cube_sql` is slow or times out, the cube is too big or too expensive
-for the inline path - tighten the window, coarsen the grain, or move to v2 + parquet.
+for the inline path - tighten the window, coarsen the grain, or (for a `rows`
+dataset on a warehouse) move it to `data: { mode: parquet }`.
 
 **The inline island has a hard ceiling, and a `hybrid` is the dataset most likely to
 reach it.** A `hybrid` ships its `GROUP BY CUBE` lattice AND a row-level slice inline,

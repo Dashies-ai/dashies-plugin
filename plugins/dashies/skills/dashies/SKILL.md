@@ -90,11 +90,43 @@ dataset whose SQL computes `count(DISTINCT ...)`, `avg`, `median`, `percentile_*
 error, not a silent regression. Validate each dataset's SQL with `validate_cube_sql` passing
 the matching `mode` (`references/cube.md`).
 
-**The spec is inline-only.** Every dataset's data lives in the island; there is no `parquet`
-field in a spec (a dataset too large to inline should bound its grain - coarser buckets,
-top-N a big category, a tighter window). For a genuinely large **warehouse** row-level cube
-that cannot be bounded, use the older **single-manifest v2 + parquet** hand-authored path in
-`references/dashboard.md` (which has a live extractor) rather than the spec. Existing v1/v2/v3
+**Aggregates ride inline; row-level detail can offload to Parquet.** Every `cube` /
+`lattice` / `hybrid` dataset's data lives in the island, which is capped at 8 MiB / 100k rows
+across the WHOLE dashboard - so keep those bounded (coarser buckets, top-N a big category, a
+tighter window). A **`rows` dataset on a warehouse connection** can instead declare
+`data: { mode: parquet }`: its rows are extracted to a Parquet object on each refresh and
+range-read by the runtime instead of inlined.
+
+**Parquet does not change what you can declare. It changes where the bytes go and how large
+the dataset may grow.** Two different ceilings, and only the second one moves:
+
+- **At publish / republish** - the SQL you WRITE must return **<= 100,000 rows and
+  <= 8,000,000 serialized bytes**, because the publish still SEEDS it through the same
+  confined authoring executor `validate_cube_sql` uses (that is what proves the SQL runs and
+  types its columns), and that executor treats an overflow as a hard error, never a silent
+  truncation. That is the SAME row cap as an inline dataset and a marginally TIGHTER byte cap
+  (the inline island allows 8,388,608 - binary 8 MiB - so the executor is 388,608 bytes
+  lower). Declaring parquet buys you nothing here.
+- **At refresh** - the dataset may GROW into 256 MiB / 50M rows, which is where those figures
+  come from.
+
+So `data: { mode: parquet }` is not a way to declare a 5M-row detail table today; bound the
+declared statement exactly as you would an inline one. What it does buy is real and worth
+having - you are publishing a small dataset that can grow large on refresh:
+
+- the dataset's rows leave the **shared 8 MiB island budget**, so every other dataset gets all
+  of it - this is the composite-model value, and usually the reason to reach for it,
+- the dataset can **GROW** past the inline caps between publishes without breaking, since only
+  publish is capped and refresh is not,
+- the runtime **range-reads** the object instead of downloading it whole.
+
+That is the **composite model**, and it is the shape a large report should take: a `lattice`
+serves the aggregates (exact under any filter, MB-scale, no engine), and a Parquet-backed
+`rows` dataset carries the drill-through detail behind it. At most **2** parquet datasets per
+dashboard, which is sized for exactly that. The rules, and the reasons, are in
+`references/spec.md` under `data`.
+
+`self` always stays inline (its no-PII view is small by construction), and existing v1/v2/v3
 dashboards keep refreshing on their own contracts forever, untouched.
 
 ## How this skill is organized
@@ -118,25 +150,31 @@ nothing to re-run, so there is nothing to keep fresh.**
   auto-refresh because no data source is connected. A spec with no connection behind
   it cannot seed, so it cannot publish - an honest static dashboard is the answer.
 
-**The second half of the gate: a spec publishes to a PERSONAL dashboard only.**
-File-format (`spec`) dashboards are personal-only in v1, and the grant your MCP
-connection was authorized with decides this - not a flag you can pass. A connection
-authorized for a **workspace** is refused at publish with:
+**A spec publishes to a personal dashboard OR into a workspace.** Both work. Scope
+comes from the grant your MCP connection was authorized with, plus an optional
+`workspace` argument - exactly the same rule as a `body` publish, so there is
+nothing spec-specific to remember:
 
-> `spec (file-format) dashboards are personal-only in v1; this grant is authorized
-> for a workspace, so it cannot publish a spec. Use a personal grant.`
+- **Personal grant, no `workspace`** -> a personal dashboard at
+  `https://<handle>.dashies.xyz/<slug>`.
+- **`workspace: "<slug>"`, or a workspace-LOCKED grant** -> a team dashboard at
+  `https://<workspace-slug>.dashies.xyz/<slug>`, visible to members. Any member of
+  the workspace may publish and republish it, including one who did not create it.
 
-This is a **prerequisite, not a spec error**: no edit to the YAML fixes it, and no
-`workspace` argument helps (passing one alongside `spec` is itself rejected). If you
-hit it, say so plainly - the user has to authorize a personal connection, which only
-they can do. To publish into a workspace at all today, drop to the hand-authored
-`body` + `source_config` path in `references/dashboard.md`; that path does support
-`workspace`, at the cost of the compile / validate / seed guarantees above.
+Two differences from a personal publish, both deliberate:
 
-Worth checking BEFORE you design a cube, because everything up to the publish call
-succeeds either way: `introspect_schema` and `validate_cube_sql` do not care about
-grant scope, so a workspace grant lets you author a whole dashboard and only learns
-at the last step.
+- A workspace dashboard defaults to **private** (members-only) where a personal one
+  defaults to public. Pass `visibility` explicitly if you want otherwise.
+- The connection behind it must belong to the SAME space. A workspace dashboard
+  refreshes from a workspace connection; a personal one from a personal connection.
+  A connection belongs permanently to the space it was created in, so if
+  `list_connections` shows nothing usable from inside a workspace, the user has to
+  add the warehouse from inside that workspace - you cannot move an existing one.
+
+*(Historical note, because it was true until recently and the refusal text is still
+findable: a spec publish into a workspace used to be rejected with "spec
+(file-format) dashboards are personal-only in v1". That gate is gone. If you ever
+see that string, the deployed server is older than this skill.)*
 
 Two kinds of data source can back a refreshable dashboard:
 
@@ -165,11 +203,26 @@ Two kinds of data source can back a refreshable dashboard:
   otherwise chosen, introspected, and validated exactly the same way.
 
 Use **`list_connections`** to see the warehouse connections the user owns; it
-returns each connection's `id`, label, engine, and status, and never returns
-secrets. Pass that `id` to `introspect_schema` (Step 1) and `validate_cube_sql`
-(Step 3) to design and check the cube against that warehouse, then set the
-spec's `source.connection` to the same `id` when you publish. `self` needs no lookup
-and is not listed.
+returns each connection's `id`, label, engine, status, and **observed health**, and
+never returns secrets. Pass that `id` to `introspect_schema` (Step 1) and
+`validate_cube_sql` (Step 3) to design and check the cube against that warehouse, then
+set the spec's `source.connection` to the same `id` when you publish. `self` needs no
+lookup and is not listed.
+
+**Read `status` and `health_state` as two separate facts.** `status: active` only means
+the connection is configured and enabled - it is what an explicit Test concluded, and
+that Test may be days old. `health_state: failing` means the last refreshes or authoring
+calls Dashies actually made to that warehouse failed at the connection level (a rejected
+credential, a TLS failure, or no usable response), with `health_error` naming which. A
+connection reading `active` + `failing` is a normal combination, not a contradiction.
+
+If the connection you are about to build on reads `health_state: failing`, **say so
+before you start**: the user's credential has probably expired or been rotated, and the
+cube you author will validate against a warehouse that is about to stop answering. This
+is not a hard block - health gates nothing, and `introspect_schema` /
+`validate_cube_sql` will tell you soon enough with a real error - but surfacing it up
+front saves the user a confusing round of authoring against a dead credential. It clears
+by itself on the next successful call.
 
 The gate, then: pick the data source the dashboard's numbers live in. For the
 user's own business data, confirm a warehouse connection exists with
@@ -261,6 +314,17 @@ run the Step-3 manual additivity cross-check (a cube built over more than one ro
 JOIN, a CTE, a comma join or a derived table - which no static check can judge; see the
 guardrail below). Share the returned `url`.
 
+**One `warnings` entry is worth reading closely: a DISPLAYED rolled-up value that disagrees
+with its siblings.** When two datasets compute the same measure with the same aggregate over
+the same column, and their fully-rolled-up values differ, and a tile actually SHOWS the
+differing one, the report says so and gives you four facts per dataset - aggregate, column,
+scope, value. This catches the error a real playtest shipped: a cohort lattice summing a
+point-in-time ARR snapshot across 24 tenure months put $596,348,393 on a KPI card against a
+real $36,384,217. **It is information, not a verdict** - two datasets can legitimately
+disagree, MTD beside YTD being the obvious case - so read the scope fact and decide. You do
+not need to hand-write a cross-dataset total check; this is that check. A tile that reads the
+measure through a dimension is never reported, because a rollup nobody renders is harmless.
+
 The metadata args `name`, `tags`, `chart`, `visibility` work as usual; `name` defaults to the
 spec's `title`. Two read-only tools inspect a personal dashboard by slug afterwards:
 `get_source_config({ slug })` (the compiled manifest) and `get_refresh_status({ slug })` (is
@@ -311,6 +375,17 @@ or inconsistent.
 
 - **Refresh needs a connection.** No connection -> honest static dashboard (`body`, not
   `spec`), not a fake refreshable one.
+- **On the spec path the server carries the data; on the `body` path you carry it.** This is
+  the reason to stay on `spec` even when hand-authoring looks quicker. A spec sends SQL and
+  declarations, and the server runs the query and seeds the rows, so **the data never enters
+  your context at all**. A hand-authored `body` sends the finished HTML with the rows already
+  baked into it, which means those bytes pass through your context twice - once when you read
+  or build the file, once when you send it as the tool argument. So the binding limit on the
+  `body` path is **your own context window, not `MAX_PUBLISH_BYTES`**: the advertised publish
+  ceiling is 5 MB, but a real session hit the wall around 40KB of island and spent seven
+  shrink cycles there, dropping a whole dataset, three dimensions, half the time window and 35
+  of 60 detail rows to fit. If you find yourself deleting real content to make a payload fit,
+  that is the signal you are on the wrong path - go back to `spec` rather than shrinking.
 - **You write the SPEC; the server writes the dashboard.** No hand-rolled `data-dash` markup,
   no `#dashies-data` island, no runtime marker, no `source_config` manifest - the compiler
   emits and enforces all of them. A structural fault (a role-less tile, a binding to a column
@@ -339,12 +414,20 @@ or inconsistent.
   Read the converse carefully: an EMPTY `obligations` means the cube reads one row source, so
   it cannot fan out. It is NOT a statement that your numbers are right - a non-additive
   aggregate or a mis-declared measure on a single-source cube is still yours to check.
-- **The spec is inline-only + a `lattice`/`hybrid` is bounded.** No `parquet` in a spec. A
+- **Every aggregate rides inline, so a `lattice`/`hybrid` must be bounded.** A
   `lattice`/`hybrid` dimension must declare its bound (`domains` for a category, `buckets` for
   a date); its cell count is about the product of each dimension's (cardinality + 1), so keep
   every dimension low-cardinality. If it grows past the inline cap, drop or bound a dimension
-  (`references/cube.md`); for a genuinely large warehouse row-level cube use the legacy
-  single-manifest v2 + parquet path (`references/dashboard.md`).
+  (`references/cube.md`) - a lattice can never offload to Parquet.
+- **Only a `rows` dataset offloads, and only on a warehouse.** `data: { mode: parquet }` is
+  valid on `mode: rows` alone, needs a warehouse `source.connection` (`self` has no offload),
+  and at most 2 per dashboard. Each of those is a pointered publish error, not a surprise:
+  parquet on a `cube`/`lattice`/`hybrid`, parquet on `self`, a third parquet dataset, and
+  `rows_window` alongside parquet (the window bounds the INLINE slice and does nothing to an
+  extract) are all refused at publish. A parquet dataset publishes EMPTY on purpose and its
+  tiles read "Updating" until the first refresh lands the object - the seed proves its SQL and
+  types its columns, but the sample rows are never baked, because a truncated sample shown as
+  the whole truth is the silent-wrong class this format exists to kill.
 - **The cube is public, aggregated bytes.** No PII, no raw rows, no small-cell
   re-identification. (A `rows` dataset ships row-level bytes on purpose - which makes this
   rule stricter there, not looser: every shipped column is world-readable.)

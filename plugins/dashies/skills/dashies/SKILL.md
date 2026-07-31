@@ -136,9 +136,39 @@ edit steps, and the guardrails. The depth for each step lives in a **reference f
 load when you reach that step - do not front-load them all. The map is at the bottom under
 **References**.
 
+**If an argument this skill describes is missing from a tool's schema, start a new
+session.** An MCP client reads each tool's schema once, when the session connects, so a
+newly deployed argument is simply absent from a session that started before it shipped -
+and it is absent silently, as if it had never been built. The arguments most likely to be
+missing are the newest ones: `spec_hash`, `spec_edits` and `echo_rows`, and
+`introspect_schema`'s `tables` filter. Do not conclude from a current session that a
+documented argument does not exist; open a new top-level session and look again.
+
 ---
 
 ## Step 0 - Gate: is there a connected data source?
+
+**Say which connection you are using, before the first call that reads data.** The
+first `introspect_schema` or `validate_cube_sql` is the moment the user's real
+business data starts moving, and from where they sit it is invisible: they have no
+warehouse MCP configured, they see no connection string, and the query does not run
+on their machine. In a real playtest a user watched an agent produce their production
+revenue figures and had no way to tell where the numbers had come from. Alarm was the
+correct reaction to what they could see.
+
+So before that first data call, state in one plain sentence:
+
+- **which connection**, by the label `list_connections` returns and its engine - e.g.
+  "I will read from your `<label>` Snowflake connection"; or "from `self`, the
+  built-in Dashies metrics view, which holds no personal data";
+- **that the SQL runs server-side inside Dashies** against that warehouse, using
+  credentials the user stored in the Dashies web app - not from your machine, and not
+  through anything installed locally.
+
+Say it again if you switch connections mid-session. If the user did not expect to
+have a connection at all, stop and confirm before reading further: an unexpected live
+warehouse is a question to ask, not a convenience to use. This costs one sentence and
+it is the difference between "the tool worked" and "something is reading my data".
 
 **A dashboard can only refresh against a live data source. No connection means
 nothing to re-run, so there is nothing to keep fresh.**
@@ -224,7 +254,7 @@ Two kinds of data source can back a refreshable dashboard:
   examples throughout this skill); a BigQuery connection takes **GoogleSQL**; a
   Snowflake connection takes **Snowflake SQL**; a Redshift connection takes **Redshift
   SQL** (a PostgreSQL dialect); a Databricks connection takes **Databricks SQL** (Spark
-  SQL - lowercase-folding, backtick-quoted identifiers); a SQL Server connection takes **T-SQL** (Transact-SQL - `[bracket]`-quoted identifiers, and it requires a read-only login) - see the dialect table in `references/cube.md`.
+  SQL - case-PRESERVING aliases, backtick-quoted identifiers); a SQL Server connection takes **T-SQL** (Transact-SQL - case-PRESERVING aliases, `[bracket]`-quoted identifiers, and it requires a read-only login) - see the dialect table in `references/cube.md`.
   `list_connections` returns each connection's `engine` (`postgres` / `bigquery` /
   `snowflake` / `redshift` / `databricks` / `mssql`), so you know which dialect to write - the connection is
   otherwise chosen, introspected, and validated exactly the same way.
@@ -318,21 +348,35 @@ dashboard's target; a `spec.slug`, if present, must equal it. Do NOT pass `body`
 `content_type`, or `source_config` with a spec - the compiled dashboard is text/html and its
 manifest is compiled from the spec.
 
-**Dry run first.** Pass `dry_run: true` to run the full compile + validation + a read-only
-SEED of every dataset and get the report back **without writing anything**. Fix any pointered
-error it returns (each names the exact field - e.g. `[semantic] /datasets/main/measures/revenue:
-measure \`revenue\` has no matching output column; the query outputs day, orders`), then
-publish for real.
+**Dry run first, then publish the hash it gives you.** Pass `dry_run: true` to run the full
+compile + validation + a read-only SEED of every dataset and get the report back **without
+writing anything**. Fix any pointered error it returns (each names the exact field - e.g.
+`[semantic] /datasets/main/measures/revenue: measure \`revenue\` has no matching output
+column; the query outputs day, orders`), then publish for real.
+
+The dry run is mandatory. **Sending the document twice is not.** A dry run stores the exact
+document server-side under its `spec_hash` (about an hour), so the real publish names that
+hash instead of carrying a second copy of the YAML. The server compiles, validates and seeds
+it exactly as if you had sent it inline - this saves transmission, never checking.
 
 ```
-# 1. Dry run - compile + validate + seed, no write.
+# 1. Dry run - compile + validate + seed, no write. Returns a spec_hash.
 publish_dashboard({ path: "<slug>", spec: "<the YAML spec>", dry_run: true })
-# -> { ok, published: false, mode_choices, warnings, obligations, bytes, [errors] }
+# -> { ok, published: false, spec_hash, mode_choices, warnings, obligations, bytes, [errors] }
 
-# 2. Fix any errors, then publish.
-publish_dashboard({ path: "<slug>", spec: "<the YAML spec>" })
+# 2a. Clean dry run -> publish THAT document by hash. No spec argument.
+publish_dashboard({ path: "<slug>", spec_hash: "<the hash the dry run returned>" })
 # -> { ok: true, published: true, url, spec_hash, mode_choices, warnings, obligations, bytes }
+
+# 2b. Errors to fix -> send the corrections, not the document (see Step 7's spec_edits),
+#     or re-send the full spec if it is a first publish you are still drafting.
 ```
+
+`spec`, `spec_hash` and `spec_edits` are **mutually exclusive - pass exactly one**. If the
+hash can no longer be resolved (the hour lapsed) the publish is refused naming that, and you
+re-send the document as `spec`; it is a miss, never a wrong publish, because the server
+re-asserts the digest before using the entry. Only re-send the whole document for a first
+publish or a genuine rewrite.
 
 Read the report back in plain words: `mode_choices` tells the user what each dataset resolved
 to and why (e.g. `main -> lattice: a distinct count over low-cardinality dimensions`);
@@ -374,7 +418,7 @@ markup and layout stay byte-for-byte while the displayed numbers update if the s
 since you derived the draft. If the body has recognizable tiles it also returns a ready-to-paste
 `tiles:` block as an optional, deliberate swap onto the managed template. Review the draft, then
 publish it via
-`publish_dashboard({ spec })` to convert the dashboard to spec-backed - from there the loop below
+`publish_dashboard({ path: "<slug>", spec })` to convert the dashboard to spec-backed - from there the loop below
 applies.
 
 To change a published spec dashboard - a new tile, a renamed measure, a different chart -
@@ -383,12 +427,35 @@ edit the spec, never the served HTML:
 1. **`get_dashboard_spec({ slug })`** returns the stored spec **verbatim** (comments,
    formatting, and its `spec_hash` intact). That is your starting point - do not reconstruct
    it from memory.
-2. Change the one field the user asked for.
-3. Republish to the **same `path`** with `base_spec_hash` set to the hash you just read:
-   `publish_dashboard({ path: "<slug>", spec: "<edited>", base_spec_hash: "<hash>" })`. The
-   `base_spec_hash` is a lost-update guard: if the stored spec changed since you read it (a
-   concurrent edit), the publish is rejected with `spec_conflict` and the live dashboard is
-   left untouched - re-fetch with `get_dashboard_spec` and re-apply.
+2. **Send the CHANGE, not the document.** Republish to the **same `path`** with `spec_edits`
+   plus `base_spec_hash` set to the hash you just read:
+
+   ```
+   publish_dashboard({
+     path: "<slug>",
+     base_spec_hash: "<hash from get_dashboard_spec>",
+     spec_edits: [{ old_string: "<the exact span to replace>", new_string: "<the replacement>" }],
+   })
+   ```
+
+   Each edit is an **exact-string replacement** against the stored text, applied in order,
+   exactly like a text editor - so comments, ordering and formatting everywhere else survive
+   byte-for-byte. `old_string` must match the stored text EXACTLY, indentation included, so
+   copy the span verbatim out of what `get_dashboard_spec` returned rather than retyping it.
+   If it is **not found**, or found **more than once** without `replace_all: true`, the whole
+   publish is refused and nothing is written - widen `old_string` with surrounding lines to
+   make the match unique rather than retrying blind. (`replace_all: true` exists for a rename
+   that genuinely should apply throughout; prefer a longer unique `old_string`.)
+
+`base_spec_hash` is doing two jobs here: it **names the document** the edits apply to, and it
+is the lost-update guard - if the stored spec changed since you read it (a concurrent edit),
+the publish is rejected with `spec_conflict` and the live dashboard is left untouched, so you
+re-fetch with `get_dashboard_spec` and re-apply. It is REQUIRED with `spec_edits`.
+
+Reserve the full `spec` argument for a first publish or a genuine rewrite; a one-line
+correction that re-sends a 45-tile document costs roughly a hundred times what the edit does.
+If you do send a full edited `spec`, still pass `base_spec_hash` - it remains the lost-update
+guard on that path too.
 
 Every edit re-seeds and re-validates, so an edit that would break a binding is a pointered
 error, not a broken live dashboard. **Renaming the slug is `update_dashboard`'s job** (it
@@ -402,10 +469,18 @@ or inconsistent.
 
 - **Refresh needs a connection.** No connection -> honest static dashboard (`body`, not
   `spec`), not a fake refreshable one.
-- **On the spec path the server carries the data; on the `body` path you carry it.** This is
-  the reason to stay on `spec` even when hand-authoring looks quicker. A spec sends SQL and
+- **On the spec path the server carries the data; on the `body` path you carry it. The
+  DOCUMENT is still yours either way - do not re-send it.** A spec sends SQL and
   declarations, and the server runs the query and seeds the rows, so **the data never enters
-  your context at all**. A hand-authored `body` sends the finished HTML with the rows already
+  your context at all**. That is the reason to stay on `spec` even when hand-authoring looks
+  quicker. But it says nothing about the spec document itself, which is the thing an authoring
+  session actually re-transmits: a 45-tile spec is around 28,500 characters, and a session
+  doing two dry runs plus four corrections used to put roughly 171,000 characters of it on the
+  wire. Publish by `spec_hash` after a dry run, and correct with `spec_edits` (Step 7); the
+  same six calls then cost about 29,600. Every one of those calls compiles, validates and
+  seeds identically - what you drop is transmission, not checking. **Re-sending a whole spec
+  to change one line is the single most common waste on this path.**
+  A hand-authored `body` sends the finished HTML with the rows already
   baked into it, which means those bytes pass through your context twice - once when you read
   or build the file, once when you send it as the tool argument. So the binding limit on the
   `body` path is **your own context window, not `MAX_PUBLISH_BYTES`**: the advertised publish
@@ -430,7 +505,8 @@ or inconsistent.
   no `#dashies-data` island, no runtime marker, no `source_config` manifest - the compiler
   emits and enforces all of them. A structural fault (a role-less tile, a binding to a column
   the SQL never returns, an unknown key) is a pointered publish error, not a rendering
-  surprise. Always **dry-run first** and fix the pointered errors before publishing.
+  surprise. Always **dry-run first** and fix the pointered errors before publishing - then
+  publish the `spec_hash` the dry run returned rather than sending the document again.
 - **Additivity is correctness, not style - and it is enforced.** A `cube` dataset rejects SQL
   that computes `count(DISTINCT ...)`, `avg`, `median`, percentiles, `stddev`, `variance`, or
   `mode()`, and a `cube` measure declared with a non-additive `agg` is a schema error;

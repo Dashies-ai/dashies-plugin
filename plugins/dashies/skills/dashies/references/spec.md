@@ -778,9 +778,13 @@ off and get an advisory plus the runtime's own refusal as the backstop.
 
 ## Publish + edit
 
-Once the spec is written, go to Step 6 (dry-run then publish) in `SKILL.md`. To CHANGE a
+Once the spec is written, go to Step 6 in `SKILL.md`: dry-run the document, then publish the
+`spec_hash` that dry run returned rather than sending the same YAML a second time. To CHANGE a
 published dashboard later, Step 7: `get_dashboard_spec` reads the stored spec back verbatim,
-you edit one field, and republish the same `path` with `base_spec_hash` (the lost-update
-guard). You never hand-edit the served HTML. If the dashboard has no stored spec yet, Step 7
+and you republish the same `path` with `spec_edits` (exact-string replacements against the
+stored text) plus `base_spec_hash` - which both names the document being edited and is the
+lost-update guard. Send the change, not the document; reserve a full `spec` for a first
+publish or a genuine rewrite. `spec`, `spec_hash` and `spec_edits` are mutually exclusive.
+You never hand-edit the served HTML. If the dashboard has no stored spec yet, Step 7
 also covers `derive_dashboard_spec`, which reconstructs one from an existing refreshable
 dashboard.

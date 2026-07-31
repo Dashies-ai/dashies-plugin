@@ -25,6 +25,15 @@ confirm the real cube later with `validate_cube_sql`. Look for:
 - **Sensitive columns** - anything personal or secret, to aggregate away (the cube
   ships in public bytes; see below).
 
+**On a real warehouse this is the largest result in the whole authoring flow, so
+narrow it.** Pass `tables` to filter: `introspect_schema({ connection, tables:
+["sales"] })`. One filter term matches any part of the fully-qualified name, so the
+same argument serves as a database, schema, or table filter (`["analytics."]` scopes
+to a schema, `["orders", "customers"]` picks two tables). Use it whenever you already
+know roughly what you are building against; take the unfiltered listing only when you
+genuinely need to discover what is there, and on a wide warehouse consider one broad
+call to see the shape followed by filtered calls for the columns you actually need.
+
 ## Design the cube (the load-bearing step)
 
 The cube is one row per combination of the dimensions, with the measures already
@@ -253,7 +262,28 @@ therefore re-checked on every future republish.
 **Confirm categorical values before filtering on them.** Introspection does not
 return the values a column holds, so a `where col = 'X'` with a wrong literal does
 not error - it silently matches nothing and the measure reads zero. Read the real
-values off a `select col, count(*) from t group by 1 order by 2 desc` first.
+values off a `select col, count(*) as n from t group by 1 order by 2 desc limit 50`
+first - bound it, per the next rule.
+
+**Bound every probe, and turn the row echo OFF when you do not need it.** The rows
+`validate_cube_sql` echoes back are by far the largest part of its result, and the
+echo is capped at 200 rows OR about 8 KB of serialized JSON, **whichever binds
+first**. So a wide probe returns FEWER rows than a narrow one for the same context
+cost, and neither tells you anything the `row_count` field did not. Two habits:
+
+- **Put a `LIMIT` (or `TOP`, on SQL Server) on an exploratory probe.** Anything you
+  are running to *look* at - distinct values of a column, a sample of a table, a
+  ranking - should be bounded at the source. A cardinality check does not need every
+  row: `select count(distinct region) as n from t` answers it in one.
+- **Pass `echo_rows: 0` whenever you only need the column shape, the exact
+  `row_count` and the advisories.** You still get every warning and the size
+  recommendation; you just do not get the sample. This is the DEFAULT for validating
+  a **spec dataset**, because the server re-runs this same SQL at publish to seed the
+  island - the rows are dead weight in your context, and you would never paste them
+  anywhere. Use the sample only when you genuinely need to eyeball values: a first
+  look at an unfamiliar table, a suspicious measure, a categorical spot-check.
+  `echo_rows` can only make the result smaller (it is capped at the server row limit,
+  and the byte budget still applies on top), so it is never a way to get MORE back.
 
 ### Verify the numbers - `validate_cube_sql` proves it RUNS, not that it is CORRECT
 
@@ -266,12 +296,16 @@ plausible WRONG number - the worst failure a dashboard can have. You wrote the S
 the dialect context to catch them: **verify the numbers against an independent query before
 publishing.**
 
-- **Additivity, per additive-declared measure.** Sum the measure across the cells
-  `validate_cube_sql` returned, and compare that to an **independent direct aggregate** computed a
+- **Additivity, per additive-declared measure.** Sum the measure across the cube's cells and
+  compare that to an **independent direct aggregate** computed a
   different way - `select sum(<measure_expr>) from <base_table>` over the **single un-joined base
   source** (the base table's own `sum` / `count`, NOT the cube's joined `FROM` - a join there
   reproduces the very double-count you are checking for), ungrouped or over one filter slice, and
-  run that check through `validate_cube_sql` too. If the two DIFFER, the measure is **not additive**
+  run that check through `validate_cube_sql` too. Neither leg needs the row echo: get the cube's
+  total by wrapping it - `select sum(<measure>) as total from (<your cube sql>) c` - so both sides
+  come back as one row and you can run the whole cross-check with `echo_rows: 0`. Summing the
+  echoed cells by hand works too, but it makes you carry every cell to compute one number.
+  If the two DIFFER, the measure is **not additive**
   (a hidden ratio / distinct / average): move it to a `num` / `den` ratio, or to a `lattice` /
   `hybrid` dataset that recomputes it exactly. Agreement across a couple of slices is strong
   evidence the re-summing a `cube` does is sound.
@@ -404,25 +438,49 @@ it). Everything above is engine-independent; only the syntax changes. Author aga
 - **`introspect_schema` reports no row estimate.** See "Large warehouse tables" below
   for the count-it-yourself fallback.
 
-**Snowflake gotcha:** an unquoted output alias folds to UPPERCASE (`as orders` ->
-`ORDERS`), and the runtime binds keys case-sensitively, so the dashboard renders
-blank on its first refresh. Quote every alias to the exact manifest key -
-`sum(amount) as "revenue"` - or keep every manifest key uppercase.
+**Alias letter-case, on every engine.** Engines disagree about what an *unquoted*
+output alias comes back as: Snowflake folds it UPPER (`as orders` -> `ORDERS`),
+Postgres and Redshift fold it lower, and BigQuery, Databricks and SQL Server preserve
+it exactly as written. **A case-only difference between the alias and the declared key
+is handled for you** - publish and refresh both canonicalize a result column back to
+the declared key when the two match apart from letter case, and the runtime normalizes
+island keys when it parses them. So `sum(amount) as revenue` against a measure declared
+`revenue` is correct on all six engines; you do not need to quote the alias to defend
+the case, and you should not keep a set of UPPERCASE manifest keys just to please
+Snowflake.
+
+What is NOT forgiven is **two output columns that differ only by case landing on one
+declared key** (`revenue` and `REVENUE` in the same SELECT). That is refused loudly,
+naming both, at publish and at refresh - alias exactly one of them to the declared key.
+Quote an alias when the name itself needs it (a reserved word, a space, punctuation),
+using the engine's quote character: `"..."` on Postgres / Snowflake / Redshift,
+backticks on BigQuery / Databricks, `[...]` on SQL Server. One caveat if you are on
+**Redshift**: what an alias comes back as depends on two cluster parameters, not on how
+you write it. At the defaults, quoting preserves nothing (AWS folds *delimited*
+identifiers to lowercase too), but `enable_case_sensitive_identifier = true` makes a
+quoted identifier keep its case, and `describe_field_name_in_uppercase = on` returns
+every column name UPPERCASE regardless of how it is stored. Neither is exotic - AWS
+recommends the first for materialized-view autorefresh and row-level security. Rather
+than guessing which way a given cluster is set, run
+`validate_cube_sql({ sql: 'select 1 as MixedCase, 2 as "MixedQuoted"', connection })`
+once and read the column names back; that answers both parameters in one call.
+
+*(Historical: before PR #913 the refresh stored the engine's own casing verbatim, and a
+Snowflake dashboard's first scheduled refresh could report success over a blank page.
+That is fixed; the alias-quoting drill it used to require is no longer needed.)*
 
 **Redshift** is a PostgreSQL dialect, so the PostgreSQL column applies almost
-verbatim. Like Postgres it folds an unquoted alias to **lowercase** (the opposite of
-Snowflake), so keep manifest keys lowercase or quote the alias to the exact case; use
-`to_char(ts, 'YYYY-MM-DD')` or `date_trunc('month', ts)::date` for a text/date
-dimension.
+verbatim; use `to_char(ts, 'YYYY-MM-DD')` or `date_trunc('month', ts)::date` for a
+text/date dimension.
 
 **Databricks** takes **Databricks SQL** (Spark SQL) - a distinct dialect, not a
 PostgreSQL one. Table references are backtick-quoted and three-level
 `` `catalog`.`schema`.`table` `` (the built-in `samples` catalog -
 `samples.nyctaxi.trips`, `samples.tpch.*` - is handy for a demo with no seed table).
-Like Postgres/Redshift it folds an **unquoted** output alias to **lowercase**, but the
-quote character is a **backtick**: quote every alias to the exact manifest key -
-`` sum(amount) as `revenue` `` - or keep every manifest key lowercase, or the dashboard
-renders blank on its first refresh. Bucket a date with `date_trunc('MONTH', ts)` or
+Unlike Postgres/Redshift it does NOT fold an unquoted output alias - Databricks
+PRESERVES the alias as written, so `sum(amount) as revenue` comes back `revenue`. Its
+quote character is a **backtick**, needed only when the name itself is not a bare
+identifier. Bucket a date with `date_trunc('MONTH', ts)` or
 `date_format(ts, 'yyyy-MM')`; a relative window is `current_timestamp() - interval 12 months`;
 a conditional count is `count_if(c)`. A `TIMESTAMP` value arrives in the data island as an
 ISO-8601 UTC string (`2024-01-15T10:30:00.123Z`, `T`-separated with a trailing `Z`), so
@@ -433,10 +491,10 @@ first query after an auto-stop, so a **2X-Small serverless warehouse with a shor
 keeps scheduled refresh cheap.
 
 **Microsoft SQL Server** takes **T-SQL** (Transact-SQL) - not a PostgreSQL dialect.
-Table references are `[bracket]`-quoted (`[dbo].[orders]`). SQL Server is
-**collation-sensitive** on identifier case, so the safe rule is to **keep every manifest
-key lowercase AND quote each output alias with brackets to that exact key** -
-`sum(amount) as [revenue]` - or the dashboard renders blank on its first refresh. A few
+Table references are `[bracket]`-quoted (`[dbo].[orders]`). SQL Server PRESERVES an
+output alias as written - `sum(amount) as revenue` comes back `revenue`, measured on a
+case-INSENSITIVE collation, because collation governs whether two names may coexist,
+not whether one gets rewritten. Use brackets when the name itself needs them. A few
 type traps the data-island reader forces:
 - **Cast `GROUPING()` flags and any `tinyint` measure to a wider int.** A `GROUPING(x)`
   flag and a `tinyint` column are read as a 1-byte value that is NOT `int2`, and a

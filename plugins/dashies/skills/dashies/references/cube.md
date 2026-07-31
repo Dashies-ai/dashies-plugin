@@ -11,6 +11,14 @@ cannot express - see `dashboard.md`.)
 
 ## Introspect first
 
+> **You should already have run the hierarchy in SKILL.md, "Before Step 0".** If the
+> user has a semantic layer, the metric DEFINITIONS come from there and not from
+> anything you infer off a column list here. If they have warehouse or dbt tooling,
+> the exploring below belongs in THAT tooling - schema, cardinalities, domain values,
+> lineage - and you come back to Dashies with a finished statement. If neither is
+> reachable, you ASK before exploring through Dashies. Everything in this file assumes
+> that question has already been answered.
+
 Call `introspect_schema({ connection })` (defaults to `self`; pass a warehouse
 connection `id` from `list_connections` for your own data) to see the tables,
 columns, and types. It reports column names and types - and, for a warehouse
@@ -263,7 +271,18 @@ therefore re-checked on every future republish.
 return the values a column holds, so a `where col = 'X'` with a wrong literal does
 not error - it silently matches nothing and the measure reads zero. Read the real
 values off a `select col, count(*) as n from t group by 1 order by 2 desc limit 50`
-first - bound it, per the next rule.
+first - **in the user's own warehouse tooling if they have any** (SKILL.md rule 3);
+only run it through `validate_cube_sql` when Dashies is the agreed path, and bound
+it, per the next rule.
+
+**The probe above gets a note too, and a quiet response is still not approval.**
+`validate_cube_sql` flags both exploratory shapes: a statement with no `GROUP BY` (a bare
+`count(*)`, a `select distinct`, a plain SELECT), and a **grouped count probe** exactly
+like the one above - a column or two, only counting aggregates, and a small `LIMIT`. It
+runs the SQL and returns the rows either way; the note only says where the question
+belonged. It remains a heuristic over SQL text, so a probe it does not match is not a
+probe it approves: silence means the shape did not match, never that the call was the
+right place to ask. The judgement stays yours.
 
 **Bound every probe, and turn the row echo OFF when you do not need it.** The rows
 `validate_cube_sql` echoes back are by far the largest part of its result, and the

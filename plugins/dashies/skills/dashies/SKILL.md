@@ -12,7 +12,11 @@ description: >-
   YAML document of datasets + tiles + a source) that you pass to publish_dashboard's
   `spec` argument; the server compiles it into the HTML + data island + refresh
   manifest, validates it (a structurally broken or silently wrong spec is rejected
-  with a pointered error, not a rendering surprise), and seeds it live. It covers the
+  with a pointered error, not a rendering surprise), and seeds it live. It carries the
+  rule that Dashies does NOT own the semantics: look at the user's own tooling first,
+  take metric definitions from their semantic layer (dbt, Cube, LookML) when one
+  exists, explore in their warehouse tooling rather than through Dashies, ask before
+  falling back, and record each definition's provenance in the spec. It covers the
   gate (a refreshable dashboard needs a connected data source), cube design
   (low-cardinality grain, additive vs non-additive measures), filling the spec, the
   four dataset modes (cube / lattice / hybrid / rows), publishing with a dry run, and
@@ -143,6 +147,128 @@ and it is absent silently, as if it had never been built. The arguments most lik
 missing are the newest ones: `spec_hash`, `spec_edits` and `echo_rows`, and
 `introspect_schema`'s `tables` filter. Do not conclude from a current session that a
 documented argument does not exist; open a new top-level session and look again.
+
+---
+
+## Before Step 0 - Dashies does not own your data or your metric definitions
+
+**Dashies keeps a dashboard fresh, versioned and shareable. It does not decide what a
+metric means.** If the company defines MRR in a dbt semantic layer, that definition is
+their tested, reviewed, versioned statement of what MRR is. A cube you hand-roll against
+physical tables bypasses all of it - and when the published dashboard then disagrees with
+the number they already trust, that is **Dashies' fault**, not theirs. Their own BI will
+not be the thing that looks wrong.
+
+**Only you can apply this.** The Dashies MCP sees a connection and nothing else. *You*
+see your own tool list, so you are the only one who can tell whether this session has dbt,
+a warehouse MCP, a metrics catalog, or a SQL client. The hierarchy below is therefore
+yours to run, and running it is not optional.
+
+### 1. Look first, and say what you found
+
+Before any call that reads data - Dashies' or anyone else's - check what data tooling this
+session actually has, and **name it to the user in one sentence**. Look for:
+
+- a **semantic / metrics layer**: `mcp__dbt__*` or a dbt CLI (`dbt ls --resource-type
+  metric`), a Cube / MetricFlow / LookML / Malloy surface, a metrics catalog;
+- **warehouse tooling**: a Snowflake / BigQuery / Databricks / Postgres MCP, a `snow` /
+  `bq` / `psql` client, a query IDE integration;
+- **the repo you are sitting in**: `dbt_project.yml`, a `models/` or `metrics/` or
+  `semantic_models/` tree, a model that already computes the metric being asked for.
+
+Name what you found *and* what you did not: "you have a dbt MCP and a Snowflake MCP - I
+will take the metric definitions from dbt and explore in Snowflake" is the sentence. This
+is a **different** sentence from Step 0's "which connection am I reading from" disclosure,
+and you owe the user both: one says whose *definitions* you are using, the other says
+whose *warehouse* is being read and by whom.
+
+### 2. If a semantic layer exists, the metric DEFINITIONS come from there
+
+Do **not** re-derive MRR, ARR, NRR, retention, churn, active users, or any other named
+business metric from raw tables when the user's semantic layer already defines it. Read
+the metric, use its definition, and **prefer its own SQL** where you can get it (dbt's
+compiled SQL, a MetricFlow query, the model the metric is built on). Where you cannot get
+the SQL, follow the definition's logic - its filters, its grain, its exclusions, its date
+spine - instead of inventing your own.
+
+Two definitions of one metric that quietly disagree is the whole failure this rule exists
+to prevent, and the user finds it by comparing your dashboard against a number they
+already trust.
+
+**A semantic layer that does not define the metric you were asked for is the normal case,
+not an exemption.** Check it per metric, not once per session: take every metric it does
+define from it, and for the ones it does not, drop to rule 3 and mark them in the spec as
+authored-here (provenance case 2). A dashboard whose measures come from two places is
+fine. A dashboard that silently re-derives a metric the layer already defined is not.
+
+### 3. Tooling but no semantic layer -> EXPLORE there, not through Dashies
+
+Row counts, cardinalities, domain values, table sizes, lineage, "what is actually in this
+column" - that belongs in the user's own tooling. It is faster, it is not capped, they can
+see what you ran, and it does not route their business data through a publishing service
+to answer a question that has nothing to do with publishing.
+
+`validate_cube_sql` will run a bare `count(*)` for you, and it will run
+`select region, count(*) from orders group by 1 limit 50` too. That either one *answers*
+is not a reason to ask it - the tool is named a validator and behaves as a general query
+engine, which is exactly what makes it the lazy default. It now says so itself on both
+shapes: a statement with no `GROUP BY`, and a grouped count probe (a column or two, only
+counting aggregates, a small `LIMIT`). The note never blocks anything, and silence on some
+other shape is not approval of it.
+
+### 4. Dashies' connection is for ONE thing, and you must still use it for that
+
+`validate_cube_sql` **stays in the loop.** It is the only place that can prove the
+statement you are about to publish survives the refresh executor's caps, confinement and
+timeout - the executor that will run it unattended, forever, with nobody watching. No
+warehouse tool can check that, because no warehouse tool runs inside that executor.
+`introspect_schema` is the same kind of fact: what Dashies can *see*, which is not a
+question the warehouse can answer about itself.
+
+So: explore elsewhere, then bring the **finished statement** here and validate it. Rules
+1-3 move the exploration, they do not remove this step.
+
+### 5. No usable EXPLORATION tooling -> say so and ASK. There is no silent default
+
+This is real, not hypothetical: a user's own Snowflake MCP was access-denied on a trial
+account (`399504`), leaving Dashies' connection as the only path that answered.
+
+The trigger is **the absence of somewhere to explore**, and it does not depend on whether
+a semantic layer exists. A layer answers *what a metric means*; it does not tell you what
+values a column holds or how big a table is. So if rule 3 has nowhere to run - no
+warehouse tooling at all, **or a tool that exists but errors, denies access, times out, or
+returns nothing** - you are in this rule even when rule 2 gave you perfectly good
+definitions.
+
+**What needs the ask, precisely:** the exploratory reads - column values, row counts,
+samples, "how big is this". Rule 4's two calls are NOT this and never need it:
+`introspect_schema` reports Dashies' own catalog view (names and types, no data rows), and
+`validate_cube_sql` on a finished statement is the check nothing else can do. Step 0's
+disclosure sentence still applies to both.
+
+Stop and put it to the user before that first exploratory read:
+
+1. what you looked for, naming the tools;
+2. what you found and what failed, naming the error;
+3. that the remaining path is to explore through Dashies' own connection, which runs
+   server-side against their warehouse;
+4. and that a metric you define this way is **yours, not their company's** - if a
+   definition already exists somewhere else, it wins, and your numbers are the ones that
+   will turn out to be wrong.
+
+Then **wait for an answer**. Falling back because Dashies was the only thing that
+responded is precisely the outcome this section exists to prevent, and "the user did not
+object" is not agreement - they were never asked. If they say go ahead, that is a real
+choice and you proceed; record it under rule 6.
+
+### 6. Write down where each definition came from
+
+A claim that Dashies did not invent the number is worth nothing unless a later reader can
+check it. So record the provenance of every measure in the spec itself, using the `intent`
+annotation that already exists on measures, datasets and the dashboard - no new field, and
+it round-trips verbatim through `get_dashboard_spec`. The convention, with examples for
+all three cases (a semantic-layer metric, a warehouse-derived measure, and one you defined
+yourself after asking), is in **`references/spec.md`** under **Provenance**.
 
 ---
 
@@ -569,7 +695,7 @@ Load the one you need for the step you are on; do not front-load them all.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/cube.md` | Introspection; cube grain, low-cardinality dimensions, timezone bucketing, sensitivity, additive-vs-non-additive measures; the read-only `SELECT`, `validate_cube_sql`, the PostgreSQL / GoogleSQL / Snowflake / Redshift / Databricks / SQL Server dialects, large-warehouse guidance, the v3 `GROUP BY CUBE` grain-compiler SQL, and the `hybrid` lattice-plus-`rows_sql` shape (and when multi-value filters need it) | Steps 1-3 |
-| `references/spec.md` | The Dashies spec: the house YAML rules, the full field tables (top level, `source`, `datasets` + the four modes, `dimensions`, `measures` with agg/ratio + per-mode allowlists, `unit`, the eighteen `tiles` types incl. the `waterfall` / `funnel` sequence objects, the `scatter` / `treemap` objects, the `matrix` pivot, the `heatmap`, the `drilldown` breakdown, and the `stacked` / `combo` charts, `layout`, `theme`), the schema URL, and the two escape hatches (a `custom` tile; the whole-look `look` field) | Step 4 |
+| `references/spec.md` | The Dashies spec: the house YAML rules, the full field tables (top level, `source`, `datasets` + the four modes, `dimensions`, `measures` with agg/ratio + per-mode allowlists, `unit`, the eighteen `tiles` types incl. the `waterfall` / `funnel` sequence objects, the `scatter` / `treemap` objects, the `matrix` pivot, the `heatmap`, the `drilldown` breakdown, and the `stacked` / `combo` charts, `layout`, `theme`), **Provenance** (recording where each measure's definition came from, via `intent`), the schema URL, and the two escape hatches (a `custom` tile; the whole-look `look` field) | Step 4 / rule 6 |
 | `references/dashboard.md` | The escape hatches + the legacy hand-authored path (marked fallback): the self-contained HTML + `data-dash` bindings, the data island shape + serve-time runtime marker + sandbox CSP for a `custom` tile / custom renderer, and the single-manifest `source_config` (v1 / v3 / v2 incl. the placeholder + parquet flow) for the `body`+`source_config` publish you drop to only when the spec cannot express the dashboard | Escape hatches; legacy |
 
 The references carry the condensed contract you need to author a dashboard; the full

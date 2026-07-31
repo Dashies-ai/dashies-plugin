@@ -63,7 +63,7 @@ and `layout` (a look-mode body owns its own styling and markup).
 | `title` | string (1-120) | The dashboard name (also the default display name). |
 | `slug` | kebab-case, `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` (1-64 chars, alphanumeric first + last) | Optional; must equal the publish path slug when set. |
 | `description` | string (<=4000) | Optional prose shown in the header. |
-| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` annotation is accepted on a dataset (<=2000), a dimension, a measure, and every tile (<=1000 there). |
+| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` annotation is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
 | `source` | object | The one connection + schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared = the default. |
 | `tiles` | array, 1-64 | The tiles, in document order (below). Mutually exclusive with `look`. |
@@ -164,6 +164,64 @@ Separately, on a `combo` tile the SECONDARY measure never carries its own `decim
 known gap, not intended behaviour - treat `decimals` as a hint rather than a guarantee,
 and do not restructure a spec around it. (`scale` is not part of this gap: `fraction` and
 `units` are the identity, so there is nothing for them to emit.)
+
+## Provenance - say where each definition came from
+
+**Dashies keeps a dashboard fresh, versioned and shareable; it does not decide what a
+metric means** (SKILL.md, "Before Step 0"). That claim is only worth something if a later
+reader can CHECK it - open the spec and see that the number traces back to the company's
+own definition rather than to something an AI invented one afternoon. So record where each
+measure's definition came from, in the spec.
+
+**Use `intent`. There is no separate provenance key and you should not want one.** The
+spec's schema is `additionalProperties: false` everywhere, so an invented key is an `[L2]`
+publish error, and `intent` is exactly the sanctioned slot: free text, "guidance for
+tooling, not shown to viewers", already accepted on the dashboard root, every dataset,
+every dimension, every measure and every tile. It is stored **verbatim** as part of the
+spec bytes, so `get_dashboard_spec` hands it back unchanged and an editor sees it before
+touching the measure. Nothing renders it to a viewer, so it costs the dashboard nothing.
+
+**Limits, which differ by level:** root and dataset `intent` are **<=2000** chars; a
+**dimension, a measure and a tile are <=1000 each**. Provenance goes on the measure, so
+budget against 1000 - a citation and a sentence, not a pasted model file.
+
+Three cases, and write the one that is true:
+
+```yaml
+measures:
+  # 1. It came from a semantic layer -> name the layer, the metric, and how to re-derive it.
+  mrr:
+    agg: sum
+    intent: >-
+      dbt semantic layer, metric `mrr` (models/marts/metrics.yml). Definition taken from
+      dbt, not re-derived: active paid subscriptions only, excludes internal accounts,
+      monthly grain on subscription_start. Re-derive with `dbt ls --resource-type metric`.
+  # 2. Derived from warehouse tables with no semantic layer to defer to -> say that plainly.
+  refund_amount:
+    agg: sum
+    intent: >-
+      Derived from analytics.fct_refunds; no semantic-layer definition exists for refunds.
+      Authored for this dashboard, so it is NOT a company-agreed definition - if one is
+      added later it wins over this.
+  # 3. No tooling was reachable and the user chose the Dashies connection -> record the ask.
+  active_users:
+    agg: count_distinct
+    intent: >-
+      No dbt or warehouse tooling reachable in the authoring session (Snowflake MCP was
+      access-denied); user asked and confirmed to proceed against the Dashies connection.
+      Defined here as distinct user_id with an event in the period. Unverified against any
+      company definition.
+```
+
+The dashboard-level `intent` is the right place for the one-line summary of the same fact
+("metric definitions taken from the dbt semantic layer; no measure re-derived from raw
+tables"), so a reader gets the posture without reading every measure.
+
+Case 3's wording is the load-bearing one. **A measure you defined yourself must say so.**
+The failure this whole convention exists to prevent is a hand-rolled definition that later
+reads, to someone who did not author it, as though it were the company's - so an honest
+"authored here, unverified" is more valuable than a confident sentence, and it is what
+tells the next reader which measures to check first.
 
 ## Parquet-backed rows (`data: { mode: parquet }`)
 

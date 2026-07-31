@@ -338,6 +338,72 @@ measure/dimension no dataset declares is an `[L3]` reference error.
 | `text` | `body` | `body` (markdown, <=4000) - static prose, no data. |
 | `custom` | `reads` | Escape hatch 1 (below). |
 
+## Member order on an axis - the cube's ROW ORDER is the default
+
+No tile has an `order` field, and most draw a dimension's members in **the order the dataset's
+rows arrive** - the order your `sql` returned them in. So **end the `sql` in an explicit
+`ORDER BY`**. Without one the sequence is whatever the engine happened to produce, and it can
+change between refreshes with nothing in the spec changing.
+
+**Nothing warns you when this is wrong.** There is no publish error and no advisory: the axis
+or the menu simply comes out in some order, looks deliberate, and may not be the same order
+next month. That is the whole reason this section exists.
+
+**Do not assume a `date` dimension is exempt.** Some tiles put it in calendar order and some
+treat it exactly like a category - a month `filter` menu is one of the latter, so it still
+needs the `ORDER BY`. Which is which is the DATE column below, and it does not track the kind
+of tile: a `matrix` sorts a date, a grouped `table` does not, and both are grids of cells.
+
+Read the row you need. The table is the source of truth here - it was derived one tile at a
+time, twice per tile, and it has survived independent re-measurement. The prose summaries that
+used to sit here, restating it in sentence form, kept turning out wrong; that is why they are
+gone rather than corrected, and why a future edit should add a column instead of a sentence.
+
+| Tile | CATEGORY dimension | DATE dimension |
+|---|---|---|
+| `matrix`, `heatmap` | **The cube's row order.** No `sort` field exists on these two, so the SQL is the only lever. | Calendar ascending |
+| `chart` (`x` axis) | The cube's row order, unless you set `sort: value-desc` / `value-asc`. | Calendar ascending |
+| `waterfall` | **Its own: largest contribution first.** | Calendar ascending |
+| `table` (with `group`) | The cube's row order, unless you set the tile's own `sort`. | **The cube's row order** |
+| `pie` / `donut` | The cube's row order. | **The cube's row order** |
+| `filter` menu, and a `cross_filter` selection | The cube's row order (first-seen). | **The cube's row order** |
+| `stacked`, `combo` | The cube's row order. **Neither has a `sort` field** (only `chart` and `table` do), so the SQL is the only lever. | Calendar ascending on the `x` axis |
+| `treemap` | Its own: largest share first. | Its own: largest share first |
+| `drilldown` | Its own: ranked by the measure. | Its own: ranked by the measure |
+| `funnel` | The `stages` list you declare on the tile. | The `stages` list |
+
+**The table has no MODE column because it does not need one, with ONE exception.** On a
+`lattice` or `hybrid` the filter menu is built from the dimension's declared `domains` ARRAY -
+which is REQUIRED on those modes - so there the array's order is the lever and an `ORDER BY`
+cannot reach it. Every other row holds unchanged. Measured on both modes, with a control that
+isolates the cause rather than just observing it: strip `domains` and the menu starts following
+cell order again, so it is the declaration doing the work and not the mode.
+
+On a `rows` dataset the menu instead compiles to `SELECT DISTINCT ... ORDER BY 1` in DuckDB, so
+it is value-sorted whatever you do (source-verified in the SQL compiler, not measured).
+
+So: **write the `ORDER BY` on a `cube`, a `lattice` and a `hybrid`** - the three modes measured
+here - and on a `lattice`/`hybrid` also list `domains` in the order you want the menu. A `rows`
+dataset compiles its own per-tile SQL and was not measured for this.
+
+Two consequences that are easy to miss:
+
+- **`matrix` / `heatmap` `limit` truncates from the FRONT of that order.** The tile renders the
+  first `limit` rows and says so ("Showing the first N of M rows"), so the cube's row order
+  decides which members are on screen at all, not just their sequence. Totals are unaffected -
+  every margin is re-evaluated over the whole selection, not over what is displayed.
+- **If a tile's row says it sorts itself, there is no way to override it** - not from the spec
+  (those tiles have no `sort` field) and not from the SQL. For a `waterfall` specifically, when
+  the bar SEQUENCE is the point of the chart, use a `funnel` instead: you list its members in
+  `stages`, in the order you want them drawn.
+
+Every row above was measured against the runtime rather than read out of it: each tile rendered
+twice, once with the island in one order and once reversed, reading the DOM back - for a
+category dimension and again for a date one, and again on a `lattice` and a `hybrid`. The
+pass-through lives in `mxMembers` / `mxGroup` (matrix + heatmap), `rollup` (charts),
+`distinctValues` (cube filter menus) and `latticeDomain` (lattice/hybrid menus); the
+self-sorting types are in `wfBuild` and their own fragments.
+
 ## The matrix
 
 The pivot table - two dimensions crossed, one measure per cell, with row totals, column
@@ -353,8 +419,11 @@ lattice you already wrote for the KPIs answers it.
   title: Customers by region and month
 ```
 
-Two things worth knowing, because they change what you can put in one:
+Three things worth knowing, because they change what you can put in one:
 
+- **Both axes draw in the cube's ROW ORDER** (a date dimension excepted - it sorts ascending),
+  and `limit` truncates from the front of that order. A matrix has no `sort` field, so give its
+  dataset's `sql` an explicit `ORDER BY`. See "Member order on an axis" above.
 - **Every total is the measure RE-EVALUATED at that total's grain, never a sum of the cells
   on screen.** On a `lattice` (or a `hybrid`'s lattice half) the `GROUP BY CUBE` already
   precomputed the row-only, column-only and all-rolled-up grouping sets, so the matrix looks
@@ -692,6 +761,11 @@ Two more objects on the same one grouping set, both about SEQUENCE rather than s
   stages: [visited, signed_up, activated, paid]   # the order YOU declare
   title: Journey by stage
 ```
+
+**A waterfall orders its own bars, and you cannot change that from the spec or the SQL.** A
+category `x` reads largest contribution first; a date `x` reads in calendar order. An `ORDER
+BY` in the dataset's `sql` does not reach it, and there is no `sort` field. If the sequence is
+the point of the chart, use a `funnel` - its `stages` is a declared order.
 
 **A waterfall is additive only, and it is all-or-nothing.** Its bars claim to compose into its
 total, one after another, so `measure` must be `sum` (or `count`, which folds to sum). A

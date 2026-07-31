@@ -55,6 +55,13 @@ is not in the grain cannot be filtered, grouped, or charted - full stop. List ev
 slice the dashboard should support, make each one a dimension, then stop: each extra
 dimension multiplies the row count.
 
+**Size the shape here, before you write any SQL.** The publish size check projects from
+your declarations, not from the data, so the query's real row count will not save a wide
+cube - a dataset returning 5,000 rows is refused just the same if its declarations
+project past the ceiling. The remedy - split the breadth across several small datasets
+rather than one wide one - is a design decision, not an edit, so make it now: see "Size
+the dataset before you write the spec" below for the arithmetic.
+
 **Keep dimensions low-cardinality.** The cube is shipped inside the HTML, and every
 filter renders a `<select>` of a dimension's distinct values, so a high-cardinality
 dimension both bloats the page and produces an unusable thousand-item dropdown. Aim
@@ -224,7 +231,22 @@ One query produces the cube. It runs unattended on every refresh, so:
   interval '12 months'`, not a literal date, or the window silently freezes as it
   reruns for months.
 - **Keep it small** (the grain rules above) - well under the 100,000-row / 8 MB
-  refresh cap.
+  refresh cap. Size the SHAPE before you write the query - see "Size the dataset
+  before you write the spec" below.
+- **End in an explicit `ORDER BY`.** Most tiles draw a dimension's members in the order
+  your rows arrive, so without one the axis order, the pie's slice order, the filter
+  menu's order and (for a matrix or heatmap) *which* members survive `limit` are all
+  whatever the engine happened to produce, and can move between refreshes with nothing in
+  the spec changing, and **nothing warns you** - there is no publish error for this, so a
+  wrong order looks deliberate. Two guesses that would let you skip it are both wrong:
+  a DATE dimension is not always sorted for you (some tiles treat it exactly like a
+  category, a month `filter` menu among them), and changing dataset MODE does not excuse
+  you either (on a `lattice`/`hybrid` only the filter menu moves off the SQL order, onto
+  the declared `domains` array). Which tiles those are is the per-tile table under
+  "Member order on an axis" in `spec.md`, and that table is the only place it is written
+  down - deliberately, because a second copy here is a second thing to keep true.
+  The rule that needs no table: **write the `ORDER BY` in every mode**, and on a
+  `lattice`/`hybrid` also list `domains` in the order you want the menu.
 
 ```sql
 -- shape only; column names come from your introspection
@@ -642,3 +664,66 @@ extrapolates future growth and can run an order of magnitude above the bytes act
 emitted - 7204320 projected against a 213196-byte island, roughly 34x, in one measured
 case. Check the `bytes` a dry run actually reports before you bound or coarsen a cube
 that would have fit comfortably.
+
+### Size the dataset before you write the spec
+
+The publish size check **projects from your DECLARATIONS and never looks at a row**, so
+the refusal has nothing to do with how much data the query actually returns. On the spec
+path the datasets are SEEDED first and the size check runs afterwards, during the compile
+- so the rows really were fetched, and the estimator simply never consults them.
+
+The smallest single cube that gets refused, to calibrate against: one dimension whose
+declared `domains` reach the row cap, plus three measures. That is
+`100,000 x 4 x 24 = 9,600,000` bytes against the 8,388,608 ceiling. Drop one measure and
+`100,000 x 3 x 24 = 7,200,000` is accepted. The same cube is refused whether its query
+returns five thousand rows or five million, because neither number is an input. The
+arithmetic is small enough to do on paper, and doing it first is cheaper than three
+rejected publishes.
+
+Per dataset, the projection is **rows x fields x 24 bytes**, where each mode reads
+"rows" and "fields" differently:
+
+| mode | projected rows | fields per row |
+|---|---|---|
+| `cube`, **every** dimension bounded | `min(product of every dimension's declared domains/buckets, 100000)` | dimensions + measures |
+| `cube`, **any** dimension unbounded | a flat 2000 | dimensions + measures |
+| `lattice` | `product of (each dimension's bound + 1)` - its cells | **2 x** dimensions + measures |
+| `rows`, with `rows_window: N` | `min(N, 100000)` | the `sql`'s output columns |
+| `rows`, **no** `rows_window` | a flat 100000, the worst case the caps allow | the `sql`'s output columns |
+| `hybrid` | its lattice **plus** its rows slice, both of the above | |
+
+Sum every dataset; the total must be under **8388608** bytes. Separately, a
+`lattice`/`hybrid` is refused above **50000** cells on its own. (The compiled body is
+also capped at 5242880 bytes and, being a measurement of real bytes, is usually what
+binds first in practice.)
+
+Four things follow, and they are the ones authors get wrong:
+
+- **Width costs as much as depth.** The multiplier is dimensions **plus measures**, so a
+  ninth measure costs exactly what a ninth dimension would on every projected row. **Split
+  a wide cube**: put the many measures on one narrow dataset, and give each extra breakdown
+  dimension its own small dataset. Up to eight datasets share the one budget, and that is
+  the whole reason splitting works - it turns the PRODUCT of the dimensions into a SUM over
+  the datasets, and a sum of small products is far smaller than one big one.
+- **A `lattice` dominates a budget.** It multiplies `(cardinality + 1)` rather than
+  `cardinality`, and it charges **two** fields per dimension (the value plus its rolled-up
+  flag). Six dimensions at 10 members each is 11^6 = 1,771,561 cells before the field
+  multiplier - already 35x over the 50000 cell cap on its own.
+- **Declaring `domains` on a `cube` dimension changes what you are charged, in either
+  direction.** Bound every dimension and you are charged the exact product (which can be
+  far more, or far less, than the rows the query returns). Leave even one dimension
+  unbounded and the WHOLE dataset drops to the flat 2000 - partial declaration buys you
+  nothing. On a `cube` the runtime does not read `domains` for its filter menus either (it
+  reads the shipped rows), so declare them for the hard gate they buy at publish (see
+  "What a publish WARNING means" in `spec.md`), knowing the projection moves with them.
+  On a `lattice`/`hybrid` they are REQUIRED - that is what makes the cell count computable.
+- **A `rows` dataset with no `rows_window` is charged 100000 rows** whatever it returns, so
+  a five-column row slice alone projects at 12,000,000 bytes and cannot pass. Declaring
+  `rows_window` is not a limit you are conceding, it is the number the projector was
+  missing.
+
+Worth stating plainly, because the direction is not obvious: this projection can also be
+**far too small**. Since it never sees a row, an unbounded `cube` charged its flat 2000
+rows has reported `ok` on a report whose compiled body was 235% of the publish cap (#896).
+The exact gate is the compiled body, reported as `bytes` by every dry run - so dry-run
+early and read that number rather than reasoning only from this model.

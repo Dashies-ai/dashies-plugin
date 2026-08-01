@@ -96,8 +96,10 @@ the matching `mode` (`references/cube.md`).
 
 **Aggregates ride inline; row-level detail can offload to Parquet.** Every `cube` /
 `lattice` / `hybrid` dataset's data lives in the island, which is capped at 8 MiB / 100k rows
-across the WHOLE dashboard - so keep those bounded (coarser buckets, top-N a big category, a
-tighter window). A **`rows` dataset on a warehouse connection** can instead declare
+across the WHOLE dashboard - **except on a SQL Server (`mssql`) connection, where the confined
+executor caps a result at 5,000 rows / 2,000,000 bytes and has no Parquet offload** - so keep
+those bounded (coarser buckets, top-N a big category, a tighter window). A **`rows` dataset on
+a warehouse connection** can instead declare
 `data: { mode: parquet }`: its rows are extracted to a Parquet object on each refresh and
 range-read by the runtime instead of inlined.
 
@@ -111,6 +113,18 @@ the dataset may grow.** Two different ceilings, and only the second one moves:
   truncation. That is the SAME row cap as an inline dataset and a marginally TIGHTER byte cap
   (the inline island allows 8,388,608 - binary 8 MiB - so the executor is 388,608 bytes
   lower). Declaring parquet buys you nothing here.
+
+  **A SQL Server (`mssql`) connection is the one exception, and it is 20x tighter: 5,000 rows
+  / 2,000,000 bytes.** Its executor is FDW-hosted and its caps were never raised by the two
+  migrations that lifted every other engine, so a cube that is comfortably inline on Postgres
+  or Snowflake is REFUSED there (`execute_ro: result exceeds 5000 rows`). Do not design an
+  mssql grain against the numbers above. `introspect_schema` states the connection's real
+  ceiling in its opening lines - that is the reliable place to read it - and
+  `validate_cube_sql` repeats it in the `Size:` line of a successful validate (not on a
+  failure, and not on the `extreme` or v3/v4-inline-only branches, which name a different
+  constraint). Read the cap off `introspect_schema` rather than off this page. mssql also has **no Parquet extract at all** -
+  `data: { mode: parquet }` is refused on it - so coarsening the grain, narrowing the window
+  or lowering a dimension's cardinality is the only remedy when a cube overruns.
 - **At refresh** - the dataset may GROW into 256 MiB / 50M rows, which is where those figures
   come from.
 

@@ -600,9 +600,11 @@ of rows, so publish with a **tiny placeholder `data.rows`** (the sample works) a
 let the **first refresh fill the full set** - pick a real cadence so it happens on
 its own, and say the live page shows placeholder data until then.
 
-**Caps.** A refresh writes at most **100,000 rows / 8 MB** into the island; the
-publish body itself caps at **~5 MB**, so a big row set can only arrive via the
-placeholder flow. Beyond the island cap, a **warehouse** cube switches to
+**Caps.** A refresh writes at most **100,000 rows / 8 MB** into the island - **except on a
+SQL Server (`mssql`) connection, whose confined executor caps a result at 5,000 rows /
+2,000,000 bytes and offers no Parquet offload, so an over-cap cube must be coarsened rather
+than offloaded**. The publish body itself caps at **~5 MB**, so a big row set can only
+arrive via the placeholder flow. Beyond the island cap, a **warehouse** cube switches to
 `data.mode: "parquet"`: the rows live in a separate file (ceiling ~128 MiB) instead
 of the island, it publishes in a "preparing" state, and the first refresh fills it.
 `self` always stays inline. Dashies reads the parquet with **HTTP range reads** - it

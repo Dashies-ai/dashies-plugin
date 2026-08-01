@@ -238,9 +238,20 @@ other datasets share.
 
 | | rows | bytes | enforced by |
 |---|---|---|---|
-| **Publish / republish** (the SQL you DECLARE) | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`CUBE_VALIDATE_MAX_ROWS`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
+| **Publish / republish** (the SQL you DECLARE) | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`inlineCapsForEngine`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
+| the same, on a **SQL Server (`mssql`)** connection | **5,000** | **2,000,000** | the FDW-hosted `_mssql_executor_ddl` template, whose caps were never raised by the migrations that lifted the other five engines |
 | an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB) |
 | **Refresh** (what the dataset may GROW to) | 50,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
+
+**The mssql row is not a footnote - it is 20x tighter and it applies to `cube`, `lattice`,
+`hybrid` and `rows` alike.** A grain that is comfortably inline on Postgres or Snowflake is
+refused there, and there is no Parquet escape hatch: `data: { mode: parquet }` is refused on
+an mssql connection (it has no extract module), so the only remedies are a coarser grain, a
+narrower window, or a lower-cardinality dimension. Do not carry these numbers in your head
+across connections - `introspect_schema` prints the connection's real ceiling before you write
+any SQL - the reliable place to read it - and `validate_cube_sql` repeats it in the `Size:`
+line of a successful validate (not on a failure, and not on the `extreme` or
+v3/v4-inline-only branches).
 
 **The publish envelope does not move, and it is not optional.** Every publish seeds the parquet
 dataset's own `sql` exactly like an inline one, because that is what proves the SQL runs on the

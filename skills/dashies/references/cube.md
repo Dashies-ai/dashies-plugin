@@ -531,7 +531,18 @@ gate - Databricks itself runs DML happily). The warehouse cold-starts a few seco
 first query after an auto-stop, so a **2X-Small serverless warehouse with a short auto-stop**
 keeps scheduled refresh cheap.
 
-**Microsoft SQL Server** takes **T-SQL** (Transact-SQL) - not a PostgreSQL dialect.
+**Microsoft SQL Server** takes **T-SQL** (Transact-SQL) - not a PostgreSQL dialect, and it
+is the one engine whose RESULT CEILING is different: its confined executor caps a cube at
+**5,000 rows / 2,000,000 bytes**, where every other engine caps at 100,000 / 8,000,000.
+That is 20x tighter and it applies to `cube`, `lattice`, `hybrid` and `rows` alike, so
+design the grain against it from the start - an overrun is a hard `execute_ro: result
+exceeds 5000 rows; aggregate further`, never a truncation. There is also **no Parquet
+offload** on this engine (it has no extract module, and `data: { mode: parquet }` is
+refused), so the only remedies are a coarser grain, a narrower window, or a
+lower-cardinality dimension. `introspect_schema` prints the ceiling before you write any
+SQL - that is the reliable place to read it - and `validate_cube_sql` repeats it in the
+`Size:` line of a successful validate (not on a failure, and not on the `extreme` or
+v3/v4-inline-only branches). Read it off `introspect_schema`.
 Table references are `[bracket]`-quoted (`[dbo].[orders]`). SQL Server PRESERVES an
 output alias as written - `sum(amount) as revenue` comes back `revenue`, measured on a
 case-INSENSITIVE collation, because collation governs whether two names may coexist,

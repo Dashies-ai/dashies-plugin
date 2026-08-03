@@ -33,8 +33,9 @@ ignored.
 - **The `slug`, when present, must equal the publish `path` slug** (`publish_dashboard({ path: "<slug>", spec })`).
   Omit it and the path slug is used. A mismatch is a `[identity]` error at `/slug`.
 - **Every publish SEEDs live.** The compiler runs each dataset's `sql` through the same
-  confined read-only executor `validate_cube_sql` uses, then binds the tiles against the
-  ACTUAL result columns. A dataset whose SQL fails, or that returns zero rows, or whose
+  confined authoring path `validate_cube_sql` uses (a read-only DB executor on `self`,
+  Postgres and SQL Server; a native REST adapter on BigQuery, Snowflake, Redshift and
+  Databricks), then binds the tiles against the ACTUAL result columns. A dataset whose SQL fails, or that returns zero rows, or whose
   bindings do not match the seeded columns, cannot publish - so a spec that would render
   fake zeros never reaches the URL.
 - **Numeric honesty is automatic.** The runtime renders every value exactly or shows `-`
@@ -236,18 +237,27 @@ other datasets share.
 > **Parquet does not change what you can declare. It changes where the bytes go and how large
 > the dataset may grow.**
 
+The publish row splits three ways by engine, because both the threshold AND the layer that
+enforces it differ. Only an engine with a confined DB executor refuses on bytes at EXECUTION
+time.
+
 | | rows | bytes | enforced by |
 |---|---|---|---|
-| **Publish / republish** (the SQL you DECLARE) | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`inlineCapsForEngine`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
+| **Publish / republish** (the SQL you DECLARE), on `self` or **Postgres** | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`inlineCapsForEngine`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
+| the same, on **BigQuery / Snowflake / Redshift / Databricks** | 100,000 | **no execution-time cap** | their native REST authoring adapter. There is no DB executor on this path: it reads the warehouse's OWN row total up front and refuses before fetching a page (`the result (N rows) exceeds this connection's 100000-row cap`), and it measures no bytes at all, so the byte axis falls through to the two rows below |
 | the same, on a **SQL Server (`mssql`)** connection | **5,000** | **2,000,000** | the FDW-hosted `_mssql_executor_ddl` template, whose caps were never raised by the migrations that lifted the other five engines |
-| an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB) |
+| an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB), applied on EVERY engine |
+| the compiled body, on every engine | - | 5,242,880 | `MAX_PUBLISH_BYTES`. A measurement of real bytes rather than a projection, so it is usually what binds first |
 | **Refresh** (what the dataset may GROW to) | 50,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
 
-**The mssql row is not a footnote - it is 20x tighter and it applies to `cube`, `lattice`,
-`hybrid` and `rows` alike.** A grain that is comfortably inline on Postgres or Snowflake is
-refused there, and there is no Parquet escape hatch: `data: { mode: parquet }` is refused on
-an mssql connection (it has no extract module), so the only remedies are a coarser grain, a
-narrower window, or a lower-cardinality dimension. Do not carry these numbers in your head
+**The mssql row is not a footnote - it is 20x tighter on rows and it applies to `cube`,
+`lattice`, `hybrid` and `rows` alike.** A grain that is comfortably inline on Postgres or
+Snowflake is refused there, and there is no Parquet escape hatch: `data: { mode: parquet }` is
+refused on an mssql connection (it has no extract module), so the only remedies are a coarser
+grain, a narrower window, or a lower-cardinality dimension. **It is not the only departure,
+though** - the four REST engines depart on the other axis, having no execution byte cap at
+all, so a wide cube there is judged by the island and body limits and not by 8,000,000. Do not
+read either row as the general rule. Do not carry these numbers in your head
 across connections - `introspect_schema` prints the connection's real ceiling before you write
 any SQL - the reliable place to read it - and `validate_cube_sql` repeats it in the `Size:`
 line of a successful validate (not on a failure, and not on the `extreme` or
@@ -255,8 +265,10 @@ v3/v4-inline-only branches).
 
 **The publish envelope does not move, and it is not optional.** Every publish seeds the parquet
 dataset's own `sql` exactly like an inline one, because that is what proves the SQL runs on the
-real warehouse and reads the real column types the extractor needs. Note the middle row: the
-row cap is IDENTICAL to inline and the byte cap is 388,608 bytes LOWER, so declaring parquet
+real warehouse and reads the real column types the extractor needs. Note what the publish rows
+say against the inline one: the row cap is IDENTICAL on every engine, and on the byte axis you
+are either 388,608 bytes TIGHTER than inline (Postgres) or bounded by the island and body
+limits instead (BigQuery / Snowflake / Redshift / Databricks). Either way declaring parquet
 buys you nothing at authoring time. `data: { mode: parquet }` is **not** a way to declare a
 5M-row detail table today - bound the declared statement exactly as you would an inline one (a
 time window, fewer columns, a narrower grain), and expect a hard publish failure if it

@@ -591,7 +591,7 @@ The **v2 island** carries `"version": 2`, the `schema`, and the row-level data i
 place of v1's `cube`. Your `data-dash` markup is unchanged - only the number source
 changes. For a **new** v2 inline dashboard, prefer the columnar `data.cols`
 (object-of-arrays) over the row-major `data.rows` (array-of-objects): it is the same
-data but ~2-3x denser on the wire, so the same ~8 MB island carries 2-3x the rows.
+data but ~2-3x denser on the wire, so the same ~8 MiB island carries 2-3x the rows.
 Both are supported and refresh preserves whichever an island uses - `cols` is simply
 the better default for new work.
 
@@ -600,10 +600,15 @@ of rows, so publish with a **tiny placeholder `data.rows`** (the sample works) a
 let the **first refresh fill the full set** - pick a real cadence so it happens on
 its own, and say the live page shows placeholder data until then.
 
-**Caps.** A refresh writes at most **100,000 rows / 8 MB** into the island - **except on a
-SQL Server (`mssql`) connection, whose confined executor caps a result at 5,000 rows /
-2,000,000 bytes and offers no Parquet offload, so an over-cap cube must be coarsened rather
-than offloaded**. The publish body itself caps at **~5 MB**, so a big row set can only
+**Caps.** A refresh writes at most **100,000 rows / 8,388,608 bytes** (binary 8 MiB) into the
+island. On the byte axis the connection's own confined executor usually bites first: it raises
+over **8,000,000 bytes** on `self` and Postgres, and over **2,000,000 bytes** on a **SQL Server
+(`mssql`) connection, which also caps rows at 5,000 and offers no Parquet offload, so an
+over-cap cube there must be coarsened rather than offloaded**. Those two byte numbers are
+388,608 apart and are not interchangeable - `SKILL.md` carries the per-engine table (the four
+native REST engines have no execution-time byte gate at all), and `introspect_schema` states the
+real ceiling for the connection you are actually on. The publish body itself caps at
+**5,242,880 bytes** (`MAX_PUBLISH_BYTES`, 5 MiB), so a big row set can only
 arrive via the placeholder flow. Beyond the island cap, a **warehouse** cube switches to
 `data.mode: "parquet"`: the rows live in a separate file (ceiling ~128 MiB) instead
 of the island, it publishes in a "preparing" state, and the first refresh fills it.
@@ -883,8 +888,8 @@ relative time window like any refresh SQL.
 **Inline-only, and keep the row slice small.** A hybrid ships both halves in the island - a
 `hybrid` + `data.mode: "parquet"` publish is **rejected** (the parquet path for a hybrid's
 row slice is not live). The lattice half obeys the `LATTICE_MAX_CELLS` budget like any
-lattice; the row slice counts against the 8 MB island ceiling, so a typical narrow slice fits
-**roughly 69k rows** before it. Bound it with `rows_window` (the first N rows of the
+lattice; the row slice counts against the 8,388,608-byte island ceiling, so a typical narrow
+slice fits **roughly 69k rows** before it. Bound it with `rows_window` (the first N rows of the
 `rows_sql`'s own top-level ORDER BY, which is REQUIRED - order by time descending to make that
 the most recent N; the aggregates stay exact over full history, only the row-level detail and
 any drill are windowed). If the slice genuinely cannot be bounded, use a single-manifest v2 + parquet

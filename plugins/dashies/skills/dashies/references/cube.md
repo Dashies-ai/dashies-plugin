@@ -230,9 +230,12 @@ One query produces the cube. It runs unattended on every refresh, so:
 - **Relative time windows, never hardcoded dates** - `where created_at >= now() -
   interval '12 months'`, not a literal date, or the window silently freezes as it
   reruns for months.
-- **Keep it small** (the grain rules above) - well under the 100,000-row / 8 MB
-  refresh cap. Size the SHAPE before you write the query - see "Size the dataset
-  before you write the spec" below.
+- **Keep it small** (the grain rules above) - well under the 100,000-row cap and the
+  8,388,608-byte island ceiling. Neither is universal: SQL Server caps a result at
+  5,000 rows / 2,000,000 bytes, and the byte half is enforced at execution time only on
+  `self`, Postgres and SQL Server. Read the real one for your connection off
+  `introspect_schema` (see "Microsoft SQL Server" below). Size the SHAPE before you write
+  the query - see "Size the dataset before you write the spec" below.
 - **End in an explicit `ORDER BY`.** Most tiles draw a dimension's members in the order
   your rows arrive, so without one the axis order, the pie's slice order, the filter
   menu's order and (for a matrix or heatmap) *which* members survive `limit` are all
@@ -469,13 +472,18 @@ it). Everything above is engine-independent; only the syntax changes. Author aga
   when the argument is TIMESTAMP type` - `TIMESTAMP_SUB` accepts only MICROSECOND
   through DAY on a `TIMESTAMP`. Go through `DATE` as the table shows, or use
   `interval 365 day`.
-- **A `TIMESTAMP` reads back as a raw epoch string.** `validate_cube_sql` returns it as
-  seconds-since-epoch in scientific notation - `"1.721210317969462E9"` - not an ISO
-  string, so you cannot eyeball a date range while authoring, and a raw timestamp is
-  useless as a dimension label. Format it in SQL:
-  `format_timestamp('%Y-%m', ts, 'America/Los_Angeles')` for a month bucket, or
-  `date(ts, 'America/Los_Angeles')` for a date. (Databricks, by contrast, returns
-  ISO-8601 UTC - see its note below.)
+- **The temporal types read back as ISO-8601, and only `TIMESTAMP` loses anything.** A
+  `TIMESTAMP` arrives as an ISO-8601 UTC string (`2026-08-02T19:37:57.965Z`) - the same
+  shape Databricks produces, so the two no longer differ here. `DATE` (`2026-08-02`),
+  `DATETIME` (`2026-08-02T19:37:57.965165`) and `TIME` (`19:37:57.965165`) come back
+  verbatim. Note the asymmetry: those last two keep MICROseconds, while `TIMESTAMP` is
+  rounded to milliseconds so the inline and Parquet paths name the same instant - so on
+  the rare occasion sub-millisecond precision matters, select the column as `DATETIME`
+  or as a string. You should still bucket a timestamp in SQL for a **dimension**, but
+  for the reasons at the top of this file rather than for readability: a raw instant is
+  high-cardinality, and it buckets in UTC unless you name the zone
+  (`format_timestamp('%Y-%m', ts, 'America/Los_Angeles')`, or
+  `date(ts, 'America/Los_Angeles')`).
 - **`introspect_schema` reports no row estimate.** See "Large warehouse tables" below
   for the count-it-yourself fallback.
 
@@ -510,6 +518,26 @@ once and read the column names back; that answers both parameters in one call.
 Snowflake dashboard's first scheduled refresh could report success over a blank page.
 That is fixed; the alias-quoting drill it used to require is no longer needed.)*
 
+**A nested column is not a scalar, and reading one changes the grain.** BigQuery
+`ARRAY` / `STRUCT` (the GA4 `event_params` shape, an `ARRAY<STRUCT<key, value>>`, is the
+one you are most likely to meet), Snowflake `VARIANT` / `OBJECT` / `ARRAY`, and
+Databricks `ARRAY` / `MAP` / `STRUCT` all have to be addressed into before they are
+usable. Two consequences, and the second is the one that produces a wrong number rather
+than an error:
+
+- **Reading a field means naming it.** `rec.field` for a struct; a repeated column takes
+  a join - `cross join unnest(event_params) as p` on BigQuery, `lateral flatten` on
+  Snowflake, `explode` on Databricks.
+- **That join MULTIPLIES rows.** After unnesting an array of three, one source row has
+  become three, so `count(*)` counts 3 and any `sum()` over a parent-row column
+  triple-counts it. Nothing rejects this: the cube runs, publishes, and refreshes, and
+  the numbers are simply wrong. Aggregate back to the grain you meant -
+  `count(distinct <the parent key>)`, or unnest inside a subquery and rejoin the result.
+
+So select the scalar you actually want, at the grain you actually want, in the SQL. A
+nested column selected WHOLE reaches the island as JSON, which is not usable as a
+dimension (its values are objects, not labels) or as a measure.
+
 **Redshift** is a PostgreSQL dialect, so the PostgreSQL column applies almost
 verbatim; use `to_char(ts, 'YYYY-MM-DD')` or `date_trunc('month', ts)::date` for a
 text/date dimension.
@@ -532,17 +560,36 @@ first query after an auto-stop, so a **2X-Small serverless warehouse with a shor
 keeps scheduled refresh cheap.
 
 **Microsoft SQL Server** takes **T-SQL** (Transact-SQL) - not a PostgreSQL dialect, and it
-is the one engine whose RESULT CEILING is different: its confined executor caps a cube at
-**5,000 rows / 2,000,000 bytes**, where every other engine caps at 100,000 / 8,000,000.
-That is 20x tighter and it applies to `cube`, `lattice`, `hybrid` and `rows` alike, so
-design the grain against it from the start - an overrun is a hard `execute_ro: result
-exceeds 5000 rows; aggregate further`, never a truncation. There is also **no Parquet
-offload** on this engine (it has no extract module, and `data: { mode: parquet }` is
-refused), so the only remedies are a coarser grain, a narrower window, or a
-lower-cardinality dimension. `introspect_schema` prints the ceiling before you write any
-SQL - that is the reliable place to read it - and `validate_cube_sql` repeats it in the
-`Size:` line of a successful validate (not on a failure, and not on the `extreme` or
-v3/v4-inline-only branches). Read it off `introspect_schema`.
+has the tightest RESULT CEILING of the six: its confined executor caps a cube at
+**5,000 rows / 2,000,000 bytes**, against 100,000 rows everywhere else. That is 20x tighter
+on rows and it applies to `cube`, `lattice`, `hybrid` and `rows` alike, so design the grain
+against it from the start - an overrun is a hard `execute_ro: result exceeds 5000 rows;
+aggregate further`, never a truncation. There is also **no Parquet offload** on this engine
+(it has no extract module, and `data: { mode: parquet }` is refused), so the only remedies
+are a coarser grain, a narrower window, or a lower-cardinality dimension.
+
+**The BYTE half of that comparison is not uniform either, and SQL Server is not the only
+engine that departs from it.** Only three of the six refuse a cube on bytes at EXECUTION
+time:
+
+| connection | rows | execution-time byte cap | refused by |
+|---|---|---|---|
+| `self`, Postgres | 100,000 | 8,000,000 | its confined read-only executor, which raises `result exceeds 8000000 bytes; aggregate further` (prefixed `refresh_execute_ro:` on `self`, `execute_ro:` on a warehouse) |
+| BigQuery, Snowflake, Redshift, Databricks | 100,000 | **none** | their native REST adapter, which reads the warehouse's OWN row total up front and refuses before fetching a page (`the result (N rows) exceeds this connection's 100000-row cap`). It measures no bytes at all |
+| SQL Server (`mssql`) | **5,000** | **2,000,000** | its FDW-hosted executor, which raises |
+
+On the four REST engines a wide cube is still bounded, just one layer later and by a
+different number: the **8,388,608-byte island ceiling** and the **5,242,880-byte compiled
+body limit** (the latter usually binds first, because it measures real bytes rather than
+projecting them). So do not coarsen a BigQuery or Snowflake grain to fit 8,000,000 - that
+figure is not a ceiling you have - and do not read "no execution cap" as "no ceiling".
+
+`introspect_schema` prints the true ceiling for the connection you are on before you write
+any SQL, naming the layer that enforces it, and on a REST engine it states outright that
+there is no byte limit on the result. That is the reliable place to read it.
+`validate_cube_sql` repeats it in the `Size:` line of a successful validate (not on a
+failure, and not on the `extreme` or v3/v4-inline-only branches). Read it off
+`introspect_schema`.
 Table references are `[bracket]`-quoted (`[dbo].[orders]`). SQL Server PRESERVES an
 output alias as written - `sum(amount) as revenue` comes back `revenue`, measured on a
 case-INSENSITIVE collation, because collation governs whether two names may coexist,
@@ -666,9 +713,14 @@ so its projected size grows on both axes at once - adding one dimension or one
 `rows_sql` column can push it over. Publish warns as the projection approaches the
 8388608-byte island ceiling, and crossing it fails the publish. The remedy is
 **`rows_window: N`** on the dataset, which bounds the row slice (its `rows_sql` must
-then end in a top-level ORDER BY - see above). That remedy is often free: a
-`rows_window` set at or above the current row count keeps **every** row and still
-bounds the projection.
+then end in a top-level ORDER BY - see above). That remedy is often nearly free: a
+`rows_window` set **above** the current row count keeps every row you have today and
+still bounds the projection.
+
+Set it *above*, never *at*. The window keeps the FIRST N rows at **every** refresh, so a
+window equal to today's count makes the next refresh silently drop whatever the source
+added - a success run, no warning, fewer rows. Leave headroom for the growth you expect
+between now and the next time anyone looks.
 
 Read that projection as a **conservative upper bound, not a measurement.** It
 extrapolates future growth and can run an order of magnitude above the bytes actually
@@ -681,7 +733,23 @@ that would have fit comfortably.
 The publish size check **projects from your DECLARATIONS and never looks at a row**, so
 the refusal has nothing to do with how much data the query actually returns. On the spec
 path the datasets are SEEDED first and the size check runs afterwards, during the compile
-- so the rows really were fetched, and the estimator simply never consults them.
+- so the rows really were fetched, and the CHARGE still ignores them. That is deliberate:
+the number has to bound every FUTURE unattended refresh, not today's rows. A dashboard
+sized to the rows it happens to hold today would blow the island in three months with no
+author in the loop.
+
+What the seed IS spent on is the **remedy**. An over-budget publish itemizes the
+projection per dataset, largest first, giving the basis for each charge - and where a
+dataset is charged the worst case, it quotes the row count the seed just observed and
+names a concrete `rows_window` to declare, with the bytes that window would charge so you
+can check it. It declines to name one only when the dataset is already AT the row cap - so
+close that no window can both keep its rows and stay under it - and then it says so plainly
+instead, because a window at the cap charges exactly what an unwindowed dataset already
+charges. **Read the top line before you redesign
+anything:** these totals are rarely even. In the case that prompted the itemization, one
+unwindowed `rows` dataset was 92% of a 41,712,000-byte projection and the other five
+datasets together were 8% - and the author, reading only the sum, split the dashboard and
+dropped a tile when one `rows_window` would have done it.
 
 The smallest single cube that gets refused, to calibrate against: one dimension whose
 declared `domains` reach the row cap, plus three measures. That is

@@ -171,6 +171,39 @@ dashboard, which is sized for exactly that. The rules, and the reasons, are in
 `self` always stays inline (its no-PII view is small by construction), and existing v1/v2/v3
 dashboards keep refreshing on their own contracts forever, untouched.
 
+### The ceiling, and what to tell a user who wants "big data"
+
+**Dashies is deliberately NOT at parity with Power BI or Tableau on data VOLUME, and this
+is a decided product position rather than a gap.** Their heavy mode (Tableau Extract /
+Hyper, Power BI Import / VertiPaq) runs a query engine on a SERVER and streams small
+results to a thin client, so it reaches billions of rows. A Dashies dashboard is a static,
+shareable file that computes in the viewer's BROWSER - so the ceiling is the browser's.
+
+**Do not design around a number you hope for. The numbers you have today are the caps
+above: 100,000 rows per declared statement, 8 MiB of inline island, 2 parquet datasets.**
+
+If a user asks for something that cannot fit - a 50M-row detail table, a filterable grid
+over every transaction - **say so plainly and early, before you write SQL.** The honest
+answer is: aggregate it, bound the window, or split the report. Do NOT:
+
+- silently narrow their grain and publish something that looks complete,
+- drop a filter dimension to make the combination count fit without telling them,
+- promise that a later refresh will "fill in" more than the declared statement returns,
+- describe any of this as "big data support".
+
+Say **"heavy dashboards work"**, never "big data". The second invites a comparison we lose
+on a metric we have chosen not to compete on, and it sets an expectation the product will
+not meet.
+
+**Where the ceiling comes from**, so you can explain it rather than just assert it: the
+browser-side engine is a 32-bit WebAssembly build (a hard 4 GB address space, independent
+of the viewer's machine) and runs single-threaded, because the cross-origin isolation
+`SharedArrayBuffer` needs is unavailable under the sandbox CSP that keeps a published
+dashboard from reading the viewer's session. Tens of millions of rows is the realistic
+ceiling, and it is far above what an aggregate dashboard needs - which is the trade: a
+static link, no live backend, and nothing to pay per view.
+
+
 ## How this skill is organized
 
 This file is the **orchestrator**: the gate, the workflow spine, the schedule / publish /
@@ -350,9 +383,9 @@ comes from the grant your MCP connection was authorized with, plus an optional
 nothing spec-specific to remember:
 
 - **Personal grant, no `workspace`** -> a personal dashboard at
-  `https://<handle>.dashies.xyz/<slug>`.
+  `https://<handle>.dashies.ai/<slug>`.
 - **`workspace: "<slug>"`, or a workspace-LOCKED grant** -> a team dashboard at
-  `https://<workspace-slug>.dashies.xyz/<slug>`, visible to members. Any member of
+  `https://<workspace-slug>.dashies.ai/<slug>`, visible to members. Any member of
   the workspace may publish and republish it, including one who did not create it.
 
 Two differences from a personal publish, both deliberate:

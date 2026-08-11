@@ -14,7 +14,7 @@ number that ships and rots.
 So Step 4 is: turn the cube you designed in Steps 1-3 into datasets + tiles. The cube SQL
 and its additivity classification (the hard part) are already done; the spec is mechanical.
 
-The full field contract is the JSON Schema at `https://dashies.xyz/schema/dash/v1.json`
+The full field contract is the JSON Schema at `https://dashies.ai/schema/dash/v1.json`
 (`$id`, draft 2020-12) - it is the exhaustive source of truth. This reference is its
 readable form - the fields you author with and their load-bearing bounds; the schema above
 stays the exhaustive contract for the exact limits. `additionalProperties` is `false`

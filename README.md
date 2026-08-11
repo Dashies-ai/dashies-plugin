@@ -6,9 +6,9 @@
 
 A one-install plugin for [Claude Code](https://claude.com/claude-code), [Codex](https://developers.openai.com/codex), and [Cursor](https://cursor.com): the `dashies` authoring skill plus the Dashies publish MCP server, bundled together.
 
-[Website](https://dashies.xyz) ·
-[Marketplace](https://dashies.xyz/marketplace.json) ·
-[MCP server](https://mcp.dashies.xyz/mcp) ·
+[Website](https://dashies.ai) ·
+[Marketplace](https://dashies.ai/marketplace.json) ·
+[MCP server](https://mcp.dashies.ai/mcp) ·
 [Report an issue](https://github.com/Dashies-ai/dashies-plugin/issues)
 
 ![License MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
@@ -24,7 +24,7 @@ A one-install plugin for [Claude Code](https://claude.com/claude-code), [Codex](
 
 ## What it is
 
-Dashies turns a Claude Code conversation into a published, self-contained BI dashboard at a stable URL: `https://dashies.xyz/<your-handle>/<slug>`.
+Dashies turns a Claude Code conversation into a published, self-contained BI dashboard at a stable URL: `https://dashies.ai/<your-handle>/<slug>`.
 
 You describe the dashboard. Claude builds it as a single HTML file (inline CSS, inline JS, embedded data) and publishes it with one MCP call. You get back a link you can share.
 
@@ -41,7 +41,7 @@ The part that makes Dashies different: **a dashboard can keep itself up to date.
 npx plugins add Dashies-ai/dashies-plugin
 ```
 
-This is the command on [dashies.xyz](https://dashies.xyz). The vendor-neutral [`plugins`](https://github.com/vercel-labs/open-plugin-spec) CLI auto-detects the AI coding agents you have installed and sets up Dashies in each - the `dashies` authoring skill plus the publish MCP - in one step.
+This is the command on [dashies.ai](https://dashies.ai). The vendor-neutral [`plugins`](https://github.com/vercel-labs/open-plugin-spec) CLI auto-detects the AI coding agents you have installed and sets up Dashies in each - the `dashies` authoring skill plus the publish MCP - in one step.
 
 It installs into **Claude Code** and **Cursor** out of the box. For **Codex** specifically, or on **Windows**, use the matching per-tool command below - the `plugins` CLI's Codex install and Windows agent-detection are still maturing.
 
@@ -50,7 +50,7 @@ It installs into **Claude Code** and **Cursor** out of the box. For **Codex** sp
 Two commands inside Claude Code:
 
 ```text
-/plugin marketplace add https://dashies.xyz/marketplace.json
+/plugin marketplace add https://dashies.ai/marketplace.json
 /plugin install dashies@dashies
 ```
 
@@ -80,13 +80,13 @@ Dashies uses the standard MCP **OAuth 2.1 + PKCE** flow with **Dynamic Client Re
 
 ### Using another AI tool?
 
-This plugin makes Claude Code, Codex, and Cursor one-install paths, but Dashies is a plain remote MCP server, so any MCP-capable client can publish to it. Point your tool at the same URL - `https://mcp.dashies.xyz/mcp`:
+This plugin makes Claude Code, Codex, and Cursor one-install paths, but Dashies is a plain remote MCP server, so any MCP-capable client can publish to it. Point your tool at the same URL - `https://mcp.dashies.ai/mcp`:
 
-- **Cursor (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, one-click **Add to Cursor** on [dashies.xyz](https://dashies.xyz), or add `{ "dashies": { "url": "https://mcp.dashies.xyz/mcp" } }` under `mcpServers` in `~/.cursor/mcp.json`.
-- **Codex (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, run `codex mcp add dashies --url https://mcp.dashies.xyz/mcp`, then `codex mcp login dashies`.
+- **Cursor (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, one-click **Add to Cursor** on [dashies.ai](https://dashies.ai), or add `{ "dashies": { "url": "https://mcp.dashies.ai/mcp" } }` under `mcpServers` in `~/.cursor/mcp.json`.
+- **Codex (MCP only, no skill)** - prefer the one-install plugin above. For just the MCP, run `codex mcp add dashies --url https://mcp.dashies.ai/mcp`, then `codex mcp login dashies`.
 - **Claude web, desktop, and Cowork** - add a custom connector for that URL under Settings -> Connectors.
 
-The same one-click OAuth sign-in applies everywhere, with no token to paste. [dashies.xyz](https://dashies.xyz) has copy-paste setup for each tool.
+The same one-click OAuth sign-in applies everywhere, with no token to paste. [dashies.ai](https://dashies.ai) has copy-paste setup for each tool.
 
 ## Quick start
 
@@ -99,7 +99,7 @@ Publish a dashboard of last month's signups by plan.
 Claude builds a self-contained HTML dashboard, calls `publish_dashboard`, and hands back a live URL:
 
 ```text
-https://dashies.xyz/<your-handle>/signups-by-plan
+https://dashies.ai/<your-handle>/signups-by-plan
 ```
 
 That is the full loop: one request, one shareable link.
@@ -114,7 +114,7 @@ flowchart LR
       A["You describe the dashboard"] --> B["Claude writes a spec:<br/>cube SQL, dimensions,<br/>measures, tiles"]
       B --> C["publish_dashboard"]
     end
-    C --> D[("dashies.xyz/your-handle/slug")]
+    C --> D[("dashies.ai/your-handle/slug")]
     subgraph loop["On schedule (no AI)"]
       E["Cron fires:<br/>hourly / daily / weekly / monthly"] --> F["Re-run the saved cube SQL<br/>against your connected source"]
       F --> G["Write fresh numbers into<br/>the data island only"]
@@ -177,7 +177,7 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 2. **Ask Claude to build it.** For example: *"Build a refreshable dashboard of weekly active users by plan, and refresh it daily."* The `dashies` skill takes over from here.
 3. **Design the cube.** Claude finds your connection with `list_connections`, uses `introspect_schema` to read its tables, then defines a cube: a low-cardinality grain (the dimensions you slice by) and additive measures (counts, sums) that can be re-aggregated safely every cycle.
 4. **Validate the SQL.** `validate_cube_sql` confirms the cube runs against your source before anything is published.
-5. **Publish with a schedule.** Claude writes a **spec** (the cube's dimensions and measures as datasets, tiles to show them, and your chosen cadence) and calls `publish_dashboard` with it. The server compiles the spec into the HTML, validates it, and seeds it with real numbers from your connection before the URL goes live: `https://dashies.xyz/<your-handle>/<slug>`.
+5. **Publish with a schedule.** Claude writes a **spec** (the cube's dimensions and measures as datasets, tiles to show them, and your chosen cadence) and calls `publish_dashboard` with it. The server compiles the spec into the HTML, validates it, and seeds it with real numbers from your connection before the URL goes live: `https://dashies.ai/<your-handle>/<slug>`.
 6. **Walk away.** The cron re-runs the cube SQL on schedule and writes fresh numbers into the data island. The dashboard stays current with no further AI involvement.
 
 > [!TIP]
@@ -195,9 +195,9 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 
 ## Links
 
-- Home: https://dashies.xyz
-- Marketplace manifest: https://dashies.xyz/marketplace.json
-- MCP server: https://mcp.dashies.xyz/mcp
+- Home: https://dashies.ai
+- Marketplace manifest: https://dashies.ai/marketplace.json
+- MCP server: https://mcp.dashies.ai/mcp
 - Issues: https://github.com/Dashies-ai/dashies-plugin/issues
 
 ## License
@@ -208,6 +208,6 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 
 <div align="center">
 
-Built by [Dashies](https://dashies.xyz). Dashboards that keep themselves up to date.
+Built by [Dashies](https://dashies.ai). Dashboards that keep themselves up to date.
 
 </div>

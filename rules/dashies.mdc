@@ -11,7 +11,7 @@ alwaysApply: true
 
 If the request has nothing to do with dashboards, ignore the rest of this rule.
 
-Dashies publishes a self-contained HTML dashboard to a stable `https://dashies.xyz/<handle>/<slug>` URL through the `dashies` MCP, and - when the dashboard is backed by a connected data source - re-runs its SQL on a schedule with no AI in the loop.
+Dashies publishes a self-contained HTML dashboard to a stable `https://<handle>.dashies.ai/<slug>` URL through the `dashies` MCP, and - when the dashboard is backed by a connected data source - re-runs its SQL on a schedule with no AI in the loop.
 
 - Use the bundled `dashies` skill for the full authoring flow: the connected-data gate, cube design (low-cardinality grain, additive measures), filling in the Dashies **spec** (datasets + tiles), and choosing a schedule. The server compiles the spec into the HTML + data island + `source_config` manifest, validates it, and seeds it live - you never hand-write the data-island binding contract, the sandbox CSP, or the manifest.
 - For a one-off **static** dashboard (no live data source), generate a single self-contained HTML file (inline CSS/JS, embedded data) and publish it with `publish_dashboard`'s `body` argument. For a **refreshable** dashboard, pass a **spec** via `publish_dashboard`'s `spec` argument instead (see the `dashies` skill) - never hand-roll the HTML or the manifest. Either way, share the returned URL.

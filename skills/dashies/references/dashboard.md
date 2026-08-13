@@ -610,7 +610,7 @@ native REST engines have no execution-time byte gate at all), and `introspect_sc
 real ceiling for the connection you are actually on. The publish body itself caps at
 **5,242,880 bytes** (`MAX_PUBLISH_BYTES`, 5 MiB), so a big row set can only
 arrive via the placeholder flow. Beyond the island cap, a **warehouse** cube switches to
-`data.mode: "parquet"`: the rows live in a separate file (ceiling ~128 MiB) instead
+`data.mode: "parquet"`: the rows live in a separate file (ceiling ~256 MiB) instead
 of the island, it publishes in a "preparing" state, and the first refresh fills it.
 `self` always stays inline. Dashies reads the parquet with **HTTP range reads** - it
 fetches only the row-groups a filtered / grouped query needs, not the whole file - so
@@ -652,7 +652,7 @@ dataset. A single-metric dashboard is simply a v4 manifest with one dataset.
 > row-level dataset, so parquet would have cut about 9% of its bytes; if you are reaching
 > for parquet to shrink a lattice, the shape is wrong, not the storage. Constraints:
 > **warehouse-only** (a `self` connection is rejected on any dataset mode), at most
-> **`PARQUET_DATASETS_MAX` = 2** parquet datasets per dashboard, and `hybrid` is still
+> **`PARQUET_DATASETS_MAX` = 3** parquet datasets per dashboard, and `hybrid` is still
 > **inline-only** - it ships both its lattice and its row-level slice in the island, and a
 > `hybrid` + `parquet` publish is rejected.
 >

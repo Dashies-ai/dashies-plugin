@@ -248,7 +248,7 @@ time.
 | the same, on a **SQL Server (`mssql`)** connection | **5,000** | **2,000,000** | the FDW-hosted `_mssql_executor_ddl` template, whose caps were never raised by the migrations that lifted the other five engines |
 | an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB), applied on EVERY engine |
 | the compiled body, on every engine | - | 5,242,880 | `MAX_PUBLISH_BYTES`. A measurement of real bytes rather than a projection, so it is usually what binds first |
-| **Refresh** (what the dataset may GROW to) | 50,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
+| **Refresh** (what the dataset may GROW to) | 18,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
 
 **The mssql row is not a footnote - it is 20x tighter on rows and it applies to `cube`,
 `lattice`, `hybrid` and `rows` alike.** A grain that is comfortably inline on Postgres or
@@ -272,7 +272,7 @@ limits instead (BigQuery / Snowflake / Redshift / Databricks). Either way declar
 buys you nothing at authoring time. `data: { mode: parquet }` is **not** a way to declare a
 5M-row detail table today - bound the declared statement exactly as you would an inline one (a
 time window, fewer columns, a narrower grain), and expect a hard publish failure if it
-overflows. Making the 50M ceiling declarable is tracked in #797.
+overflows. Making the 18M ceiling declarable is tracked in #797.
 
 What it does buy, all three real - you publish a SMALL dataset that can GROW large on refresh:
 
@@ -306,7 +306,7 @@ datasets:
 ```
 
 Most tiles bind to `summary` and resolve from precomputed cells; the detail table binds to
-`detail`. The 2-per-dashboard cap is sized for exactly this shape.
+`detail`. The 3-per-dashboard cap is sized for exactly this shape.
 
 **The rules, each a pointered publish error rather than a surprise:**
 

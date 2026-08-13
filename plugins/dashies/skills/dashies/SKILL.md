@@ -149,7 +149,7 @@ the dataset may grow.** Two different ceilings, and only the second one moves:
   repeats it in the `Size:` line of a successful validate (not on a failure, and not on the
   `extreme` or v3/v4-inline-only branches, which name a different constraint).
 
-- **At refresh** - the dataset may GROW into 256 MiB / 50M rows, which is where those figures
+- **At refresh** - the dataset may GROW into 256 MiB / 18M rows, which is where those figures
   come from.
 
 So `data: { mode: parquet }` is not a way to declare a 5M-row detail table today; bound the
@@ -164,7 +164,7 @@ having - you are publishing a small dataset that can grow large on refresh:
 
 That is the **composite model**, and it is the shape a large report should take: a `lattice`
 serves the aggregates (exact under any filter, MB-scale, no engine), and a Parquet-backed
-`rows` dataset carries the drill-through detail behind it. At most **2** parquet datasets per
+`rows` dataset carries the drill-through detail behind it. At most **3** parquet datasets per
 dashboard, which is sized for exactly that. The rules, and the reasons, are in
 `references/spec.md` under `data`.
 
@@ -180,7 +180,7 @@ results to a thin client, so it reaches billions of rows. A Dashies dashboard is
 shareable file that computes in the viewer's BROWSER - so the ceiling is the browser's.
 
 **Do not design around a number you hope for. The numbers you have today are the caps
-above: 100,000 rows per declared statement, 8 MiB of inline island, 2 parquet datasets.**
+above: 100,000 rows per declared statement, 8 MiB of inline island, 3 parquet datasets.**
 
 If a user asks for something that cannot fit - a 50M-row detail table, a filterable grid
 over every transaction - **say so plainly and early, before you write SQL.** The honest
@@ -734,8 +734,8 @@ or inconsistent.
   (`references/cube.md`) - a lattice can never offload to Parquet.
 - **Only a `rows` dataset offloads, and only on a warehouse.** `data: { mode: parquet }` is
   valid on `mode: rows` alone, needs a warehouse `source.connection` (`self` has no offload),
-  and at most 2 per dashboard. Each of those is a pointered publish error, not a surprise:
-  parquet on a `cube`/`lattice`/`hybrid`, parquet on `self`, a third parquet dataset, and
+  and at most 3 per dashboard. Each of those is a pointered publish error, not a surprise:
+  parquet on a `cube`/`lattice`/`hybrid`, parquet on `self`, a fourth parquet dataset, and
   `rows_window` alongside parquet (the window bounds the INLINE slice and does nothing to an
   extract) are all refused at publish. A parquet dataset publishes EMPTY on purpose and its
   tiles read "Updating" until the first refresh lands the object - the seed proves its SQL and

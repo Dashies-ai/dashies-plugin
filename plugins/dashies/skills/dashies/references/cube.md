@@ -701,7 +701,7 @@ Against a big table, keep the cube cheap and let it validate fast:
   dimension table** and re-aggregate (sums of sums stay exact).
 - **A row-level dataset too large to inline declares `data: { mode: parquet }`**
   (warehouse only, `rows` mode only; see `spec.md`). Its rows leave the island
-  budget and its ceiling becomes 256 MiB / 50M rows.
+  budget and its ceiling becomes 256 MiB / 18M rows.
 
 If `validate_cube_sql` is slow or times out, the cube is too big or too expensive
 for the inline path - tighten the window, coarsen the grain, or (for a `rows`

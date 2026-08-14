@@ -661,10 +661,28 @@ dataset. A single-metric dashboard is simply a v4 manifest with one dataset.
 > pointer (`{ "mode": "parquet", "url": null }`), the top-level `"reader": "range"`
 > capability tag, and the `_pending` marker for you. On THIS hand-authored path you must emit
 > all three yourself - and omitting the `reader` tag silently caps that dataset at the 128 MiB
-> legacy floor instead of 256 MiB, with no error anywhere. The spec is also deliberately
-> stricter than this path: it accepts parquet on `rows` alone (this path would also let a
-> `cube`/`lattice` divert to an extract whose object nothing reads) and refuses a
-> `rows_window` beside it (inert on an extract). Prefer the spec.
+> legacy floor instead of 256 MiB, with no error anywhere.
+>
+> **Where the two paths differ on `data`.** No counts here on purpose - read the rows, and
+> check any row you are about to rely on rather than trusting this table to be complete:
+>
+> | dataset shape | this hand-authored path | a spec |
+> |---|---|---|
+> | `cube` / `lattice` carrying `data`, any value including `null` | rejected | rejected |
+> | `rows` with NO `data` | **rejected** (`data` is required) | accepted |
+> | `hybrid` with NO `data` | **rejected** (`data` is required) | accepted |
+> | `hybrid` carrying `data` | accepted (must be `inline`) | **rejected** |
+> | `rows` + `data: {mode: inline}` + `rows_window` | accepted | accepted |
+> | `rows` + `data: {mode: parquet}` + `rows_window` (warehouse connection) | accepted (the window is INERT) | **rejected** |
+>
+> The last row says "warehouse connection" because parquet is warehouse-only on BOTH paths, so
+> on `self` that combination is refused for the connection before the window is ever considered
+> and the row's question does not arise.
+>
+> So the disagreement runs in BOTH directions: this path demands `data` where a spec forbids or
+> ignores it, and a spec catches an inert `rows_window` beside a parquet dataset that this path
+> lets through. The `cube`/`lattice` row is the one #1092 closed; the `hybrid` rows are tracked
+> in #1389. Prefer the spec.
 >
 > **Maturity, stated plainly so you can weigh it:** this path is live and unit-tested with
 > injected deps, but it has **no end-to-end test against a real warehouse** - `parquet`

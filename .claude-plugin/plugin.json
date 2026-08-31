@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "dashies",
   "displayName": "Dashies",
-  "version": "0.26.0",
-  "description": "Publish AI-built dashboards to a stable dashies.ai URL and keep them refreshed on a schedule. Bundles the dashies authoring skill, a design skill for beautiful on-brand dashboards, and the Dashies publish MCP (OAuth 2.1 + PKCE, no tokens to paste).",
+  "version": "0.28.0",
+  "description": "Publish AI-built dashboards to a stable dashies.ai URL and keep them refreshed on a schedule. Bundles the dashies authoring skill and the Dashies publish MCP (OAuth 2.1 + PKCE, no tokens to paste).",
   "author": {
     "name": "Dashies",
     "url": "https://github.com/MickeyBinnoon"

@@ -151,7 +151,7 @@ OAuth triggers on first use of any tool below (one browser click).
 | Tool | What it does |
 |---|---|
 | `publish_dashboard` | Upload a self-contained HTML / JSON / CSV / image file (up to ~5 MB) and get a stable URL back - or, for a refreshable dashboard, pass a **spec** (YAML) instead and the server compiles, validates, and seeds it into the HTML for you. |
-| `update_dashboard` | Edit metadata (name, tags, chart, visibility) or rename the slug without re-uploading the body. Renames keep the old URL alive via a 301 redirect. |
+| `update_dashboard` | Edit metadata (name, tags, chart) or rename the slug without re-uploading the body. Renames keep the old URL alive via a 301 redirect. |
 | `get_dashboard` | Read back a previously published file. |
 | `delete_dashboard` | Retire a dashboard by slug. The URL stops resolving and the bytes are removed. |
 | `list_dashboards` | Enumerate your active dashboards, newest first, with cursor pagination. |
@@ -189,7 +189,7 @@ A refreshable dashboard needs a connected data source, so the authoring flow sta
 - **"What dashboards do I have?"** - Claude calls `list_dashboards` and summarizes them, newest first.
 - **"Rename this dashboard."** - Claude calls `update_dashboard` with a new slug. The old URL 301-redirects to the new one, so shared links keep working.
 - **"Roll this back."** - Claude calls `list_dashboard_versions` to find a snapshot, then `restore_dashboard_version` to restore it (personal dashboards only).
-- **"Make it private."** - Claude calls `update_dashboard` with the visibility change; no re-upload needed.
+- **"Who can see this?"** - Every dashboard is already access-gated: a personal one opens for you, a workspace one for that workspace's members, and a signed-out visitor is sent to sign in. There is no public dashboard and nothing to switch.
 
 </details>
 

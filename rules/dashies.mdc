@@ -11,10 +11,11 @@ alwaysApply: true
 
 If the request has nothing to do with dashboards, ignore the rest of this rule.
 
-Dashies publishes a self-contained HTML dashboard to a stable `https://<handle>.dashies.ai/<slug>` URL through the `dashies` MCP, and - when the dashboard is backed by a connected data source - re-runs its SQL on a schedule with no AI in the loop.
+Dashies publishes a dashboard to a stable `https://<handle>.dashies.ai/<slug>` URL through the `dashies` MCP and re-runs its SQL on a schedule with no AI in the loop.
 
-- Use the bundled `dashies` skill for the full authoring flow: the connected-data gate, cube design (low-cardinality grain, additive measures), filling in the Dashies **spec** (datasets + tiles), and choosing a schedule. The server compiles the spec into the HTML + data island + `source_config` manifest, validates it, and seeds it live - you never hand-write the data-island binding contract, the sandbox CSP, or the manifest.
-- For a one-off **static** dashboard (no live data source), generate a single self-contained HTML file (inline CSS/JS, embedded data) and publish it with `publish_dashboard`'s `body` argument. For a **refreshable** dashboard, pass a **spec** via `publish_dashboard`'s `spec` argument instead (see the `dashies` skill) - never hand-roll the HTML or the manifest. Either way, share the returned URL.
-- A refreshable dashboard requires a connected data source; introspect the schema, design the cube, and validate with `validate_cube_sql` before writing the spec.
+- Use the bundled `dashies` skill for the whole flow. In short: start with `check_readiness`, say which connection you are reading from, explore in the user's own tooling where this session has it, write one read-only `SELECT` per dataset, validate it with `validate_cube_sql`, then pass a **spec** (datasets plus tiles plus a source and schedule) to `publish_dashboard`'s `spec` argument.
+- **You write no HTML, CSS or JavaScript.** The server builds the dashboard from the spec, checks it, and runs the SQL live so the published page carries real numbers. Never hand-roll the page.
+- **A dashboard needs a connected data source to stay current.** If the user has none, `check_readiness` says so and offers the two ways forward: connect a warehouse at `https://dashies.ai/app/connections`, or try it on sample data Dashies provides.
+- After publishing, stay with it: a dashboard whose data is kept with Dashies starts empty, so poll `get_refresh_status` until the numbers land rather than handing over a page that reads "Updating".
 
 The MCP signs in over OAuth on first use - no token to paste.

@@ -1,170 +1,160 @@
 # Filling the Dashies spec (Step 4)
 
-You author a refreshable dashboard by writing a **spec** - one small YAML document -
-and passing it to `publish_dashboard`'s `spec` argument. The server does the rest:
-it **compiles** the spec into the HTML + data island + refresh manifest, **validates**
-the whole thing, and **seeds** it (runs each dataset's cube once, live) so the published
-bytes carry real numbers. You never write `data-dash` markup, the `#dashies-data` island,
-the runtime marker, or the `source_config` manifest - the compiler emits all of them and
-keeps them consistent. A binding that names a column the SQL never returns, a role-less
-tile, a non-additive agg (`avg`, `count_distinct`, `median`) on a `cube` measure - each is a
-**pointered publish error naming the exact field**, not a blank tile or a silently-wrong
-number that ships and rots.
+You author a dashboard by writing a **spec** - one small YAML document - and passing it to
+`publish_dashboard`'s `spec` argument. The server does the rest: it builds the dashboard from the
+spec, checks the whole thing, and runs each dataset's `sql` once, live, so the published bytes
+carry real numbers. **You write no markup and no styling.** A binding that names a column the SQL
+never returns, or a tile with no type, is a **pointed publish error naming the exact field**, not
+a blank tile or a silently wrong number that ships and rots.
 
-So Step 4 is: turn the cube you designed in Steps 1-3 into datasets + tiles. The cube SQL
-and its additivity classification (the hard part) are already done; the spec is mechanical.
+So Step 4 is mechanical: turn the statements you wrote in Step 3 into datasets plus tiles. The
+hard part - the grain and the correctness of the SQL - is already done.
 
-The full field contract is the JSON Schema at `https://dashies.ai/schema/dash/v1.json`
-(`$id`, draft 2020-12) - it is the exhaustive source of truth. This reference is its
-readable form - the fields you author with and their load-bearing bounds; the schema above
-stays the exhaustive contract for the exact limits. `additionalProperties` is `false`
-everywhere - an unknown or misspelled key is a `[L2]` error naming the key, never silently
+The full field contract is the JSON Schema at `https://dashies.ai/schema/dash/v1.json` (`$id`,
+draft 2020-12) and it is the exhaustive source of truth. This reference is its readable form: the
+fields you author with and their load-bearing bounds. `additionalProperties` is `false`
+everywhere, so an unknown or misspelled key is an `[L2]` error naming the key, never silently
 ignored.
 
 ## House rules (read once)
 
 - **YAML 1.2 core** (the server parses with `version: "1.2"`). Only `true` / `false` are
-  booleans, only `null` / `~` / empty is null, and a bare number is a number - so quote a
-  STRING value that would otherwise read as one of those (a numeric-looking code like a zip,
-  a literal `true` you want as text, a bare `null`). Unlike YAML 1.1 there is NO "Norway
-  problem" here: `no` / `off` / `yes` / `NO` and a date-like `2026-07-01` all already parse
-  as plain strings, so `domains: [NO, SE]` is fine (quoting a string is always safe too).
-  JSON is also accepted (a spec is valid JSON-as-YAML) if you prefer no ambiguity.
-- **The `slug`, when present, must equal the publish `path` slug** (`publish_dashboard({ path: "<slug>", spec })`).
-  Omit it and the path slug is used. A mismatch is a `[identity]` error at `/slug`.
-- **Every publish SEEDs live.** The compiler runs each dataset's `sql` through the same
-  confined authoring path `validate_cube_sql` uses (a read-only DB executor on `self`,
-  Postgres and SQL Server; a native REST adapter on BigQuery, Snowflake, Redshift and
-  Databricks), then binds the tiles against the ACTUAL result columns. A dataset whose SQL fails, or that returns zero rows, or whose
-  bindings do not match the seeded columns, cannot publish - so a spec that would render
-  fake zeros never reaches the URL.
-- **Numeric honesty is automatic.** The runtime renders every value exactly or shows `-`
-  (unavailable) - never a rounded-wrong number. You do not manage precision.
+  booleans, only `null` / `~` / empty is null, and a bare number is a number - so quote a STRING
+  value that would otherwise read as one of those (a numeric-looking code like a zip, a literal
+  `true` you want as text, a bare `null`). Unlike YAML 1.1 there is NO "Norway problem" here:
+  `no` / `off` / `yes` / `NO` and a date-like `2026-07-01` all already parse as plain strings, so
+  `domain_values: [NO, SE]` is fine (quoting a string is always safe too). JSON is also accepted
+  (a spec is valid JSON-as-YAML) if you prefer no ambiguity.
+- **The `slug`, when present, must equal the publish `path` slug**
+  (`publish_dashboard({ path: "<slug>", spec })`). Omit it and the path slug is used. A mismatch
+  is an `[identity]` error at `/slug`.
+- **Every publish runs the SQL live.** The server executes each dataset's `sql` through the same
+  confined read-only path `validate_cube_sql` uses, then binds the tiles against the ACTUAL
+  result columns. A dataset whose SQL fails, returns zero rows, or whose bindings do not match
+  the columns it returned, cannot publish - so a spec that would render fake zeros never reaches
+  the URL.
+- **Numeric honesty is automatic.** Every value renders exactly or shows `-` (unavailable), never
+  a rounded-wrong number. You do not manage precision.
 - **Declare only what a tile uses.** A measure or dimension no tile reads raises
-  ``[L3] /datasets/<ds>/measures/<key>: measure `<key>` is not referenced by any tile.``
-  (and the same wording for a dimension). This one is a WARNING, not a blocking error: a
-  spec whose only issues are these still publishes, and the advisory arrives on the SUCCESS
-  report prefixed `warning:`. A FAILED publish lists only real errors, so its count is the
-  number of things you actually have to fix - an advisory never pads it. Two things
-  that are NOT unreferenced: a measure used only as a ratio's `num`/`den` (the ratio is the
-  reference - the operands need no tile of their own), and a dimension in a dataset with no
-  tile that could have shown it (a KPI-only dataset never warns about its grain dim).
-- **No em/en dashes** in any spec string (titles, notes, labels, text tiles) - plain ASCII
+  ``[L3] /datasets/<ds>/measures/<key>: measure `<key>` is not referenced by any tile.`` (and the
+  same wording for a dimension). This is a WARNING, not a blocking error: a spec whose only issues
+  are these still publishes, and the advisory arrives on the SUCCESS report prefixed `warning:`. A
+  FAILED publish lists only real errors, so its count is the number of things you actually have to
+  fix. Two things that are NOT unreferenced: a measure used only as a ratio's `num` / `den` (the
+  ratio is the reference), and a dimension in a dataset with no tile that could have shown it (a
+  KPI-only dataset never warns about its grain).
+- **No em or en dashes** in any spec string - titles, notes, labels, text tiles. Plain ASCII
   hyphens only.
 
 ## Top level
 
-Required: `dashies`, `title`, `source`, `datasets`, plus EXACTLY ONE of `tiles` OR `look`
-(mutually exclusive - the schema's top-level `oneOf`). `look` additionally forbids `theme`
-and `layout` (a look-mode body owns its own styling and markup).
+Required: `dashies`, `title`, `source`, `datasets`, plus `tiles`.
 
 | Key | Type | Notes |
 |---|---|---|
 | `dashies` | `1` | Format version. Always `1`. |
 | `title` | string (1-120) | The dashboard name (also the default display name). |
-| `slug` | kebab-case, `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` (1-64 chars, alphanumeric first + last) | Optional; must equal the publish path slug when set. |
+| `slug` | kebab-case, `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` (1-64 chars, alphanumeric first and last) | Optional; must equal the publish path slug when set. |
 | `description` | string (<=4000) | Optional prose shown in the header. |
-| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` annotation is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
-| `source` | object | The one connection + schedule the whole dashboard refreshes on (below). |
-| `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared = the default. |
-| `tiles` | array, 1-64 | The tiles, in document order (below). Mutually exclusive with `look`. |
-| `look` | object | v1.1 whole-look escape hatch: `{ html }` (the body inline, preserved verbatim outside its data island) or `{ from: <slug> }` (references the current published body of the publish target instead of inlining it) - exactly one of the two (below). Mutually exclusive with `tiles`/`theme`/`layout`. |
-| `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Not allowed with `look`. |
-| `theme` | object | Optional: `accent` (`#rrggbb`), `font` (`sans`/`serif`/`mono`), `density` (`compact`/`comfortable`/`spacious`), `mode` (`light`/`dark`/`auto`), `css` (<=50000). Prefer the `dashies-design` skill for real branding. Not allowed with `look`. |
+| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
+| `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
+| `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
+| `tiles` | array, 1-64 | The tiles, in document order (below). |
+| `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). |
 
-`source` (required `connection` + `schedule`):
+`source` (required `connection` plus `schedule`):
 
 | Key | Type | Notes |
 |---|---|---|
-| `connection` | `"self"` \| warehouse UUID | `self` (Dashies' no-PII metrics) or a connection id from `list_connections`. |
-| `schedule` | `manual`\|`hourly`\|`daily`\|`weekly`\|`monthly` | The coarse cadence (Step 5). Refine timing later with `set_refresh_schedule`. |
+| `connection` | `"self"` or a connection UUID | The built-in connection, or a connection id from `check_readiness` / `list_connections`. Required, with no default. |
+| `schedule` | `manual` / `hourly` / `daily` / `weekly` / `monthly` | The coarse cadence (Step 5). Refine the timing afterwards with `set_refresh_schedule`. |
 | `timezone` | string (1-64 chars) | Optional business zone for date bucketing; use an IANA zone name (e.g. `America/New_York`). The schema checks length only, not that the value is a real zone. |
 
 ## datasets
 
-Each dataset is one materialization (Steps 1-3 chose its `mode`). Required: `sql`,
-`dimensions`, `measures`.
+Required: `sql`, `dimensions`, `measures`. **Nothing else is yours to decide** - how the data is
+prepared and where it is kept is chosen by the server from exactly these three plus the source,
+and the publish report tells you what it chose for each dataset and why.
 
 | Key | Type | Notes |
 |---|---|---|
-| `mode` | `cube`\|`lattice`\|`hybrid`\|`rows` | Optional. Omit and the server auto-selects `cube` or `lattice` from the measures + dimensions; declare `rows` or `hybrid` explicitly (they ship row-level bytes). The report's `mode_choices` tells you what each resolved to and why. |
-| `sql` | string (8-100000) | The single read-only cube SELECT from Step 3 (already validated). For `lattice`/`hybrid` it is the `GROUP BY CUBE` lattice. |
-| `rows_sql` | string (8-100000) | REQUIRED for `hybrid` (the row-level slice), forbidden otherwise. |
-| `rows_window` | int (100-8e6) | `rows`/`hybrid` only: bound the inline slice to the first N rows of the windowed statement's ORDER BY (`sql` for `rows`, `rows_sql` for `hybrid`). That top-level ORDER BY is REQUIRED and enforced at publish - see cube.md. Order by time descending for "the most recent N". Refused alongside `data: { mode: parquet }` (below). |
-| `data` | `{ mode: inline\|parquet }` | `rows` only. Where that dataset's rows live. Omit for `inline` (the default). `parquet` offloads them to R2 - see **Parquet-backed rows** below. |
-| `dimensions` | map, 1-12 | Each key `^[a-z][a-z0-9_]{0,63}$` = an output column of `sql`. Value: `{ type?, label?, domains?, buckets?, intent? }`. |
-| `measures` | map, 1-24 | Each key `^[a-z][a-z0-9_]{0,63}$` = a measure. Value: an **agg measure** or a **ratio measure** (below). |
+| `sql` | string (8-100000) | The single read-only `SELECT` from Step 3, already validated. |
+| `dimensions` | map, 1-12 | Each key `^[a-z][a-z0-9_]{0,63}$` is an output column of `sql`. Value: `{ type?, label?, domains?, buckets?, intent? }`. |
+| `measures` | map, 1-24 | Each key `^[a-z][a-z0-9_]{0,63}$` is a measure. Value: an **agg measure** or a **ratio measure** (below). |
 | `intent` | string (<=2000) | Optional semantic hint for this dataset. |
 
-**dimension** - `type` is OPTIONAL and, when set, is `category` or `date` ONLY (a
-`type: string` is a `[L2]` error "type must be one of category, date"); it describes the
-FILTER/AXIS role, not the SQL column type. Omit `type` and the dim is treated as `category`;
-set `type: date` for a date dimension (so it buckets as a date). An optional `label`
-(<=80 chars) sets the display name. A `category` dim may declare `domains` (its bounded value
-list: 1-200 unique entries, each a string / number / boolean); a `date` dim may declare
-`buckets` (max bucket count, 1-1000). A `lattice`/`hybrid` dimension MUST declare its bound
-(`domains` for category, `buckets` for date) - that is what keeps the lattice finite.
+**dimension** - `type` is OPTIONAL and, when set, is `category` or `date` ONLY (a `type: string`
+is an `[L2]` error). It describes the FILTER or AXIS role, not the SQL column type. Omit it and
+the dimension is treated as `category`; set `type: date` for a date dimension so it buckets as
+one. An optional `label` (<=80 chars) sets the display name.
+
+**Declare the dimension's bound wherever you know it, and prefer to know it.** A `category`
+dimension declares `domains` - its value list, 1 to 200 unique entries, each a string, number or
+boolean. A `date` dimension declares `buckets` - the maximum bucket count, 1 to 1000. **This is
+the single most useful thing you can tell the server**: a dimension with a known, small set of
+values is what lets a dashboard be prepared cheaply and answer exactly under every filter. A
+dimension you cannot bound is a signal to go back to Step 3 and ask a narrower question.
+
+`domains` also fixes the ORDER of a filter menu - see "Member order" below.
 
 **measure** - exactly one of:
+
 - **agg measure** (`agg` required): `agg` is one of `sum` `count` `min` `max` `avg`
-  `count_distinct` `median` `percentile_cont` `percentile_disc` `stddev` `variance` `mode`;
-  optional `column` (the raw column the agg reads; defaults to the measure key), `percentile`
-  (0<p<1, for `percentile_cont`/`_disc`), `label` (<=80), `unit`, `intent`. The **allowed aggs
-  depend on the mode**: a `cube` measure is `sum`/`count`/`min`/`max` only and takes NO
-  `column` (additive-only, enforced); `rows` widens to `avg`/`count_distinct`/`median`/
-  `percentile_cont`; `lattice`/`hybrid` allow ANY agg (each exact per cell). Declaring a
-  non-additive agg on a `cube` measure is a `[L2]` error pointing you to `lattice`/`rows`.
-  On a `cube` the runtime re-aggregates the pre-aggregated cells, so a count-of-rows
-  (`count(*)` in the SQL) declared `agg: count` is rolled up by **summing** the per-cell
-  counts: `agg: count` and `agg: sum` on that column are equivalent and both total correctly
-  (the compiler maps a cube measure's `count` to a `sum` re-aggregation - it never "counts
-  the cells"). This is why `cube.md`'s additive table shows a `count(*)` column
-  re-aggregating by `sum`.
-  Optional **`stock: true`** declares that this measure reads a **point-in-time STOCK** -
-  a level measured at an instant (ARR, headcount, a balance, open tickets, inventory on
-  hand) - rather than a per-period **FLOW** that accumulates (new ARR, hires, deposits,
-  tickets opened). Nothing else changes: it does not affect the SQL, the mode, the
-  refresh, or the render. It is the ONE input the server's sum-over-stock check needs,
-  and nothing can infer it - `sum(ending_arr)` and `sum(new_arr)` are identical to any
-  static analysis, so an undeclared stock is invisible. Declare it whenever a measure is
-  a level, and the publish report warns (never blocks) if the cube sums it across the
-  grain. **This is a real, shipped wrong number, not a hypothetical:** a cohort lattice
-  summing `ending_arr_usd` over 24 tenure months reported $596M against a real $36M,
-  because summing a snapshot recounts the same customers in every period. If you want the
-  level, read the latest period or use `max`; if you want a trend, use a per-period
-  `avg`/`min`/`max`; if the sum really is intentional (the rows do not overlap), ignore
-  the warning.
-- **ratio measure** (`ratio` required): `{ num: <measure key>, den: <measure key> }` - a
-  ratio of two other declared measures, recomputed correctly under filters (never a stored
-  pre-divided average); each side may optionally set `num_scope`/`den_scope: all` to divide
-  by the unfiltered total instead of the filtered one. Optional `label` (<=80), `unit`, `intent`.
-  This is how a `cube` carries a rate/percentage, **and it is the only exact way a `cube`
-  carries an AVERAGE**: `num` = the sum measure, `den` = a `count(*)` measure, which makes the
-  tile exactly sum divided by count - the true weighted mean over the source rows, correct under
-  every filter. Averaging a cube's cells directly (`data-agg: avg`) is rejected, because each
-  cell is already a group total; see `dashboard.md`.
+  `count_distinct` `median` `percentile_cont` `percentile_disc` `stddev` `variance` `mode`.
+  Optional `column` (the raw column the aggregate reads; defaults to the measure key),
+  `percentile` (0 < p < 1, for `percentile_cont` / `percentile_disc`), `label` (<=80), `unit`,
+  `intent`.
+
+  **Declare the aggregate the number actually is.** Do not reach for `sum` because it seems
+  safer - a median declared as a sum is a wrong number, and the server can prepare a median
+  correctly if you say that is what it is. Some combinations of aggregate and dimension cannot be
+  prepared at all; those are refused at publish, in words that tell you what to change about the
+  question.
+
+  Optional **`stock: true`** declares that this measure reads a **point-in-time STOCK** - a level
+  measured at an instant (ARR, headcount, a balance, open tickets, inventory on hand) - rather
+  than a per-period **FLOW** that accumulates (new ARR, hires, deposits, tickets opened). Nothing
+  else changes: it does not affect the SQL, the refresh, or the render. It is the ONE input the
+  server's sum-over-a-stock check needs, and nothing can infer it - `sum(ending_arr)` and
+  `sum(new_arr)` are identical to any static analysis, so an undeclared stock is invisible.
+  Declare it whenever a measure is a level, and the publish report warns (never blocks) if the
+  dashboard sums it across the grain. **This is a real shipped wrong number, not a hypothetical:**
+  summing `ending_arr_usd` over 24 tenure months reported $596M against a real $36M, because
+  summing a snapshot recounts the same customers in every period. If you want the level, read the
+  latest period or use `max`; if you want a trend, use a per-period `avg` / `min` / `max`; if the
+  sum really is intentional because the rows do not overlap, ignore the warning.
+
+- **ratio measure** (`ratio` required): `{ num: <measure key>, den: <measure key> }` - a ratio of
+  two other declared measures, recomputed correctly under filters and never a stored pre-divided
+  average. Each side may optionally set `num_scope` / `den_scope: all` to divide by the unfiltered
+  total instead of the filtered one. Optional `label` (<=80), `unit`, `intent`.
+
+  **This is how you carry a rate or a percentage, and it is the exact way to carry an AVERAGE**:
+  `num` is the sum measure, `den` is a `count(*)` measure, which makes the tile exactly sum
+  divided by count - the true weighted mean over the source rows, correct under every filter. It
+  is strictly better than a stored average, because a stored average cannot be re-derived once a
+  viewer filters.
 
 **unit** (optional, on any measure) - controls display, never the stored value:
-`{ kind: currency|percent|count|number, ... }`. `currency` REQUIRES `scale` (`cents` or
-`units`) + takes an optional uppercase 3-letter `currency` code (`^[A-Z]{3}$`, e.g. `USD`);
-`percent` REQUIRES `scale` (`fraction` for
-0..1, `points` for 0..100); `count`/`number` take no `scale`. Optional `decimals` (0-6),
-`compact`. Pick `scale` to match what your SQL emits - if the column is already dollars use
-`units`, if it is integer cents use `cents`; the wrong scale is a 100x display error the
-format cannot catch (it is a display choice, not a structural fault).
+`{ kind: currency|percent|count|number, ... }`. `currency` REQUIRES `scale` (`cents` or `units`)
+and takes an optional uppercase three-letter `currency` code (`^[A-Z]{3}$`, e.g. `USD`);
+`percent` REQUIRES `scale` (`fraction` for 0..1, `points` for 0..100); `count` and `number` take
+no `scale`. Optional `decimals` (0-6), `compact`. **Pick `scale` to match what your SQL emits** -
+if the column is already dollars use `units`, if it is integer cents use `cents`. The wrong scale
+is a 100x display error nothing can catch for you, because it is a display choice rather than a
+structural fault.
 
-**Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind`
-always reaches the tile (a `percent` measure renders as a percent, a `count` as an
-integer), but `decimals` currently rides the dashboard's CURRENCY descriptor: the compiler
-emits it only as an override against the first `currency` unit it finds. So in a dashboard
-with no `currency` measure at all there is no descriptor to override, and `decimals: 1` on
-a `percent` or `number` measure is dropped from the emitted tile - while adding an
-unrelated `currency` measure somewhere else makes that same `decimals` start applying.
-Separately, on a `combo` tile the SECONDARY measure never carries its own `decimals` or
-`currency`: the runtime reads one unsuffixed pair and applies it to both axes. This is a
-known gap, not intended behaviour - treat `decimals` as a hint rather than a guarantee,
-and do not restructure a spec around it. (`scale` is not part of this gap: `fraction` and
-`units` are the identity, so there is nothing for them to emit.)
+**Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind` always
+reaches the tile (a `percent` measure renders as a percent, a `count` as an integer), but
+`decimals` currently rides the dashboard's CURRENCY descriptor: it is emitted only as an override
+against the first `currency` unit found. So in a dashboard with no `currency` measure at all
+there is nothing to override, and `decimals: 1` on a `percent` or `number` measure is dropped -
+while adding an unrelated `currency` measure somewhere else makes that same `decimals` start
+applying. Separately, on a `combo` tile the SECONDARY measure never carries its own `decimals` or
+`currency`: the runtime reads one unsuffixed pair and applies it to both axes. This is a known
+gap rather than intended behaviour - treat `decimals` as a hint, and do not restructure a spec
+around it. (`scale` is not part of this gap: `fraction` and `units` are the identity, so there is
+nothing for them to emit.)
 
 ## Provenance - say where each definition came from
 
@@ -224,119 +214,21 @@ reads, to someone who did not author it, as though it were the company's - so an
 "authored here, unverified" is more valuable than a confident sentence, and it is what
 tells the next reader which measures to check first.
 
-## Parquet-backed rows (`data: { mode: parquet }`)
-
-The whole dashboard's inline island is capped at **8 MiB / 100k rows**. A `rows` dataset on a
-**warehouse** connection can step out of that shared budget: declare `data: { mode: parquet }`
-and its rows are extracted to a content-addressed Parquet object in R2 on every refresh and
-read back by the runtime with HTTP range reads, contributing **zero** bytes to the island the
-other datasets share.
-
-### Two ceilings - know which one you declare against
-
-> **Parquet does not change what you can declare. It changes where the bytes go and how large
-> the dataset may grow.**
-
-The publish row splits three ways by engine, because both the threshold AND the layer that
-enforces it differ. Only an engine with a confined DB executor refuses on bytes at EXECUTION
-time.
-
-| | rows | bytes | enforced by |
-|---|---|---|---|
-| **Publish / republish** (the SQL you DECLARE), on `self` or **Postgres** | 100,000 | 8,000,000 | the confined authoring executor, which the publish SEEDS through (`inlineCapsForEngine`; overflow raises `execute_ro: result exceeds N rows; aggregate further`, never a silent truncation) |
-| the same, on **BigQuery / Snowflake / Redshift / Databricks** | 100,000 | **no execution-time cap** | their native REST authoring adapter. There is no DB executor on this path: it reads the warehouse's OWN row total up front and refuses before fetching a page (`the result (N rows) exceeds this connection's 100000-row cap`), and it measures no bytes at all, so the byte axis falls through to the two rows below |
-| the same, on a **SQL Server (`mssql`)** connection | **5,000** | **2,000,000** | the FDW-hosted `_mssql_executor_ddl` template, whose caps were never raised by the migrations that lifted the other five engines |
-| an INLINE dataset, for comparison | 100,000 | 8,388,608 | the island caps (`INLINE_MAX_ROWS` / `INLINE_MAX_BYTES`, binary 8 MiB), applied on EVERY engine |
-| the compiled body, on every engine | - | 5,242,880 | `MAX_PUBLISH_BYTES`. A measurement of real bytes rather than a projection, so it is usually what binds first |
-| **Refresh** (what the dataset may GROW to) | 18,000,000 | 268,435,456 | the extract path (`MAX_EXTRACT_ROWS` / `FLAT_PARQUET_CEILING`) |
-
-**The mssql row is not a footnote - it is 20x tighter on rows and it applies to `cube`,
-`lattice`, `hybrid` and `rows` alike.** A grain that is comfortably inline on Postgres or
-Snowflake is refused there, and there is no Parquet escape hatch: `data: { mode: parquet }` is
-refused on an mssql connection (it has no extract module), so the only remedies are a coarser
-grain, a narrower window, or a lower-cardinality dimension. **It is not the only departure,
-though** - the four REST engines depart on the other axis, having no execution byte cap at
-all, so a wide cube there is judged by the island and body limits and not by 8,000,000. Do not
-read either row as the general rule. Do not carry these numbers in your head
-across connections - `introspect_schema` prints the connection's real ceiling before you write
-any SQL - the reliable place to read it - and `validate_cube_sql` repeats it in the `Size:`
-line of a successful validate (not on a failure, and not on the `extreme` or
-v3/v4-inline-only branches).
-
-**The publish envelope does not move, and it is not optional.** Every publish seeds the parquet
-dataset's own `sql` exactly like an inline one, because that is what proves the SQL runs on the
-real warehouse and reads the real column types the extractor needs. Note what the publish rows
-say against the inline one: the row cap is IDENTICAL on every engine, and on the byte axis you
-are either 388,608 bytes TIGHTER than inline (Postgres) or bounded by the island and body
-limits instead (BigQuery / Snowflake / Redshift / Databricks). Either way declaring parquet
-buys you nothing at authoring time. `data: { mode: parquet }` is **not** a way to declare a
-5M-row detail table today - bound the declared statement exactly as you would an inline one (a
-time window, fewer columns, a narrower grain), and expect a hard publish failure if it
-overflows. Making the 18M ceiling declarable is tracked in #797.
-
-What it does buy, all three real - you publish a SMALL dataset that can GROW large on refresh:
-
-- the rows leave the **shared 8 MiB island budget**, so every other dataset gets all of it -
-  this is the composite-model value and usually the reason to reach for it;
-- the dataset may **GROW** past the inline caps between publishes without breaking, since only
-  publish is capped and refresh is not;
-- the runtime **range-reads** the object rather than downloading it whole.
-
-**Use it as the composite model, not as a bigger island.** The pattern this exists for is the
-one Power BI calls a composite model, and Dashies has both halves already:
-
-```yaml
-datasets:
-  summary:                       # the aggregation table: exact under any filter, no engine
-    mode: lattice
-    sql: select month, segment, grouping(month) as __g_month, grouping(segment) as __g_segment,
-         sum(arr) as arr, count(distinct account_id) as accounts from contracts
-         group by cube(month, segment)
-    dimensions: { month: { type: date, buckets: 24 }, segment: { domains: [Enterprise, SMB] } }
-    measures:   { arr: { agg: sum, column: arr }, accounts: { agg: count_distinct, column: account_id } }
-  detail:                        # the drill-through: row-level, offloaded
-    mode: rows
-    data: { mode: parquet }
-    # BOUNDED on purpose. Unbounded account-level detail overflows the 100k-row publish
-    # envelope above and fails the seed - parquet does not exempt the declared statement.
-    sql: select month, segment, account_id, arr from contracts
-         where month >= date_trunc('month', current_date) - interval '11 months'
-    dimensions: { segment: { type: category } }
-    measures:   { arr: { agg: sum, column: arr } }
-```
-
-Most tiles bind to `summary` and resolve from precomputed cells; the detail table binds to
-`detail`. The 3-per-dashboard cap is sized for exactly this shape.
-
-**The rules, each a pointered publish error rather than a surprise:**
-
-| Rule | Why |
-|---|---|
-| `rows` mode only | `cube`/`lattice` have no row-level slice - their cells always ride in the island. A `hybrid` DOES have one, but v4.0 ships it inline; split the detail into its own `rows` dataset. |
-| A **warehouse** `source.connection` | `self` has no offload path (its no-PII view is small by construction). |
-| At most **2** per dashboard | The extract runs them sequentially inside one refresh deadline. |
-| No `rows_window` alongside it | The window bounds the INLINE slice; an extract never passes through it, so a `rows_window` here would be silently ignored and you would get the whole extract. Bound the rows in the SQL instead. |
-
-**The first publish is deliberately empty, and says so.** A parquet dataset has no data until
-its first refresh produces the object, so it publishes with a pending pointer and its tiles
-render "Updating. The first refresh will fill this in." rather than a number. The seed still
-runs - it proves the SQL executes on the real warehouse, checks every binding against the real
-result columns, and reads the real column types the extractor needs - but its rows are **not**
-baked into the island, because at publish they are only that moment's snapshot of a dataset the
-refresh is about to re-extract in full. Baking them would put a partial payload in front of the
-runtime and read as the whole truth for a refresh interval. Trigger a refresh (or wait for the
-schedule) and check `get_refresh_status`; a parquet refresh runs asynchronously.
-
 ## tiles
 
-A closed set of eighteen types; `type` is REQUIRED (a role-less tile is a `[L2]` error - it can
-never blank-render). Some optional fields are common but are NOT on every type - each tile's
-schema is closed, so an unaccepted key is a `[L2]` error naming it:
+A CLOSED set, and the table below is every type this skill teaches - `type` is REQUIRED (a tile
+with no type is a `[L2]` error, because it can never blank-render). **The schema is the whole
+set and it is wider than this table**: it also admits a `custom` type, an escape hatch for a
+hand-written renderer, which nothing here describes and which you should not reach for. Some optional fields are common but are
+NOT on every type; each tile's schema is closed, so an unaccepted key is a `[L2]` error naming
+it. **No count is given here on purpose: the schema at the top of this file decides the set, and
+a number written beside it goes stale the day a type is added, with nothing to show it.**
 
-- `intent` and `w` (1-12 grid columns) are accepted on **all eighteen** types.
-- `dataset` (which dataset it reads; omit = the first/default) on all EXCEPT `text` (it has
-  no data) and `custom` (which names its datasets in `reads` instead).
-- `title` (<=120 chars) and `note` (<=1000) on `kpi` / `chart` / `table` / `matrix` / `heatmap` / `scatter` / `treemap` / `waterfall` / `funnel` / `drilldown` / `stacked` / `combo` / `pie` / `donut` / `gauge` / `custom` only (NOT on `filter` or `text`).
+- `intent` and `w` (1-12 grid columns) are accepted on EVERY type.
+- `dataset` (which dataset it reads; omit for the first, which is the default) on every type
+  EXCEPT `text`, which has no data.
+- `title` (<=120 chars) and `note` (<=1000) on every type that carries data - so on all of them
+  EXCEPT `filter` and `text`, which is easier to remember as the exception than as a list.
 
 The per-type "Key fields" column lists each type's own fields. A tile binding that names a
 measure/dimension no dataset declares is an `[L3]` reference error.
@@ -353,85 +245,73 @@ measure/dimension no dataset declares is an `[L3]` reference error.
 | `treemap` | `x`, `measure` | One rectangle per member of `x` (a dimension), its AREA being that member's share of the total. `measure` must DECOMPOSE - `sum` or `count` only. Optional `limit` (1-200, rectangles; default 24), `height` (120-800), `drill`. See below. |
 | `stacked` | `x`, `series`, `measure` | A stacked column or area: `x` (a dimension), `series` (a DIFFERENT dimension whose values are the segments, at most 5 declared `domains`), `measure` (one measure key, which must be a `sum` or a `count` - see "Stacked charts" below). Optional `stack` (`normal` (default) / `percent` for the 100% stack), `chart` (`bar` (default) / `area`), `limit` (1-400 x categories; default 60), `height` (120-800). |
 | `combo` | `x`, `measure`, `measure2` | A dual-axis chart: `x` (a dimension), `measure` on the LEFT axis and `measure2` on the RIGHT, two DIFFERENT measure keys (either may be a `ratio`). Optional `chart` (`bar` (default) / `line` / `area`), `chart2` (`line` (default) / `bar` / `area`), `axis_sync` (boolean - put both on one shared scale), `limit` (1-400), `height` (120-800). See "Dual-axis (combo) charts" below. |
-| `pie` / `donut` | `x`, `measure` | A share of a whole. `x` is the slice dimension (at most 5 members); `measure` must be ADDITIVE (`sum`/`count`) - a ratio, a `min`/`max` or any non-additive aggregate is refused, because its parts do not add up to its whole. Optional `height` (120-800). No `limit`: a wider dimension is refused, not truncated. `pie` and `donut` differ only in the hole. See "Pie, donut and gauge" below. |
+| `pie` / `donut` | `x`, `measure` | A share of a whole. `x` is the slice dimension (at most 5 members); `measure` must be one whose parts add up to its whole (`sum` or `count`) - a ratio, a `min` / `max` or any other aggregate is refused, because its parts do not. Optional `height` (120-800). No `limit`: a wider dimension is refused, not truncated. `pie` and `donut` differ only in the hole. See "Pie, donut and gauge" below. |
 | `gauge` | `measure`, `max` | One value against a declared scale. `max` is required (and > `min`); optional `min` (default 0), `target` (must lie within the scale, marked on the arc), `height` (120-800). A ratio measure is allowed here. See "Pie, donut and gauge" below. |
 | `waterfall` | `x`, `measure` | Contributions that build to a total: each bar starts where the previous ended, closed by the total. `measure` must DECOMPOSE - `sum` or `count` only. Optional `limit` (1-200, contribution bars; default 40), `height` (120-800), `drill`. See "The waterfall and the funnel" below. |
 | `funnel` | `x`, `measure`, `stages` | Stage sizes in an order YOU declare: `stages` lists the dimension VALUES, 2-12, no repeats. It shows sizes only - it does NOT compute conversion between stages. Optional `height` (120-800), `drill`. See below. |
-| `filter` | `dimension` | `dimension`; `label` (<=80); optional `multi` / `range` (booleans, mutually exclusive - set at most one; a filter is single-select when neither is set). A `multi`/`range` filter on a non-composable measure needs a `hybrid` dataset (Steps 1-3). |
+| `filter` | `dimension` | `dimension`; `label` (<=80); optional `multi` / `range` (booleans, mutually exclusive - set at most one; a filter is single-select when neither is set). A `multi` or `range` filter asks more of the dataset than a single-select one, because it has to answer combinations rather than one value at a time; where a measure cannot answer them, publish refuses and says what to change. |
 | `text` | `body` | `body` (markdown, <=4000) - static prose, no data. |
-| `custom` | `reads` | Escape hatch 1 (below). |
 
-## Member order on an axis - the cube's ROW ORDER is the default
+## Member order on an axis - your ROW ORDER is the default
 
 No tile has an `order` field, and most draw a dimension's members in **the order the dataset's
 rows arrive** - the order your `sql` returned them in. So **end the `sql` in an explicit
-`ORDER BY`**. Without one the sequence is whatever the engine happened to produce, and it can
+`ORDER BY`**. Without one the sequence is whatever the warehouse happened to produce, and it can
 change between refreshes with nothing in the spec changing.
 
-**Nothing warns you when this is wrong.** There is no publish error and no advisory: the axis
-or the menu simply comes out in some order, looks deliberate, and may not be the same order
-next month. That is the whole reason this section exists.
+**Nothing warns you when this is wrong.** There is no publish error and no advisory: the axis or
+the menu simply comes out in some order, looks deliberate, and may not be the same order next
+month. That is the whole reason this section exists.
 
 **Do not assume a `date` dimension is exempt.** Some tiles put it in calendar order and some
-treat it exactly like a category - a month `filter` menu is one of the latter, so it still
-needs the `ORDER BY`. Which is which is the DATE column below, and it does not track the kind
-of tile: a `matrix` sorts a date, a grouped `table` does not, and both are grids of cells.
+treat it exactly like a category - a month `filter` menu is one of the latter, so it still needs
+the `ORDER BY`. Which is which is the DATE column below, and it does not track the kind of tile:
+a `matrix` sorts a date, a grouped `table` does not, and both are grids of cells.
 
-Read the row you need. The table is the source of truth here - it was derived one tile at a
-time, twice per tile, and it has survived independent re-measurement. The prose summaries that
-used to sit here, restating it in sentence form, kept turning out wrong; that is why they are
-gone rather than corrected, and why a future edit should add a column instead of a sentence.
+Read the row you need. The table is the source of truth here - it was derived one tile at a time,
+twice per tile, and it has survived independent re-measurement. The prose summaries that used to
+sit here, restating it in sentence form, kept turning out wrong; that is why they are gone rather
+than corrected, and why a future edit should add a column instead of a sentence.
 
 | Tile | CATEGORY dimension | DATE dimension |
 |---|---|---|
-| `matrix`, `heatmap` | **The cube's row order.** No `sort` field exists on these two, so the SQL is the only lever. | Calendar ascending |
-| `chart` (`x` axis) | The cube's row order, unless you set `sort: value-desc` / `value-asc`. | Calendar ascending |
+| `matrix`, `heatmap` | **Your row order.** No `sort` field exists on these two, so the SQL is the only lever. | Calendar ascending |
+| `chart` (`x` axis) | Your row order, unless you set `sort: value-desc` / `value-asc`. | Calendar ascending |
 | `waterfall` | **Its own: largest contribution first.** | Calendar ascending |
-| `table` (with `group`) | The cube's row order, unless you set the tile's own `sort`. | **The cube's row order** |
-| `pie` / `donut` | The cube's row order. | **The cube's row order** |
-| `filter` menu, and a `cross_filter` selection | The cube's row order (first-seen). | **The cube's row order** |
-| `stacked`, `combo` | The cube's row order. **Neither has a `sort` field** (only `chart` and `table` do), so the SQL is the only lever. | Calendar ascending on the `x` axis |
+| `table` (with `group`) | Your row order, unless you set the tile's own `sort`. | **Your row order** |
+| `pie` / `donut` | Your row order. | **Your row order** |
+| `filter` menu, and a `cross_filter` selection | Your row order (first-seen). | **Your row order** |
+| `stacked`, `combo` | Your row order. **Neither has a `sort` field** (only `chart` and `table` do), so the SQL is the only lever. | Calendar ascending on the `x` axis |
 | `treemap` | Its own: largest share first. | Its own: largest share first |
 | `drilldown` | Its own: ranked by the measure. | Its own: ranked by the measure |
 | `funnel` | The `stages` list you declare on the tile. | The `stages` list |
 
-**The table has no MODE column because it does not need one, with ONE exception.** On a
-`lattice` or `hybrid` the filter menu is built from the dimension's declared `domains` ARRAY -
-which is REQUIRED on those modes - so there the array's order is the lever and an `ORDER BY`
-cannot reach it. Every other row holds unchanged. Measured on both modes, with a control that
-isolates the cause rather than just observing it: strip `domains` and the menu starts following
-cell order again, so it is the declaration doing the work and not the mode.
-
-On a `rows` dataset the menu instead compiles to `SELECT DISTINCT ... ORDER BY 1` in DuckDB, so
-it is value-sorted whatever you do (source-verified in the SQL compiler, not measured).
-
-So: **write the `ORDER BY` on a `cube`, a `lattice` and a `hybrid`** - the three modes measured
-here - and on a `lattice`/`hybrid` also list `domains` in the order you want the menu. A `rows`
-dataset compiles its own per-tile SQL and was not measured for this.
+**ONE EXCEPTION, and it is under your control rather than the server's.** Where a dimension
+declares `domains`, the filter menu is built from that ARRAY and an `ORDER BY` cannot reach it.
+So **list `domains` in the order you want the menu**. Measured with a control that isolates the
+cause rather than merely observing it: strip `domains` and the menu starts following row order
+again, so it is the declaration doing the work.
 
 Two consequences that are easy to miss:
 
 - **`matrix` / `heatmap` `limit` truncates from the FRONT of that order.** The tile renders the
-  first `limit` rows and says so ("Showing the first N of M rows"), so the cube's row order
-  decides which members are on screen at all, not just their sequence. Totals are unaffected -
-  every margin is re-evaluated over the whole selection, not over what is displayed.
+  first `limit` rows and says so ("Showing the first N of M rows"), so your row order decides
+  which members are on screen at all, not just their sequence. Totals are unaffected - every
+  margin is re-evaluated over the whole selection, not over what is displayed.
 - **If a tile's row says it sorts itself, there is no way to override it** - not from the spec
   (those tiles have no `sort` field) and not from the SQL. For a `waterfall` specifically, when
   the bar SEQUENCE is the point of the chart, use a `funnel` instead: you list its members in
   `stages`, in the order you want them drawn.
 
 Every row above was measured against the runtime rather than read out of it: each tile rendered
-twice, once with the island in one order and once reversed, reading the DOM back - for a
-category dimension and again for a date one, and again on a `lattice` and a `hybrid`. The
-pass-through lives in `mxMembers` / `mxGroup` (matrix + heatmap), `rollup` (charts),
-`distinctValues` (cube filter menus) and `latticeDomain` (lattice/hybrid menus); the
-self-sorting types are in `wfBuild` and their own fragments.
+twice, once with the data in one order and once reversed, reading the DOM back - for a category
+dimension and again for a date one.
 
 ## The matrix
 
 The pivot table - two dimensions crossed, one measure per cell, with row totals, column
-totals and a grand total. It needs no new SQL and no new dataset shape: whatever cube or
-lattice you already wrote for the KPIs answers it.
+totals and a grand total. It needs no new SQL and no new dataset: whatever dataset you already
+wrote for the KPIs answers it, as long as it groups by both axes.
 
 ```yaml
 - type: matrix
@@ -444,33 +324,29 @@ lattice you already wrote for the KPIs answers it.
 
 Three things worth knowing, because they change what you can put in one:
 
-- **Both axes draw in the cube's ROW ORDER** (a date dimension excepted - it sorts ascending),
-  and `limit` truncates from the front of that order. A matrix has no `sort` field, so give its
+- **Both axes draw in your ROW ORDER** (a date dimension excepted - it sorts ascending), and
+  `limit` truncates from the front of that order. A matrix has no `sort` field, so give its
   dataset's `sql` an explicit `ORDER BY`. See "Member order on an axis" above.
-- **Every total is the measure RE-EVALUATED at that total's grain, never a sum of the cells
-  on screen.** On a `lattice` (or a `hybrid`'s lattice half) the `GROUP BY CUBE` already
-  precomputed the row-only, column-only and all-rolled-up grouping sets, so the matrix looks
-  each one up. That means **a distinct-count or median subtotal is EXACT** - the thing
-  Tableau and Power BI cannot answer off a pre-aggregate - and it means truncating a long
-  axis cannot corrupt a total (the tile truncates at 200 rows / 100 columns and says so).
-- **Two blanks that mean different things.** An empty body cell means there are no rows at
-  that intersection (the usual pivot convention). A `-` means the value cannot be shown
-  exactly. If the DATASET cannot answer the tile at all, the whole tile refuses with the
-  reason instead of filling itself with dashes.
+- **Every total is the measure RE-EVALUATED at that total's grain, never a sum of the cells on
+  screen.** So **a distinct-count or median subtotal is EXACT** - the thing Tableau and Power BI
+  cannot answer off a pre-aggregate - and truncating a long axis cannot corrupt a total (the tile
+  truncates at 200 rows / 100 columns and says so).
+- **Two blanks that mean different things.** An empty body cell means there are no rows at that
+  intersection (the usual pivot convention). A `-` means the value cannot be shown exactly. If
+  the DATASET cannot answer the tile at all, the whole tile refuses with the reason instead of
+  filling itself with dashes.
 
 Rules the validator enforces, so none of these can reach a published dashboard:
 
 - `rows` and `cols` must be declared dimensions of the tile's dataset, and must differ.
-- The dataset must be `cube`, `lattice` or `hybrid`. **A `rows` dataset cannot carry a
-  matrix** (there is no row-level matrix renderer) - use `lattice` or `hybrid`.
-- A ratio measure with `num_scope`/`den_scope: all` (percent of total) cannot go in a matrix:
-  a cell has three totals - its row, its column and the grand - and the scope names none of
-  them. Put that measure on a `kpi` instead.
+- A ratio measure with `num_scope` / `den_scope: all` (percent of total) cannot go in a matrix: a
+  cell has three totals - its row, its column and the grand - and the scope names none of them.
+  Put that measure on a `kpi` instead.
 
-A matrix over a `cube` dataset is fine and exact, because a `cube`'s measures are already
-restricted to `sum`/`count`/`min`/`max` (or a ratio of them) - the aggregates that re-compose.
-Reach for `lattice` the moment you want a non-additive measure (a distinct count, a median, a
-true average) in the grid, since that is what makes its margins exact too.
+**Bound both axes.** A matrix crosses two dimensions, so its cost is the product of their two
+member counts and it is the tile most likely to ask for something that cannot be prepared. Declare
+`domains` or `buckets` on both and keep them small; if the combination is too wide, publish says
+so and says what to change.
 
 ## The heatmap, and conditional formatting
 
@@ -514,8 +390,8 @@ Three things about the colouring that are worth knowing when you author one:
   exist. An EMPTY cell (no rows at that intersection) stays empty, as in any pivot.
 
 Everything the matrix refuses, a heatmap refuses identically and for the same reason - the two
-share a resolver - so the axis, measure, percent-of-total and `rows`-dataset rules above all
-apply unchanged.
+share a resolver - so the axis and percent-of-total rules above both apply unchanged, as does
+the advice to bound both axes.
 ## The scatter and the treemap
 
 Two more objects that need no new SQL and no new dataset shape: both read ONE grouping set -
@@ -541,9 +417,9 @@ which is what most enterprise scatters actually are. The chart says so in its ow
 name ("one point per Product"), so nobody reads it as a cloud of observations.
 
 A **raw-observation** scatter (one point per row) is a different object and does not exist.
-Row-level data lives in a `rows` dataset, and a scatter cannot be built on one - the validator
-refuses it and tells you so. There is no way to ask for it and get something that looks right
-but is not.
+A scatter always plots one point per member of `point`, never one per source row, and asking
+for the second is refused at publish with the reason. There is no way to ask for it and get
+something that looks right but is not.
 
 Two more scatter rules, both refused at publish:
 
@@ -552,7 +428,7 @@ Two more scatter rules, both refused at publish:
 - Both must be plain agg measures. A `ratio` measure cannot go on an axis (the markup carries
   one num/den pair and a scatter has two axes); put it on a `kpi`.
 
-At view time, a point whose coordinate cannot be resolved exactly is **not plotted at all**,
+At view time, a point whose coordinate cannot be computed exactly is **not plotted at all**,
 and the tile says how many were dropped. It is never placed at the origin - that would claim a
 value of zero on both axes.
 
@@ -571,7 +447,6 @@ false, at publish:
   would claim a decomposition the data does not have. Use a `chart` (a bar chart compares the
   values without claiming they are shares of a total).
 - No `ratio` measure: a share of a rate is not a part of a whole.
-- The dataset must be `cube`, `lattice` or `hybrid`, same as a matrix.
 
 At view time it also refuses a negative value (an area cannot show one) and a total that is
 not positive (there is no whole to be a part of). No percentage is drawn anywhere - the area
@@ -580,8 +455,8 @@ carries the proportion, and each rectangle is labelled with its own exact value.
 ## The drill-down
 
 A ranked breakdown of one dimension, where each row can open the next level down. It needs no
-new SQL and no new dataset shape: drilling asks for a DIFFERENT grouping set at a narrower
-filter state, and a `GROUP BY CUBE` lattice already contains every one of them.
+new SQL and no new dataset: drilling asks the same dataset for a different grouping at a
+narrower filter state, and it is answered exactly rather than by re-adding what is on screen.
 
 ```yaml
 - type: drilldown
@@ -603,13 +478,13 @@ Three things worth knowing, because they change what you can put in one:
   Back undoes it. The tile says so on its face. If a sibling tile's dataset does not declare
   that dimension it cannot follow, and that tile shows its usual "not filtered by X" note - so
   a broader number sitting next to a drilled one is always labelled.
-- **"Other" is RESOLVED, not subtracted.** It is the measure re-evaluated over the members you
-  cut, not the total minus the rows on screen. For an additive measure the two agree; for a
-  `min`/`max` measure only the first means anything. And for a NON-additive measure (a distinct
+- **"Other" is RE-EVALUATED, not subtracted.** It is the measure computed over the members you
+  cut, not the total minus the rows on screen. For a measure whose parts add up the two agree; for
+  a `min` / `max` measure only the first means anything. And for one whose parts do not (a distinct
   count, a median, a true average) there is no honest residual at all - "distinct customers in
   Other" cannot be derived from anything on screen - so that row renders `-` and says why. The
   rows you DID show stay exact.
-  If the breakdown does not add up to the total at all (a lattice missing a member at that
+  If the breakdown does not add up to the total at all (a dataset missing a member at that
   grain), the residual refuses too rather than quietly coming up short - it is the one number
   on the tile you could not otherwise check.
 - **The total is re-evaluated too**, so cutting the list to the top 5 cannot corrupt it. It is
@@ -622,13 +497,11 @@ Rules the validator enforces, so none of these can reach a published dashboard:
   differ. At most 6.
 - `other` requires `top_n`. With every member on screen there is no residual, so the row would
   be an empty claim.
-- The dataset must be `cube`, `lattice` or `hybrid`. **A `rows` dataset cannot carry a
-  drill-down** (there is no row-level renderer) - use `lattice` or `hybrid`.
 - A ratio measure with `num_scope`/`den_scope: all` (percent of total) cannot go in one: a row
   has three candidate denominators - the rows shown, the residual and the total - and the scope
   names none of them. Put that measure on a `kpi` instead.
 
-Reach for `lattice` when you want a non-additive measure in the list: every member is then one
+A measure whose parts do not add up is answered exactly here too: every member is then one
 precomputed cell and therefore exact at any depth. The residual still refuses honestly, which
 is the point.
 
@@ -646,15 +519,14 @@ One measure, one category axis, and a series dimension whose values are the segm
   title: Sessions by channel
 ```
 
-**Prefer `lattice` for a stacked chart, and the reason is not performance.** A stacked bar
-needs two grains: the `(x, series)` grouping set for its segments and the `x`-only grouping
-set for its total. A `GROUP BY CUBE` lattice contains BOTH, so the tile renders each column's
-total from the precomputed cell rather than by adding up the segments - and it then **asserts
-that the segments agree with that total**, refusing the tile with the reason if they do not.
-Tableau and Power BI have no second grain to check against. A `cube` dataset has only one
-grain, so on a cube there is nothing to check the total against; the tile is still exact for
-an additive measure, but the verification is a lattice property. Say `mode: lattice` if you
-want it.
+**Bound the `series` dimension, and the reason is not performance.** A stacked bar needs two
+grains: the `(x, series)` grouping for its segments and the `x`-only grouping for its total.
+Where the dataset can answer both - which is what declaring the bounds on both dimensions buys -
+the tile renders each column's total from its own answer rather than by adding up the segments,
+and then **asserts that the segments agree with that total**, refusing the tile with the reason
+if they do not. Tableau and Power BI have no second grain to check against. Where the dataset can
+only answer one grain there is nothing to check the total against; the tile is still exact for a
+measure whose parts add up, but the cross-check is what you give up.
 
 **The measure must ADD across the segments** - a `sum` or a `count`. This is checked at
 publish, and it is a separate rule from the assertion above rather than a duplicate of it: a
@@ -694,9 +566,9 @@ the canonical shape.
 ```
 
 Each measure resolves exactly as a single-measure chart of it would, so a combo series equals
-the chart you would have drawn on its own. Any aggregate works on either side, including a
-non-additive one - a combo never claims the two series make a whole, which is why it needs no
-additivity rule.
+the chart you would have drawn on its own. Any aggregate works on either side, including one
+whose parts do not add up to its whole - a combo never claims the two series make a whole,
+which is why it needs no rule about that at all.
 
 Dual axis is criticised for letting two arbitrary scales imply a relationship. Three things
 are built in rather than left to the author:
@@ -714,13 +586,13 @@ the two sides share one binding, so a scope on one would be ambiguous about the 
 that measure on a `kpi`.
 ## Pie, donut and gauge
 
-Two shapes, three types. A `pie` / `donut` shows how ONE additive measure splits across a
+Two shapes, three types. A `pie` / `donut` shows how ONE decomposable measure splits across a
 small dimension; a `gauge` shows one number against a declared target.
 
 ```yaml
 - type: donut          # or: pie - identical, the donut just has a hole
   x: channel           # the slice dimension (<= 5 members)
-  measure: sessions    # one ADDITIVE measure (sum or count)
+  measure: sessions    # one DECOMPOSABLE measure (sum or count)
   title: Share of sessions by channel
 
 - type: gauge
@@ -734,9 +606,9 @@ small dimension; a `gauge` shows one number against a declared target.
 Three things decide whether a pie is possible at all, and it is worth knowing them before you
 write one, because each is refused at publish rather than at view time:
 
-- **The measure must be ADDITIVE - `sum` or `count`.** This is stricter than everywhere else
+- **The measure's parts must add up to its whole - `sum` or `count`.** This is stricter than everywhere else
   in the format, and the reason is that a pie claims its parts compose into its whole. A
-  distinct count, a median, a percentile, a **min**, a **max** and a ratio can all be resolved
+  distinct count, a median, a percentile, a **min**, a **max** and a ratio can all be computed
   exactly per slice and still not add up to anything: five exact regional medians do not
   compose into the overall median. So they are refused with the aggregate named. Show that
   measure on a `chart` (bar) instead, which compares values without claiming they compose.
@@ -745,8 +617,9 @@ write one, because each is refused at publish rather than at view time:
   more than 5 `domains` the spec is rejected; if it turns out wider at refresh, the tile
   refuses and says so. There is no top-N and no "Other" slice - use a bar chart, or filter the
   dimension down.
-- **The dataset must be `cube`, `lattice` or `hybrid`,** never `rows` (there is no row-level
-  radial renderer).
+- **The slice dimension has to be something the dataset groups by**, like any other binding, and
+  the measure has to be one it declares. A binding naming something the dataset does not have is
+  a pointed publish error rather than an empty ring.
 
 **What a pie shows, and what it deliberately does not.** Each slice states its own value and
 the tile states the TOTAL - in the hole for a donut, in the legend for a pie. It never prints a
@@ -754,7 +627,7 @@ percentage. That is not an omission: a rendered "24%" is a number the renderer w
 divided into existence, and the wedge already carries the proportion exactly. The same rule is
 why a gauge shows the value and the target but no "% of target".
 
-**Why the total is worth trusting.** It is resolved SEPARATELY - the dataset's own precomputed
+**Why the total is worth trusting.** It is computed SEPARATELY - the dataset's own
 rolled-up figure for the current filters - not by adding up the slices being drawn. So if
 anything cannot be shown, the circle is left visibly OPEN and the tile says why, instead of the
 remaining wedges quietly growing to fill it. On a well-formed dataset this never happens and
@@ -763,7 +636,7 @@ the circle closes.
 **Gauge specifics.** `max` is required and has no default: deriving one from the value would
 make the picture a function of the number it is describing. A value outside `min..max` pins the
 arc to its end and says so - the printed figure stays exact, and the note tells the reader which
-to trust. A value that cannot be resolved exactly draws no arc at all and prints `-`, never a
+to trust. A value that cannot be computed exactly draws no arc at all and prints `-`, never a
 needle sitting at the minimum. A ratio measure IS allowed on a gauge (a conversion rate against
 a target is one number against another), unlike on a pie.
 
@@ -790,7 +663,7 @@ category `x` reads largest contribution first; a date `x` reads in calendar orde
 BY` in the dataset's `sql` does not reach it, and there is no `sort` field. If the sequence is
 the point of the chart, use a `funnel` - its `stages` is a declared order.
 
-**A waterfall is additive only, and it is all-or-nothing.** Its bars claim to compose into its
+**A waterfall decomposes only, and it is all-or-nothing.** Its bars claim to compose into its
 total, one after another, so `measure` must be `sum` (or `count`, which folds to sum). A
 distinct count's parts overlap, a median's do not combine, a `min` of the parts is just one
 part - and a `ratio` composes, so nothing downstream would catch it while the bars drawn were
@@ -821,87 +694,70 @@ drop-off that only ever existed in the missing data. The validator also checks e
 against the dimension's declared `domains`, so the usual way to reach that state is caught
 before you publish.
 
-## The two escape hatches
-
-1. **`type: custom` tile** - a bespoke visual the built-in tiles cannot express. Required
-   `reads: [<dataset name>, ...]` (1-8 datasets it consumes) plus `html` (<=100000) and/or
-   `js` (<=200000). The runtime mounts your HTML/JS with a read-only view of the declared
-   datasets; refresh integrity still holds because the island provably carries what `reads`
-   declares. Use it for a custom chart or layout for ONE tile, not to bypass the whole
-   template.
-2. **`look` (whole-look escape hatch, v1.1)** - a fully bespoke dashboard body, declared right
-   in the spec as ONE of two forms (mutually exclusive with each other, and both mutually
-   exclusive with `tiles`/`theme`/`layout`):
-   - `look: { html: <string> }` (<=4 MiB) - the body inline, byte-verbatim.
-   - `look: { from: <slug> }` - REFERENCES the CURRENT published body of the publish target
-     instead of inlining it. `from` MUST equal the `path` slug you are publishing to (a
-     `[identity]` error at `/look/from` otherwise - "keep the current body" only ever means the
-     body of the dashboard you are publishing, never a different one). The server resolves the
-     body from storage at compile/dry-run time and re-seeds its island, so the compiled output
-     is byte-identical to inlining that same body via `{ html }` - but the body itself never
-     round-trips through you, so the spec you send and the stored `spec_hash` stay ~KB instead
-     of however large the body is. A target slug with no existing published body has nothing to
-     keep (also a `[identity]` error at `/look/from`) - publish an initial body first with
-     `{ html }`, or inline it directly. `derive_dashboard_spec` emits `{ from }` by default (see
-     Step 7 in `SKILL.md`), which is why a derived draft stays small; to hand-edit the markup
-     instead, `get_dashboard` the body, edit it, and publish `{ html }`.
-
-   `datasets` and `source` are declared exactly as normal either way, so the compiler still
-   compiles the refresh manifest and SEEDS it live - `look` only replaces the managed `tiles`
-   markup with your own body. Two rules the compiler enforces on the resolved body (whichever
-   form produced it): it must carry EXACTLY ONE `<script id="dashies-data">` data island (zero =
-   nothing to refresh into; two or more would let the runtime/cron silently read only the
-   first), and every byte OUTSIDE that island is preserved verbatim - the compiler splices only
-   the freshly-seeded island JSON into it, touching nothing else in your markup. Any `data-dash`
-   bindings in your body still have to resolve against the compiled manifest (the same `#555`
-   cross-namespace consistency check a legacy HTML publish enforces). Author the body itself
-   using the `data-dash` markup / data-island / custom-renderer conventions in
-   `references/dashboard.md`; `look` is what lets that body ride the spec's compile + validate +
-   seed pipeline instead of a raw `body` + `source_config` publish. Reach for it only when the
-   managed template + a `custom` tile genuinely cannot do it, or when migrating an existing
-   hand-authored dashboard - the `derive_dashboard_spec` MCP tool reconstructs exactly this shape
-   from one of your own refreshable dashboards (see Step 7 in `SKILL.md`). The 4 MiB cap applies
-   to the resolved body regardless of which form produced it: a `{ from }` reference is
-   re-validated against the same `look.html` size limit once its body is resolved, so a legacy
-   dashboard whose body exceeds 4 MiB cannot be kept via `{ from }` either (it fails with the
-   same pointered `[L2]` error at `/look/html`). What `{ from }` saves is the round-trip - a
-   body under the cap is referenced, not re-uploaded - not an exemption from the cap; a
-   dashboard whose body is genuinely too large for either form has to stay on the legacy
-   `body` + `source_config` path.
-
-## Worked example (minimal cube)
+## Worked example
 
 ```yaml
 dashies: 1
-title: Signups
-slug: signups
+title: Orders overview
+intent: >-
+  Metric definitions taken from the dbt semantic layer; no measure re-derived from raw tables.
 source:
-  connection: self
+  connection: 7a1e0b2c-0000-4000-8000-000000000000   # from check_readiness
   schedule: daily
+  timezone: America/New_York
 datasets:
   main:
-    mode: cube
-    sql: >
-      select date_trunc('day', created_at)::date as day, count(*) as signups
-      from users group by 1
+    sql: |
+      select
+        date_trunc('month', o.placed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York')::date as month,
+        o.region                                                                                  as region,
+        sum(o.amount_cents)                                                                       as revenue_cents,
+        count(*)                                                                                  as orders
+      from analytics.fct_orders o
+      where o.placed_at >= now() - interval '18 months'
+      group by 1, 2
+      order by 1, 2
     dimensions:
-      day: { type: date }
+      month:  { type: date, buckets: 18, label: Month }
+      region: { type: category, domains: [AMER, EMEA, APAC], label: Region }
     measures:
-      signups: { agg: count }
+      revenue_cents:
+        agg: sum
+        unit: { kind: currency, scale: cents, currency: USD }
+        intent: >-
+          dbt semantic layer, metric `revenue` (models/marts/metrics.yml). Definition taken from
+          dbt, not re-derived.
+      orders:
+        agg: sum
+        unit: { kind: count }
+      aov:
+        ratio: { num: revenue_cents, den: orders }
+        label: Average order value
+        unit: { kind: currency, scale: cents, currency: USD }
 tiles:
-  - type: kpi
-    measure: signups
-    title: Total signups
-  - type: chart
-    chart: line
-    x: day
-    measure: signups
-    title: Signups per day
+  - { type: filter, dimension: region, label: Region }
+  - { type: kpi, measure: revenue_cents, title: Revenue }
+  - { type: kpi, measure: aov, title: Average order value }
+  - { type: chart, chart: line, x: month, measure: revenue_cents, title: Revenue by month }
+  - { type: table, columns: [region, revenue_cents, orders], group: region, title: By region }
 ```
 
-For a multi-dataset report (a KPI strip + a distinct-count lattice trend + a row-level
-table), declare each grain as its own dataset and route each data tile with `dataset:` - the
-same `mode` choice per dataset (Steps 1-3), several datasets under one `source`.
+Note what is NOT in it: nothing about how the data will be prepared or where it will be kept.
+The publish report says what the server chose for `main` and why.
+
+## Migrating a dashboard that has no spec
+
+A dashboard published before specs existed has nothing for `get_dashboard_spec` to read.
+`derive_dashboard_spec({ slug })` reconstructs a draft from what that dashboard already carries,
+read-only, storing nothing. The draft references the dashboard's CURRENT published page with
+`look: { from: <slug> }` rather than inlining it, so the tool response and the eventual stored
+spec both stay small; republishing resolves that page from storage and re-runs every dataset
+live, so the layout stays byte for byte while the numbers update. A `look` spec declares
+`datasets` and `source` and carries no `tiles` or `layout`.
+
+Where the old page has recognizable tiles, the draft also returns a ready-to-paste `tiles:`
+block. **Taking it is the better outcome**: it moves the dashboard onto the managed layout, where
+the server owns the rendering, and it is what makes every later edit a spec edit.
 
 ## What a publish WARNING means
 
@@ -917,11 +773,11 @@ describe a tile that publishes clean and then refuses to draw.
 | `funnel_stage_absent` | a `stages` entry is not one of the seeded values of the funnel's `x` | fix the spelling, or drop the stage. An absent stage renders as `-`, which reads like a 100% drop-off |
 | `stack_percent_mixed_sign` | a `stack: percent` column seeded both positive and negative segments | use `stack: normal` (same exact values, signed axis) or a `chart`. No share of a mixed-sign column is a true proportion, and the runtime refuses that column |
 | `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. The runtime filter drops it |
-| `null_leading_dimension` | a declared dimension is NULL across the whole leading head of a `rows`, `hybrid` or `cube` dataset | a null dimension cell renders as a blank label, so a detail table leads with unlabelled rows. The warning names the column and how many of the dataset's rows carry the null, so you can tell a handful to label from a broken join. Label it in SQL (`coalesce(...)` to an explicit value) if the null is meaningful, or filter it out if it is not. A `lattice` is exempt - there a NULL dimension is the rollup marker |
+| `null_leading_dimension` | a declared dimension is NULL across the whole leading head of the dataset | a null dimension cell renders as a blank label, so a table leads with unlabelled rows. The warning names the column and how many of the dataset's rows carry the null, so you can tell a handful to label from a broken join. Label it in SQL (`coalesce(...)` to an explicit value) if the null is meaningful, or filter it out if it is not |
 | `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | declare `scale: points` |
 | `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |
 | `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
-| `col_extra` | the query outputs a column nothing declared reads, so it ships world-readable and read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship as island bytes is an ERROR, not this warning) |
+| `col_extra` | the query outputs a column nothing declared reads, so it reaches every viewer and is read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship real data is an ERROR, not this warning) |
 | `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced |
 
 The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,
@@ -931,15 +787,15 @@ the same rules become blocking errors - a declared bound is a claim you wrote do
 server holds you to it. That is the tradeoff: declare `domains` and get a hard gate, leave it
 off and get an advisory plus the runtime's own refusal as the backstop.
 
-## Publish + edit
+## Publish and edit
 
 Once the spec is written, go to Step 6 in `SKILL.md`: dry-run the document, then publish the
 `spec_hash` that dry run returned rather than sending the same YAML a second time. To CHANGE a
-published dashboard later, Step 7: `get_dashboard_spec` reads the stored spec back verbatim,
-and you republish the same `path` with `spec_edits` (exact-string replacements against the
-stored text) plus `base_spec_hash` - which both names the document being edited and is the
-lost-update guard. Send the change, not the document; reserve a full `spec` for a first
-publish or a genuine rewrite. `spec`, `spec_hash` and `spec_edits` are mutually exclusive.
-You never hand-edit the served HTML. If the dashboard has no stored spec yet, Step 7
-also covers `derive_dashboard_spec`, which reconstructs one from an existing refreshable
-dashboard.
+published dashboard later, Step 8: `get_dashboard_spec` reads the stored spec back verbatim, and
+you republish the same `path` with `spec_edits` - exact-string replacements against the stored
+text - plus `base_spec_hash`, which both names the document being edited and is the lost-update
+guard. **Send the change, not the document**; reserve a full `spec` for a first publish or a
+genuine rewrite. `spec`, `spec_hash` and `spec_edits` are mutually exclusive.
+
+**You never hand-edit the served page.** The next refresh rewrites its data, so an edit made
+there would be lost or left inconsistent.

@@ -70,7 +70,7 @@ of those two, never both and never neither.
 | `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
 | `tiles` | array, 1-64 | The tiles, in document order (below). Exclusive with `look`. |
-| `look` | object | Optional, and the alternative to `tiles`: the whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. See **Writing your own markup**. |
+| `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. See **Writing your own markup**. |
 | `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
 | `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
 

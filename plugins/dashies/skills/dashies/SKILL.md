@@ -23,7 +23,7 @@ dashboard, checks it, runs your SQL once to put real numbers in it, and then re-
 the schedule you chose, with no AI in the loop. The result is a URL whose numbers stay current
 and which costs nothing per view.
 
-**Four things make a dashboard, and they are the required part of every spec:**
+**Four things decide what a dashboard SAYS, and every spec needs all four:**
 
 1. **which connection** the numbers come from,
 2. **one read-only `SELECT` per dataset**,
@@ -41,8 +41,9 @@ than only when you changed something.
 
 **What the page is BUILT OUT OF is a separate question, and the answer is the USER'S.** Give the
 server a `tiles` layout and it draws the page; write the markup and the page is yours, styling and
-all. Both are this path. The line that matters is not between those two - it is between ASSEMBLING
-a dashboard and WRITING its markup.
+all. Both are this path. **A spec needs one of them, so the page is required too, alongside the
+four above.** The line that matters is not between those two - it is between ASSEMBLING a
+dashboard and WRITING its markup.
 
 **You never ASSEMBLE the dashboard.** You do not build a page OUTSIDE the spec, wire up its
 refresh, or hand a user a file you put together yourself. If you find yourself doing that, you
@@ -358,10 +359,19 @@ second line is for.
 
 **Second, the `warning:` lines.** A dataset can say "inside the page" and still publish with its
 rows held outside it, and the report says so in plain words: a warning that the dataset
-**"publishes with NO data"** and reads "Updating" until the first refresh. **Treat that warning as
-overriding the sentence.** Its "until the first refresh" is about the managed TILES filling in and
-is never a promise that the rows reach the page. Both lines are written about tiles and neither
-mentions a renderer you wrote, so nothing on the report will join them up to your page for you.
+**"publishes with NO data"**. **Treat that warning as overriding the sentence.**
+
+**The rest of that warning describes MANAGED tiles, so read it against the page you are actually
+building.** It says the dataset's tiles read "Updating" until the first refresh.
+
+- **A `custom` tile sits in the same grid as the managed ones**, so that sentence is about those,
+  and they do fill in. **Your own mount is not one of them and nothing fills it** - and if yours
+  is the only tile on the page, nothing fills in anywhere.
+- **A `look` page has no managed tiles at all**, so nothing anywhere says "Updating" and the page
+  simply renders empty.
+
+Either way **no part of that warning is about the renderer you wrote**, so nothing on the report
+will join it up to your page for you.
 
 **Nothing refuses this at publish**, so there is no error to wait for and the report is the whole
 of what you get.
@@ -380,9 +390,8 @@ tiles without saying why. **It is a limit of what is built so far rather than a 
 on purpose**, so describe it as where things stand, offer the narrower question as the way to keep
 their design, and let them choose.
 
-**This binds a `custom` tile exactly as it binds `look`**, warnings included. `reads:` is a
-declaration, not a fetch, so a `custom` tile naming a dataset whose data stays with Dashies
-renders nothing at all.
+**`reads:` is a declaration, not a fetch**, so a `custom` tile naming a dataset whose data stays
+with Dashies renders nothing at all.
 
 ---
 
@@ -483,9 +492,11 @@ a clean dry run is not evidence the connection is bindable in the scope you are 
 
 ## Step 7 - Stay until the numbers land
 
-**A dashboard whose data is kept with Dashies publishes empty by design**, and its tiles read
-"Updating" until the first refresh lands. **Handing a user that page is the opposite of the
-effect you are trying to produce.** So after publishing:
+**A dashboard whose data is kept with Dashies publishes empty by design**, and the tiles the
+SERVER drew read "Updating" until the first refresh lands. **A page you wrote yourself has no such
+tiles: it renders empty and says nothing**, which is the same wait with less explanation on it.
+**Handing a user either page is the opposite of the effect you are trying to produce.** So after
+publishing:
 
 1. Say what is happening, in one plain sentence. **Do not give a duration** - say what has to
    happen, not how long it takes.

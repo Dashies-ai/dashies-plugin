@@ -3,10 +3,11 @@
 You author a dashboard by writing a **spec** - one small YAML document - and passing it to
 `publish_dashboard`'s `spec` argument. The server does the rest: it builds the dashboard from the
 spec, checks the whole thing, and runs each dataset's `sql` once, live, so the published bytes
-carry real numbers. **You do not have to write any markup or styling, and for almost every
-dashboard you should not** - the tile vocabulary is the cheap route. Where the design is worth
-more than that, the spec carries your own CSS, one hand-written tile, or the whole page body; see
-**Writing your own markup**. A binding that names a column the SQL never returns, or a tile with
+carry real numbers. **You need not write any markup or styling** - a `tiles` layout costs twenty
+lines and the server draws the page from it. **And you may write all of it**: the spec carries
+your own CSS, one hand-written tile, or the whole page body, on the same path with the same
+checks; see **Writing your own markup**. **Which one you reach for is the user's call rather than
+a default of ours.** A binding that names a column the SQL never returns, or a tile with
 no type, is a **pointed publish error naming the exact field**, not a blank tile or a silently
 wrong number that ships and rots.
 

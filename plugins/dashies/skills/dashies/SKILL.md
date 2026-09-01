@@ -39,10 +39,10 @@ legitimately move - which is why the publish report tells you what it decided ev
 than only when you changed something.
 **You do not choose it and you do not need a vocabulary for it.**
 
-**What the page is BUILT OUT OF is a separate question with a separate answer.** By default the
-server draws it from your `tiles`, and that is the right answer for almost every dashboard. But
-the page is a surface you may take over, and the difference between ASSEMBLING a dashboard and
-WRITING its markup is the whole of it.
+**What the page is BUILT OUT OF is a separate question, and the answer is the USER'S.** Give the
+server a `tiles` layout and it draws the page; write the markup and the page is yours, styling and
+all. Both are this path. The line that matters is not between those two - it is between ASSEMBLING
+a dashboard and WRITING its markup.
 
 **You never ASSEMBLE the dashboard.** You do not build a page OUTSIDE the spec, wire up its
 refresh, or hand a user a file you put together yourself. If you find yourself doing that, you
@@ -50,9 +50,11 @@ have left this path.
 
 **Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
 hand-written tile, or the whole page body, and all three stay on this path with every check and
-the schedule intact. **They are not the default** - the tile vocabulary is the cheap route and
-almost every dashboard should take it - so reach for them when the design is the point.
-"When you write the markup yourself", under Step 4, is where that decision lives.
+the schedule intact. **What the user asked for decides which you reach for.** A look, a brand, a
+layout, a picture the tile types do not draw - any of those is an instruction to write the markup,
+and doing it is the product working rather than an escape hatch. Asked only for the numbers, a
+`tiles` layout costs twenty lines. "When you write the markup yourself", under Step 4, is where
+that decision lives.
 
 ---
 
@@ -271,10 +273,11 @@ are right.
 ## Step 4 - Write the spec
 
 Turn the statement into the spec: **`datasets`** (each one's `sql`, its `dimensions`, its
-`measures`) and **`tiles`** (kpi, chart, table, matrix, heatmap, scatter, treemap, waterfall,
-funnel, drilldown, stacked, combo, pie, donut, gauge, filter, text, and `custom` for one you draw
-yourself), under one `source` (connection plus schedule). Each data tile names its dataset with
-`dataset:`, except `custom`, which uses `reads:`.
+`measures`) under one `source` (connection plus schedule), plus the page itself - **exactly one of
+`tiles` or `look`, never both and never neither.** `tiles` hands the drawing to the server (kpi,
+chart, table, matrix, heatmap, scatter, treemap, waterfall, funnel, drilldown, stacked, combo,
+pie, donut, gauge, filter, text, and `custom` for one you draw yourself); `look` is your own page
+body. Each data tile names its dataset with `dataset:`, except `custom`, which uses `reads:`.
 
 Field tables, the tile types and their options, and the provenance convention are in
 **`references/spec.md`**.
@@ -287,10 +290,16 @@ says what to change; you do not need to compute it.
 
 ### When you write the markup yourself
 
-**The tile vocabulary is the cheap route and it is the right answer for almost every dashboard.**
-Twenty lines of `tiles:` buys a laid-out, filterable, refreshing page. **Reach past it when the
-design is worth more than those twenty lines** - a report that has to look like the company built
-it, a picture the tile types do not draw, a page whose layout is the point.
+**THE USER'S OWN BRIEF DECIDES THIS. There is no default of ours in either direction.**
+
+Twenty lines of `tiles:` buys a laid-out, filterable, refreshing page, and that is a real saving
+when nobody has said anything about how it should look. **But a user who describes a look, a
+brand, a layout, or a picture the tile types do not draw has already told you to write the
+markup.** Handing them the tile vocabulary instead is how a dashboard ends up reading like a
+template with their title on it, which is the one outcome this product exists to avoid.
+
+**Do not weigh the two by how common they are.** Nobody knows, and a count taken over the
+dashboards that already exist would measure only what the tool made easy.
 
 **Three surfaces, cheapest first, and all three stay on the spec path.** You keep the pointed
 refusals, the seeding, the correctness checks and the schedule, and the data still never enters
@@ -362,6 +371,14 @@ the whole pipeline and reports the same lines, so the answer costs one call. Whe
 stays with Dashies, the managed tiles are what render it. Either bind that dataset to managed
 tiles, or ask a narrower question - bound what it groups by, or shorten the period - so its
 numbers travel inside the page again.
+
+**SAY THIS OUT LOUD TO THE USER RATHER THAN QUIETLY PICKING FOR THEM, because it is the one place
+their two wishes collide.** A page you write yourself and a dataset whose data stays with Dashies
+do not go together today. If they have asked for both - a design of their own AND more data than a
+page can carry - that is a real limit they should hear about, not a reason for you to hand them
+tiles without saying why. **It is a limit of what is built so far rather than a line anyone drew
+on purpose**, so describe it as where things stand, offer the narrower question as the way to keep
+their design, and let them choose.
 
 **This binds a `custom` tile exactly as it binds `look`**, warnings included. `reads:` is a
 declaration, not a fetch, so a `custom` tile naming a dataset whose data stays with Dashies

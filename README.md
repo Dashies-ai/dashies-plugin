@@ -35,26 +35,12 @@ The part that makes Dashies different: **a dashboard can keep itself up to date.
 
 ## Install
 
-### One command (recommended)
+Choose one installation route for each client. For Codex, the native marketplace
+route below is recommended. Do not combine it with the multi-client installer:
+that installer registers `dashies@plugins-cli`, while the native marketplace
+registers `dashies@dashies`, so Codex correctly shows two separate install cards.
 
-```sh
-npx plugins add Dashies-ai/dashies-plugin
-```
-
-This is the command on [dashies.ai](https://dashies.ai). The vendor-neutral [`plugins`](https://github.com/vercel-labs/open-plugin-spec) CLI auto-detects the AI coding agents you have installed and sets up Dashies in each - the `dashies` authoring skill plus the publish MCP - in one step.
-
-It installs into **Claude Code** and **Cursor** out of the box. For **Codex** specifically, or on **Windows**, use the matching per-tool command below - the `plugins` CLI's Codex install and Windows agent-detection are still maturing.
-
-### Claude Code
-
-Two commands inside Claude Code:
-
-```text
-/plugin marketplace add https://dashies.ai/marketplace.json
-/plugin install dashies@dashies
-```
-
-### Codex
+### Codex (recommended for Codex)
 
 Two commands in your shell:
 
@@ -65,9 +51,36 @@ codex plugin add dashies@dashies
 
 If the marketplace clone fails on SSH host-key verification, use the explicit HTTPS URL: `codex plugin marketplace add https://github.com/Dashies-ai/dashies-plugin.git`.
 
+These commands install the canonical Codex package, `dashies@dashies`.
+
+### Claude Code
+
+Two commands inside Claude Code:
+
+```text
+/plugin marketplace add https://dashies.ai/marketplace.json
+/plugin install dashies@dashies
+```
+
 ### Cursor
 
 Install Dashies from the [Cursor marketplace](https://cursor.com/marketplace) (Cursor 2.5+) - search **Dashies** under Customize -> Plugins, or run `/add-plugin` in the editor. _(Marketplace listing pending Cursor's review; until it lands, the one-click MCP below works today.)_
+
+### Several clients at once (alternative)
+
+The vendor-neutral [`plugins`](https://www.npmjs.com/package/plugins) CLI auto-detects
+the AI coding agents on your machine and installs Dashies into each. It covers **Claude
+Code** and **Cursor** out of the box. **On Windows its agent detection is still maturing**,
+so prefer the per-client route above there. For **Codex**, prefer the native route above
+for the reason at the top of this section:
+
+```sh
+npx plugins add Dashies-ai/dashies-plugin
+```
+
+If it detects Codex, this command installs `dashies@plugins-cli`. That is an
+alternative to the native `dashies@dashies` route above, not a prerequisite for
+it. Use one Codex route, never both.
 
 In every case, the plugin bundles the `dashies` authoring skill and wires up the Dashies MCP server, so there is nothing to configure by hand and no token to paste.
 

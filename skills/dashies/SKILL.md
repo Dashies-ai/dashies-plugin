@@ -23,7 +23,7 @@ dashboard, checks it, runs your SQL once to put real numbers in it, and then re-
 the schedule you chose, with no AI in the loop. The result is a URL whose numbers stay current
 and which costs nothing per view.
 
-**You write four things and nothing else:**
+**Four things make a dashboard, and they are the required part of every spec:**
 
 1. **which connection** the numbers come from,
 2. **one read-only `SELECT` per dataset**,
@@ -31,16 +31,28 @@ and which costs nothing per view.
    which are the numbers,
 4. **how often it should refresh.**
 
-Everything under that - how the data is prepared, where it is kept, what the page is built out
-of - is the server's to decide. It decides it from the four things above and nothing else, so
-the same document against the same connection gets the same answer and a republish that changes
-nothing changes nothing. **What the connection can do is one of those inputs**, so if it gains a
-capability the answer may legitimately move - which is why the publish report tells you what it
-decided every time rather than only when you changed something.
+Everything under that - how the data is prepared, and where it is kept - is the server's to
+decide. It decides it from the four things above and nothing else, so the same document against
+the same connection gets the same answer and a republish that changes nothing changes nothing.
+**What the connection can do is one of those inputs**, so if it gains a capability the answer may
+legitimately move - which is why the publish report tells you what it decided every time rather
+than only when you changed something.
 **You do not choose it and you do not need a vocabulary for it.**
 
-**You never write HTML, CSS or JavaScript for a dashboard.** If you find yourself doing that,
-you have left this path; go back to the spec.
+**What the page is BUILT OUT OF is a separate question with a separate answer.** By default the
+server draws it from your `tiles`, and that is the right answer for almost every dashboard. But
+the page is a surface you may take over, and the difference between ASSEMBLING a dashboard and
+WRITING its markup is the whole of it.
+
+**You never ASSEMBLE the dashboard.** You do not build a page OUTSIDE the spec, wire up its
+refresh, or hand a user a file you put together yourself. If you find yourself doing that, you
+have left this path.
+
+**Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
+hand-written tile, or the whole page body, and all three stay on this path with every check and
+the schedule intact. **They are not the default** - the tile vocabulary is the cheap route and
+almost every dashboard should take it - so reach for them when the design is the point.
+"When you write the markup yourself", under Step 4, is where that decision lives.
 
 ---
 
@@ -54,11 +66,16 @@ convention to follow.
 
 **And a REFUSED spec is a bug report, not a signal to hand-author.** Every refusal is pointed
 at the exact field or names the exact gate, so the fix is in the spec, in the SQL, or in the
-publish arguments. Falling back to hand-written HTML is the most expensive wrong turn on this
-path and it is silent: you give up every check the server does for you, you take over
-maintaining by hand the parts it maintains for you, and the whole dataset moves into your
-context. That is not hypothetical - a real session did it after a single scope refusal and
+publish arguments. Falling back to a page you assemble and upload yourself is the most expensive
+wrong turn on this path and it is silent: you give up every check the server does for you, you
+take over maintaining by hand the parts it maintains for you, and the whole dataset moves into
+your context. That is not hypothetical - a real session did it after a single scope refusal and
 spent seven rounds deleting real content to make the payload fit. **Fix the refusal.**
+
+**Read that paragraph for the verb, which is ASSEMBLE and not WRITE.** The wrong turn is leaving
+the spec, never writing markup. Markup inside the spec keeps the refusals, the seeding and the
+schedule, and the data still never enters your context. Choosing it is a design decision; it is
+never an answer to an error.
 
 ---
 
@@ -255,8 +272,9 @@ are right.
 
 Turn the statement into the spec: **`datasets`** (each one's `sql`, its `dimensions`, its
 `measures`) and **`tiles`** (kpi, chart, table, matrix, heatmap, scatter, treemap, waterfall,
-funnel, drilldown, stacked, combo, pie, donut, gauge, filter, text), under one `source`
-(connection plus schedule). Each data tile names its dataset with `dataset:`.
+funnel, drilldown, stacked, combo, pie, donut, gauge, filter, text, and `custom` for one you draw
+yourself), under one `source` (connection plus schedule). Each data tile names its dataset with
+`dataset:`, except `custom`, which uses `reads:`.
 
 Field tables, the tile types and their options, and the provenance convention are in
 **`references/spec.md`**.
@@ -266,6 +284,88 @@ a person will actually look at. What costs is the number of cells, which is rows
 so a wide table of few rows and a narrow table of many rows cost the same, and "keep it under N
 rows" is the guidance that gets this wrong. If a table is over the budget the server says so and
 says what to change; you do not need to compute it.
+
+### When you write the markup yourself
+
+**The tile vocabulary is the cheap route and it is the right answer for almost every dashboard.**
+Twenty lines of `tiles:` buys a laid-out, filterable, refreshing page. **Reach past it when the
+design is worth more than those twenty lines** - a report that has to look like the company built
+it, a picture the tile types do not draw, a page whose layout is the point.
+
+**Three surfaces, cheapest first, and all three stay on the spec path.** You keep the pointed
+refusals, the seeding, the correctness checks and the schedule, and the data still never enters
+your context. You give up only the part you opt out of.
+
+| Surface | What you own | What the server still owns |
+|---|---|---|
+| `theme` | Accent, font, density, light or dark, and your own CSS over the managed page | Every tile it drew |
+| a `custom` tile | One tile's HTML and JavaScript, mounted inside the managed grid | Every other tile, the layout, the filters |
+| `look: { html }` | The whole page body, byte for byte | The datasets, the seeding, the refresh |
+
+`look` is exclusive with `tiles`, and with `theme` and `layout` too, because it owns the page.
+`source`, `datasets` and the schedule are written exactly as they always are. The fields, the
+mount contract, and the shape your script reads are in **`references/spec.md`** under **Writing
+your own markup**.
+
+**`look: { from: <slug> }` is the same surface without the bytes.** It means "keep the body this
+dashboard already has", so you can change a dataset or a schedule on a hand-authored dashboard
+without re-sending its markup. It must name the slug you are publishing to, and
+`derive_dashboard_spec` emits it for a dashboard that has no spec yet.
+
+#### Two rules, and both are about correctness rather than taste
+
+**1. All calculation is server-side. The browser draws; it never computes.** Your JavaScript may
+render, lay out, sort what it was handed, and drive controls. It must not sum, average, divide or
+otherwise work out a number from the values it was given. Every check this skill spends its
+length on - the aggregate that has to match its column, the fan-out cross-check, the
+disagreeing-totals warning - is applied to the SQL. A number worked out in the browser has been
+through none of them, and nothing will ever check it again. Declare it as a measure and let the
+statement compute it.
+
+**2. Your JavaScript never calls out to a server. Not ours, not the warehouse, not anyone's.**
+It reads what the page already carries, and every number on the page arrives through the spec's
+datasets. **The reason is the product**: a dashboard is worth having because it re-runs its own
+SQL on a schedule with nobody watching, and because those numbers were checked on the way in. A
+number your page fetched for itself has neither property - it was not checked at publish, no
+refresh maintains it, and it will go stale or wrong on its own. Declare the data as a dataset and
+let the spec carry it.
+
+**This is a rule, not a performance note.** If a design seems to need a call, the design needs
+another dataset.
+
+#### The boundary that decides whether your renderer works at all
+
+**Your own script reads the numbers out of the page, so it only works when the numbers are IN the
+page** - and whether they are is decided per dataset by the server, from the SQL you wrote. You do
+not set it and you cannot ask for it.
+
+**The publish report answers it, and the answer takes TWO of its lines rather than one.**
+
+**First, the `Datasets:` block**, one sentence per dataset. The words to look for are **"inside
+the page"**, and it is their ABSENCE that is decisive: a dataset whose sentence says **"its data
+stays with Dashies and is queried when someone opens the page"** has nothing in the page for your
+script to read, and never will. Their PRESENCE is necessary and not sufficient, which is what the
+second line is for.
+
+**Second, the `warning:` lines.** A dataset can say "inside the page" and still publish with its
+rows held outside it, and the report says so in plain words: a warning that the dataset
+**"publishes with NO data"** and reads "Updating" until the first refresh. **Treat that warning as
+overriding the sentence.** Its "until the first refresh" is about the managed TILES filling in and
+is never a promise that the rows reach the page. Both lines are written about tiles and neither
+mentions a renderer you wrote, so nothing on the report will join them up to your page for you.
+
+**Nothing refuses this at publish**, so there is no error to wait for and the report is the whole
+of what you get.
+
+**So dry-run FIRST and read both BEFORE you write any markup.** A dry run puts the spec through
+the whole pipeline and reports the same lines, so the answer costs one call. When a dataset's data
+stays with Dashies, the managed tiles are what render it. Either bind that dataset to managed
+tiles, or ask a narrower question - bound what it groups by, or shorten the period - so its
+numbers travel inside the page again.
+
+**This binds a `custom` tile exactly as it binds `look`**, warnings included. `reads:` is a
+declaration, not a fetch, so a `custom` tile naming a dataset whose data stays with Dashies
+renders nothing at all.
 
 ---
 
@@ -316,13 +416,17 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
 
 - **`Datasets:`** - one sentence per dataset saying what will happen to it and why. Every dataset
   is listed, including the unremarkable ones. Relay it; it is the honest answer to "how will this
-  stay current".
-- **`warnings`** - non-blocking advisories. **One is worth reading closely:** when two datasets
-  compute the same measure the same way and their fully-rolled-up values disagree, and a tile
-  actually SHOWS the differing one, the report says so with four facts per dataset. This is
+  stay current". **If you are writing your own markup it is HALF of what decides whether your
+  renderer can work at all**, and the `warnings` below are the other half - see "When you write the
+  markup yourself" under Step 4, which is where the pair is read together.
+- **`warnings`** - non-blocking advisories. **Two are worth reading closely.** The first: when two
+  datasets compute the same measure the same way and their fully-rolled-up values disagree, and a
+  tile actually SHOWS the differing one, the report says so with four facts per dataset. This is
   information, not a verdict - a month-to-date figure beside a year-to-date one legitimately
   disagrees - so read the scope fact and decide. It caught a real playtest error that put
-  $596,348,393 on a card against a real $36,384,217.
+  $596,348,393 on a card against a real $36,384,217. The second matters only if you are writing
+  your own markup, and then it is decisive: a dataset warning that it **"publishes with NO data"**
+  is one whose rows are kept outside the page, so a renderer you wrote will find nothing there.
 - **`obligations`** - the Step-3 cross-check, prompted.
 - Then share the returned `url`.
 
@@ -436,7 +540,12 @@ never a spec edit - do not change `slug` to rename.
 - **You write the spec; the server writes the dashboard.** A structural fault is a pointed
   publish error naming the exact field, not a rendering surprise. Dry-run first, fix the pointed
   errors, then publish the hash.
-- **Never fall back to hand-written HTML because a publish was refused.** Fix the refusal.
+- **Never leave the spec because a publish was refused.** Fix the refusal. Writing your own markup
+  INSIDE the spec is supported and is a design decision; it is never a response to an error.
+- **All calculation is server-side. The browser draws; it never computes.** Markup you write may
+  render, lay out and drive controls. It must not work out a number from values it was handed -
+  declare a measure and let the statement compute it. And it takes its numbers from the page the
+  spec produced, never from a call of its own.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
 - **Everything the dashboard carries is visible to everyone who can open it.** Viewers are its
@@ -467,7 +576,7 @@ Load the one you need for the step you are on; do not front-load them.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/sql.md` | Introspection; choosing the grain; keeping what you group by small; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
-| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`), **Provenance**, the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, the data block and its shape), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /

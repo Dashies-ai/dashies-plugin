@@ -3,9 +3,12 @@
 You author a dashboard by writing a **spec** - one small YAML document - and passing it to
 `publish_dashboard`'s `spec` argument. The server does the rest: it builds the dashboard from the
 spec, checks the whole thing, and runs each dataset's `sql` once, live, so the published bytes
-carry real numbers. **You write no markup and no styling.** A binding that names a column the SQL
-never returns, or a tile with no type, is a **pointed publish error naming the exact field**, not
-a blank tile or a silently wrong number that ships and rots.
+carry real numbers. **You do not have to write any markup or styling, and for almost every
+dashboard you should not** - the tile vocabulary is the cheap route. Where the design is worth
+more than that, the spec carries your own CSS, one hand-written tile, or the whole page body; see
+**Writing your own markup**. A binding that names a column the SQL never returns, or a tile with
+no type, is a **pointed publish error naming the exact field**, not a blank tile or a silently
+wrong number that ships and rots.
 
 So Step 4 is mechanical: turn the statements you wrote in Step 3 into datasets plus tiles. The
 hard part - the grain and the correctness of the SQL - is already done.
@@ -42,13 +45,19 @@ ignored.
   FAILED publish lists only real errors, so its count is the number of things you actually have to
   fix. Two things that are NOT unreferenced: a measure used only as a ratio's `num` / `den` (the
   ratio is the reference), and a dimension in a dataset with no tile that could have shown it (a
-  KPI-only dataset never warns about its grain).
+  KPI-only dataset never warns about its grain). **A `look` spec has no tiles at all, so it
+  collects one of these per dataset and one per measure on every publish** (measured; dimensions
+  stay quiet, because that rule needs a tile that could have shown them). They are noise there and
+  not a finding - **do not delete a measure your own renderer reads in order to silence one.** A
+  `custom` tile is the opposite case: its `reads` marks every measure and dimension of the
+  datasets it names as referenced, so it silences them properly.
 - **No em or en dashes** in any spec string - titles, notes, labels, text tiles. Plain ASCII
   hyphens only.
 
 ## Top level
 
-Required: `dashies`, `title`, `source`, `datasets`, plus `tiles`.
+Required: `dashies`, `title`, `source`, `datasets`, plus EITHER `tiles` OR `look` - exactly one
+of those two, never both and never neither.
 
 | Key | Type | Notes |
 |---|---|---|
@@ -59,8 +68,10 @@ Required: `dashies`, `title`, `source`, `datasets`, plus `tiles`.
 | `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
 | `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
-| `tiles` | array, 1-64 | The tiles, in document order (below). |
-| `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). |
+| `tiles` | array, 1-64 | The tiles, in document order (below). Exclusive with `look`. |
+| `look` | object | Optional, and the alternative to `tiles`: the whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. See **Writing your own markup**. |
+| `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
+| `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
 
 `source` (required `connection` plus `schedule`):
 
@@ -216,17 +227,15 @@ tells the next reader which measures to check first.
 
 ## tiles
 
-A CLOSED set, and the table below is every type this skill teaches - `type` is REQUIRED (a tile
-with no type is a `[L2]` error, because it can never blank-render). **The schema is the whole
-set and it is wider than this table**: it also admits a `custom` type, an escape hatch for a
-hand-written renderer, which nothing here describes and which you should not reach for. Some optional fields are common but are
-NOT on every type; each tile's schema is closed, so an unaccepted key is a `[L2]` error naming
-it. **No count is given here on purpose: the schema at the top of this file decides the set, and
-a number written beside it goes stale the day a type is added, with nothing to show it.**
+A CLOSED set, and the table below is every type - `type` is REQUIRED (a tile with no type is a
+`[L2]` error, because it can never blank-render). Some optional fields are common but are NOT on
+every type; each tile's schema is closed, so an unaccepted key is a `[L2]` error naming it. **No
+count is given here on purpose: the schema at the top of this file decides the set, and a number
+written beside it goes stale the day a type is added, with nothing to show it.**
 
 - `intent` and `w` (1-12 grid columns) are accepted on EVERY type.
 - `dataset` (which dataset it reads; omit for the first, which is the default) on every type
-  EXCEPT `text`, which has no data.
+  EXCEPT `text`, which has no data, and `custom`, which names its datasets with `reads` instead.
 - `title` (<=120 chars) and `note` (<=1000) on every type that carries data - so on all of them
   EXCEPT `filter` and `text`, which is easier to remember as the exception than as a list.
 
@@ -251,6 +260,7 @@ measure/dimension no dataset declares is an `[L3]` reference error.
 | `funnel` | `x`, `measure`, `stages` | Stage sizes in an order YOU declare: `stages` lists the dimension VALUES, 2-12, no repeats. It shows sizes only - it does NOT compute conversion between stages. Optional `height` (120-800), `drill`. See below. |
 | `filter` | `dimension` | `dimension`; `label` (<=80); optional `multi` / `range` (booleans, mutually exclusive - set at most one; a filter is single-select when neither is set). A `multi` or `range` filter asks more of the dataset than a single-select one, because it has to answer combinations rather than one value at a time; where a measure cannot answer them, publish refuses and says what to change. |
 | `text` | `body` | `body` (markdown, <=4000) - static prose, no data. |
+| `custom` | `reads`, and at least one of `html` / `js` | One tile you draw yourself, mounted in the managed grid. `reads` is 1-8 declared dataset names; `html` (<=100000) is mounted verbatim; `js` (<=200000) runs against that mount. It takes no `dataset`. Reach for it when the tile types do not draw the picture you need. See **Writing your own markup** below. |
 
 ## Member order on an axis - your ROW ORDER is the default
 
@@ -745,6 +755,254 @@ tiles:
 Note what is NOT in it: nothing about how the data will be prepared or where it will be kept.
 The publish report says what the server chose for `main` and why.
 
+## Writing your own markup
+
+Three surfaces, and every one of them is part of the spec: the pointed refusals, the seeding, the
+correctness checks and the schedule all still apply, and the data still never enters your context.
+**`SKILL.md`, under "When you write the markup yourself", carries the decision - when to reach for
+these, and the two rules that govern all three. This section is the mechanics.**
+
+**Everything below is subject to the boundary that section states**, and the report answers it on
+two lines rather than one. A dataset whose `Datasets:` sentence says its data stays with Dashies
+puts nothing in the page for a script to read: the ABSENCE of the words "inside the page" is
+decisive. Their PRESENCE is necessary and not sufficient, because a dataset can say them and still
+publish with its rows held outside the page - and when it does, a `warning:` line says the dataset
+"publishes with NO data". Read both. **Nothing refuses that combination at publish**, so the report
+is the whole of what you get.
+
+### `theme` - your own CSS over the managed page
+
+Tiles mode only; `look` owns the page and refuses `theme`.
+
+| Key | Type | Notes |
+|---|---|---|
+| `accent` | `#RRGGBB` | One brand colour. Hash plus six hex digits; a 3-digit or named colour is refused. |
+| `font` | `sans` / `serif` / `mono` | |
+| `density` | `compact` / `comfortable` / `spacious` | |
+| `mode` | `light` / `dark` / `auto` | |
+| `css` | string (<=50000) | Your own stylesheet, emitted verbatim into `<head>` LAST, after the managed style blocks, so it wins on equal specificity. |
+
+`css` is refused if it contains `</style` (it would break out of its own element) or an `id=`
+ATTRIBUTE carrying the reserved id below. A CSS SELECTOR is not an attribute, so
+`#dashies-data { display: none }` compiles clean: what the gate is for is a stray element carrying
+that id, not a rule that styles the real one.
+
+### A `custom` tile - one tile you draw yourself
+
+| Key | Required | Notes |
+|---|---|---|
+| `type` | yes | `custom`. |
+| `reads` | yes | 1-8 declared dataset names, no repeats. A name you did not declare is an `[L3]` error with a nearest-match suggestion. |
+| `html` | one of the two | <=100000 chars, mounted verbatim. |
+| `js` | one of the two | <=200000 chars. |
+
+At least one of `html` and `js` is required. `title`, `note`, `intent` and `w` all work here and
+mean what they mean elsewhere; `dataset` is not accepted at all (`dataset: main` beside a `reads`
+is an `[L2]` error: "`dataset` is not a recognized field here.").
+
+**What `reads` actually does.** It is a declaration, checked against your declared dataset names,
+and it marks every measure and dimension of the datasets it names as referenced, which is what
+stops the unused-field warnings. **It does not narrow what the page carries and it does not hand
+your script anything.** (Having a `custom` tile at all is separately what makes the page ship its
+rows in the plain shape below rather than a packed one. That keys on the tile's TYPE, not on
+`reads`; the two coincide today because `reads` is required.)
+
+**The mount contract, exactly:**
+
+- Your `html` goes verbatim inside `<div class="dsh-custom-mount" id="dsh-c<N>">`, `N` being the
+  tile's index. It is written into the served page as literal markup, not assigned later.
+- **Put no `<script>` in `html`. It lands BEFORE the data block**, so anything in it runs while
+  `document.getElementById('dashies-data')` still returns null. You get a warning telling you to
+  move it to `js`, and `js` is the field that runs after the block exists. **If that warning tells
+  you the script is "inert", disregard the reason and keep the advice** - the script DOES run, and
+  it runs too early to read anything. Measured in a browser under the real serving rules, so do
+  not plan around it failing to run.
+- Your `js` runs as `(function (mount) { ...your js... })(<that div>)`. **`mount` is the only thing
+  you are handed, and it is a DOM element.** There is no data argument and no Dashies object.
+- `js` is refused if it contains `</script`.
+- It runs AFTER the data block exists in the document and BEFORE the runtime boots, so
+  `document.getElementById('dashies-data')` works synchronously and `window.__dashiesRuntime` does
+  not exist yet. Read the data block.
+
+### `look` - the whole page body
+
+A top-level key, exclusive with `tiles`, `theme` and `layout`. Exactly one of:
+
+| Key | Notes |
+|---|---|
+| `html` | Your page body, emitted byte for byte. **Three ceilings, and they are NOT one rule** - see "How big your body may be" below. |
+| `from` | A slug, which must EQUAL the slug you are publishing to. Means "keep the body this dashboard already has": the server reads it from storage and re-seeds it, so zero pixels change. To reuse a DIFFERENT dashboard's body, `get_dashboard` it and inline `html`. |
+
+#### How big your body may be
+
+Three separate ceilings, each driven by a different thing, so no single condition covers them.
+**Two of them you can work out; the third you cannot, and that is the one to plan around.**
+
+| Ceiling | What it bounds | What pushes you into it |
+|---|---|---|
+| 4,194,304 CHARACTERS | your `html` alone | the markup you wrote |
+| 5 MiB | the whole spec DOCUMENT you send, in BYTES, refused before it is even parsed | **how your body is written down, not how long it is.** Two things inflate the document past your character count: the indentation YAML puts on every line of a block scalar, and any character that is more than one byte. It leads whenever your document runs over **1.25 bytes per body character**, which is `5,242,880 / 4,194,304` |
+| 5 MiB | the COMPILED page: your body PLUS the data block seeded into it | **your DATA, not your markup.** It rises with the rows your statements return, and it can bring the total over the line while your body is comfortably under its own cap |
+
+**Measured, so the third row is not a theoretical worry:** one ordinary dataset of 20,000 rows
+seeded a data block of 958,688 bytes, and the compiled page is your body plus that block. A body
+near its character cap plus a block that size lands about 89,890 bytes under the compiled ceiling,
+and a slightly larger dataset crosses it - **while the body is still inside its own cap**, which
+is why these are three ceilings and not one.
+
+**And the second row's overhead is per LINE, which is easy to underestimate.** Written as a YAML
+block scalar, every line of your body carries four extra bytes into the document, so SHORT lines
+cost proportionally more. Measured, in bytes of document per character of body: **1.049** at 80
+characters a line, **1.098** at 40, **1.235** at 16, **1.308** at 12.
+
+**The last one is over the 1.25 crossover, and that has a concrete consequence:** a body sitting
+exactly ON its 4,194,304-character cap, entirely legal by row 1, compiles into a document of about
+5,485,000 bytes and is refused before it is ever parsed. Deeply indented markup gets there on line
+length alone, and multibyte content gets there sooner.
+
+**You cannot compute the third one in advance, and you do not have to.** The publish report
+carries a `Bytes:` line giving the page and the data separately, so dry-run and read it. If the
+page is over, the two levers are a smaller body or a coarser grain, and the grain is usually the
+one with room in it.
+
+**Do not stop reading at that line.** It sits after the per-dataset block and BEFORE the
+`warning:` lines, so an author who treats it as the end of the report misses the warning that
+decides whether their own renderer can work at all.
+
+**The whole contract between your markup and refresh is ONE element**, and a `look` body is
+refused unless it satisfies it:
+
+```html
+<script type="application/json" id="dashies-data">{ ... }</script>
+```
+
+- **Exactly one.** Zero is refused, because there is nothing to refresh into. Two or more is
+  refused, because every reader takes the FIRST match, so the second would silently shadow the
+  real one.
+- It must be a complete element; an opening tag with no `</script>` is refused.
+- Publish seeds it, and every refresh rewrites only what sits between the tags. **Every other
+  byte of your page is left alone** - your `<head>`, your CSS, your own scripts, your markup, all
+  emitted exactly as you sent them. That is why your design survives a refresh, and it is also why
+  nothing is added to your page that you did not write: **a `look` body gains no runtime marker of
+  its own**, so if you want Dashies' own bindings you have to put one there yourself.
+- **`dashies-data` is a RESERVED id.** Do not put it on anything else, in a `look` body, in
+  `theme.css`, or in a custom tile's HTML. It is refused, because a decoy is either read instead
+  of the real block or rewritten by the refresh instead of it, and the second one freezes the
+  numbers silently.
+
+**Two ways to get numbers onto a page you wrote, and a body picks one:**
+
+- **Your own renderer** - a `<script>` that reads the data block and draws. Carry no `data-dash`
+  attributes and nothing further is asked of your body.
+- **Dashies' bindings** - `data-dash` attributes the runtime fills. A body carrying ANY
+  `data-dash` attribute must ALSO carry `<script data-dashies-runtime></script>`, and every
+  binding must resolve against your declared datasets. Both are checked at publish, so a body
+  with bindings and no runtime is refused rather than shipped with frozen numbers.
+
+### The shape your script reads
+
+The data block is JSON. What a renderer needs from it:
+
+```jsonc
+{
+  "version": 4,
+  "updated_at": "2026-08-31T09:15:00Z",  // when the dashboard last refreshed
+  "datasets": {                          // keyed by name, in the order you declared them
+    "main": {
+      "mode": "...",                     // how Dashies keeps this data. Do NOT branch on it -
+                                         // read the report sentence, and the `__g_` test below
+      "as_of": "2026-08-31T09:15:00Z",   // when THIS dataset was last computed
+      "dimensions": [ { "key": "month", "type": "date" }, { "key": "region" } ],
+      "measures":   [ { "key": "revenue", "agg": "sum" } ],   // `format` rides here when declared
+      "cube": [ { "month": "2026-07", "region": "AMER", "revenue": 8100 } ],
+      "error": null                      // may also be ABSENT; treat both as "no error"
+    }
+  }
+}
+```
+
+- **`cube` is not the only place rows live, and which key carries them follows the report
+  sentence.** A dataset whose sentence talks about totals or about every filter state puts them
+  under `cube`, as above. A dataset whose sentence says **its underlying DETAIL travels inside the
+  page** puts them under `data` instead, as `{ "mode": "inline", "rows": [ ... ] }`, and carries no
+  `cube` key at all; a dataset whose sentence promises BOTH carries both. **Read for the key you
+  got rather than assuming `cube`** - `ds.cube || []` on a detail dataset is an empty array and an
+  empty page, with nothing anywhere saying why.
+- **Whichever key it is, it is a plain array of row objects whenever your page can read it at
+  all.** A packed column form exists, and it is emitted only where Dashies owns the renderer; a
+  spec carrying `look` or any `custom` tile switches the whole page back to this shape for exactly
+  that reason. You do not ask for it and you cannot lose it by accident.
+- **Ask for the rows POSITIVELY and let one branch answer all three cases**, rather than testing
+  for their absence. A dataset that keeps its rows outside the page carries a `data` block with no
+  `rows` array, and one whose rows are under `cube` carries **no `data` block at all** - so
+  `!ds.data.rows` throws a TypeError on the commonest shape of all, and a TypeError in your
+  `<script>` blanks the whole page rather than one tile. Write this instead:
+
+```js
+// under `cube`, or under `data.rows`, or not in the page at all
+var rows = Array.isArray(ds.cube) ? ds.cube
+         : (ds.data && Array.isArray(ds.data.rows)) ? ds.data.rows
+         : null;
+if (rows === null) {
+  // The rows are kept outside the page. There is nothing here to draw, and no
+  // later refresh puts them here. Say so on the page rather than rendering empty.
+}
+```
+
+  `null` is exactly the case the `warning:` line above catches, and it is the one dataset shape you
+  must not hand-write a renderer for.
+- **`type` appears on a dimension only when it is `date`.** A category dimension carries just
+  `key` (plus `label` if you set one), so testing for a `"category"` value finds nothing.
+- **Read `as_of` and `error` rather than assuming.** A dataset that failed its last refresh keeps
+  its last good rows and carries the reason; one whose `as_of` lags `updated_at` is showing older
+  numbers than the rest of the page. Say so on the page instead of drawing them as current.
+
+**THE ONE TRAP: a `cube` array is not always one grain.** Where the report says the answers were
+worked out for each state the filters can be in, the array holds one cell per grouping set, all
+mixed together, and each cell carries a `__g_<dim>` key per declared dimension: `0` means that
+dimension is LIVE in the cell, `1` means it was rolled up. The grand total has every flag `1`; the
+finest cells have every flag `0`. **Iterating such an array and adding it up double counts,
+badly.** Detect it rather than assuming, and select by the flags:
+
+```js
+var block = JSON.parse(document.getElementById('dashies-data').textContent);
+var ds = block.datasets.main;
+var cells = ds.cube || [];
+var mixedGrain = cells.length > 0 && Object.keys(cells[0]).some(function (k) {
+  return k.indexOf('__g_') === 0;
+});
+// Dashies' own predicate, ported exactly: LIVE for these three values and rolled up for
+// everything else, a missing flag included.
+function live(cell, dim) {
+  var g = cell['__g_' + dim];
+  return g === 0 || g === '0' || g === 0n;
+}
+// one row per month, totalled across regions: month live, region rolled up
+var byMonth = mixedGrain
+  ? cells.filter(function (c) { return live(c, 'month') && !live(c, 'region'); })
+  : cells;
+```
+
+**Two things in that snippet are load-bearing, and both are ported from Dashies' own reader rather
+than invented here:**
+
+- **Ask which dimensions are LIVE, and accept all three forms.** A warehouse may send the flag as
+  a number or as a string, so a strict `=== 0` matches NOTHING on the ones that send a string, and
+  the symptom is an empty page rather than an error. The `0n` arm is in Dashies' own reader for a
+  future path and cannot fire on this data; keep it anyway, so the predicate stays a copy rather
+  than a paraphrase. **It is a BigInt literal, so that line needs ES2020**, which every browser a
+  dashboard is opened in has had for years; drop the `0n` arm only if your own toolchain targets
+  older syntax, since a parse error in a `<script>` kills the whole element.
+- **Test for LIVE and negate, never for rolled-up directly.** Anything that is not one of those
+  three values, a MISSING flag included, counts as rolled up, so a rolled-up test written the
+  other way round would call a missing flag live.
+- **Never test the dimension's VALUE for null instead.** A rolled-up column is null AND a genuine
+  null dimension value is null, so a nullness test silently merges a real null group into the
+  rollup row. The flag is the only thing that tells them apart.
+
+Selecting cells is not the same as computing them: every value in `byMonth` was worked out by the
+statement, which is the rule "the browser draws, it never computes" holding.
+
 ## Migrating a dashboard that has no spec
 
 A dashboard published before specs existed has nothing for `get_dashboard_spec` to read.
@@ -778,7 +1036,8 @@ describe a tile that publishes clean and then refuses to draw.
 | `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |
 | `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
 | `col_extra` | the query outputs a column nothing declared reads, so it reaches every viewer and is read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship real data is an ERROR, not this warning) |
-| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced |
+| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced. A `look` spec has no tiles, so it raises one of these per dataset and per measure on every publish; see "House rules" again before acting on one |
+| `publishes with NO data`, and its always-present partner `publishes pending` | the dataset's rows are kept OUTSIDE the page, so it publishes empty and its tiles read "Updating". They fire as a PAIR, so match either | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the tiles in. **It is decisive if you are writing your own renderer** - see "Writing your own markup", because your script reads the page and the rows are not in it. Read its companion sentence carefully too: it says the first refresh extracts the data, which is true of the tiles and NOT a promise that the rows ever reach the page |
 
 The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,
 `stack_percent_mixed_sign`) are warnings rather than errors ON PURPOSE: they are judged against

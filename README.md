@@ -104,7 +104,7 @@ The model runs once, at authoring time. After that, refresh is a server-side sch
 ```mermaid
 flowchart LR
   subgraph once["Authored once, with AI"]
-    A["You describe<br/>the dashboard"] --> B["Your AI writes a spec:<br/>connection, SQL, columns,<br/>tiles, cadence"]
+    A["You describe<br/>the dashboard"] --> B["Your AI writes a spec:<br/>connection, SQL, columns,<br/>layout, cadence"]
     B --> C["publish_dashboard"]
   end
   C --> D[("your-handle.dashies.ai/slug")]

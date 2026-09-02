@@ -7,9 +7,10 @@ carry real numbers. **You need not write any markup or styling** - a `tiles` lay
 lines and the server draws the page from it. **And you may write all of it**: the spec carries
 your own CSS, one hand-written tile, or the whole page body, on the same path with the same
 checks; see **Writing your own markup**. **Which one you reach for is the user's call rather than
-a default of ours** - though on a dashboard reading a warehouse, your own CSS is the one of the
-three that still shows numbers, because the other two read the page and a warehouse dashboard's
-numbers are not in it. A binding that names a column the SQL never returns, or a tile with
+a default of ours**, and if they have not said, `SKILL.md` Step 4 says to ask and wait - though
+on a dashboard reading a warehouse, your own CSS is the one of the three that still shows
+numbers, because the other two read the page and a warehouse dashboard's numbers are not in it.
+A binding that names a column the SQL never returns, or a tile with
 no type, is a **pointed publish error naming the exact field**, not a blank tile or a silently
 wrong number that ships and rots.
 
@@ -878,7 +879,7 @@ Three separate ceilings, each driven by a different thing, so no single conditio
 |---|---|---|
 | 4,194,304 CHARACTERS | your `html` alone | the markup you wrote |
 | 5 MiB | the whole spec DOCUMENT you send, in BYTES, refused before it is even parsed | **how your body is written down, not how long it is.** Two things inflate the document past your character count: the indentation YAML puts on every line of a block scalar, and any character that is more than one byte. It leads whenever your document runs over **1.25 bytes per body character**, which is `5,242,880 / 4,194,304` |
-| 5 MiB | the COMPILED page: your body PLUS the data block seeded into it | **your DATA, not your markup.** It rises with the rows your statements return, and it can bring the total over the line while your body is comfortably under its own cap |
+| 5 MiB | the COMPILED page: your body PLUS the data block seeded into it | **your DATA, not your markup.** It rises with the rows your statements return, and it can bring the total over the line while your body is comfortably under its own cap. On a dashboard that reads a warehouse the block carries no rows, so this ceiling is your body alone |
 
 **Measured, so the third row is not a theoretical worry:** one ordinary dataset of 20,000 rows
 seeded a data block of 958,688 bytes, and the compiled page is your body plus that block. A body
@@ -899,7 +900,8 @@ length alone, and multibyte content gets there sooner.
 **You cannot compute the third one in advance, and you do not have to.** The publish report
 carries a `Bytes:` line giving the page and the data separately, so dry-run and read it. If the
 page is over, the two levers are a smaller body or a coarser grain, and the grain is usually the
-one with room in it.
+one with room in it. On a warehouse dashboard the block carries no rows, so the body is the only
+lever there and the ceiling is one you can work out after all.
 
 **Do not stop reading at that line.** It sits after the per-dataset block and BEFORE the
 `warning:` lines, so an author who treats it as the end of the report misses the warning that
@@ -1050,8 +1052,9 @@ live, so the layout stays byte for byte while the numbers update. A `look` spec 
 `datasets` and `source` and carries no `tiles` or `layout`.
 
 Where the old page has recognizable tiles, the draft also returns a ready-to-paste `tiles:`
-block. **Taking it is the better outcome**: it moves the dashboard onto the managed layout, where
-the server owns the rendering, and it is what makes every later edit a spec edit.
+block. Take it if the user wants the managed layout: the server then owns the rendering. Keep
+`look: { from: <slug> }` when the page's own design is the point. Either way every later edit is a
+spec edit.
 
 ## What a publish WARNING means
 

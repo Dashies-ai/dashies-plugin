@@ -55,10 +55,11 @@ the schedule intact. **On a dashboard that reads a warehouse, your own CSS is th
 three that still shows numbers**, because it styles the tiles the server draws; a hand-written
 tile or body reads the page, and a warehouse dashboard's numbers are not in it. **On the sample
 connection all three work as they always did.** **What the user asked for decides which you reach
-for.** A look, a brand, a
-layout, a picture the tile types do not draw - any of those is an instruction to write the markup,
-and doing it is the product working rather than an escape hatch. Asked only for the numbers, a
-`tiles` layout costs twenty lines. "When you write the markup yourself", under Step 4, is where
+for, and if they have not said, you ask and wait.** A look, a brand, typography, a picture the
+tile types do not draw - any of those is an instruction to write the markup, and doing it is the
+product working rather than an escape hatch. Asked only for the numbers and nothing about how
+they should look, ask before you choose; a `tiles` layout costs twenty lines, and it is theirs to
+take rather than yours to assume. "When you write the markup yourself", under Step 4, is where
 that decision lives.
 
 ---
@@ -186,7 +187,7 @@ dashboards that already exist, and a single next step.
 | `fix_a_connection` | A credential is not working and nothing else is ready. **Say so before authoring anything**, name the error, send them to the app. |
 | `finish_setup_in_the_app` | A connection exists but was never tested. They finish setting it up, then call again. |
 | `choose_data_in_the_app` | A connection is verified and exposes nothing readable. They choose what to expose and check the login can read it. Both are app settings; **no query works around either**. |
-| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** |
+| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** If they have not said how the dashboard should look either, ask that in the same message (Step 4), not in a second round trip. |
 | `start_authoring` | Exactly one is ready. Go. |
 
 **A broken connection beside a working one still says `start_authoring`.** `fix_a_connection` is
@@ -375,28 +376,42 @@ says what to change; you do not need to compute it.
 
 ### When you write the markup yourself
 
-**THE USER'S OWN BRIEF DECIDES THIS. There is no default of ours in either direction.**
+**THE USER'S OWN BRIEF DECIDES THIS. There is no default of ours in either direction, and there
+are two cases.**
 
-Twenty lines of `tiles:` buys a laid-out, filterable, refreshing page, and that is a real saving
-when nobody has said anything about how it should look. **But a user who describes a look, a
-brand, a layout, or a picture the tile types do not draw has already told you to write the
-markup.** Handing them the tile vocabulary instead is how a dashboard ends up reading like a
-template with their title on it, which is the one outcome this product exists to avoid.
+**If they have not said how it should look, STOP AND ASK, and wait for the answer.** Do not
+pick for them, and do not announce a choice and carry on in the same message. A real session did
+exactly that - it wrote "let them choose" and published tiles without waiting - and the user's
+words on finding them were "I said no tiles". The question costs one sentence: a laid-out page of
+managed tiles (charts, KPIs, tables and filters in Dashies' own look), or a page designed for them?
+If Step 1 also leaves you asking which connection, ask both in the same message; two questions in
+two round trips is a worse experience than one message carrying both. Twenty lines of `tiles:` is
+a real saving, and it is theirs to take rather than yours to assume.
 
-**Do not weigh the two by how common they are.** Nobody knows, and a count taken over the
-dashboards that already exist would measure only what the tool made easy.
+**If they have said, DO WHAT THEY SAID.** "Beautiful HTML dashboards" is an instruction to
+write the markup. A look, a brand, typography, a picture the tile types do not draw - any of
+those means you write the page. A layout on its own - four cards in a row, one chart below - is
+something the tiles draw correctly; deliver it and say that you did. Handing somebody who asked
+for HTML the tile vocabulary instead is how a dashboard ends up reading like a template with
+their title on it, which is the one outcome this product exists to avoid. Where the connection's
+numbers are not in the page - the boundary below - say so as the fact it is, offer what the page
+can carry without ranking the options, and wait for their answer.
+
+**Do not weigh the two answers, managed tiles or a page you write, by how common they are.**
+Nobody knows, and a count taken over the dashboards that already exist would measure only what
+the tool made easy.
 
 **WHICH SURFACES ARE AVAILABLE IS A DIFFERENT QUESTION FROM WHICH ONE THEY WANT, AND IT IS THE
 CONNECTION THAT DECIDES IT.** On a dashboard reading a warehouse the numbers are not in the page,
 so a body or a tile you write renders without them, and `theme` is the surface that carries a look
 there - your own CSS, accent, font and density over tiles the server draws. On the sample
-connection all three work. **Ask what they want first and let the connection decide how much of it
-you can give them**, then say which you are doing and why. Reading this the other way round is how
-somebody gets handed a page with nothing on it.
+connection all three work. **Ask what they want first and wait for the answer; then let the
+connection decide how much of it you can give them**, and say which you are doing and why. Reading
+this the other way round is how somebody gets handed a page with nothing on it.
 
-**Three surfaces, cheapest first, and all three stay on the spec path.** You keep the pointed
-refusals, the seeding, the correctness checks and the schedule, and the data still never enters
-your context. You give up only the part you opt out of.
+**Three surfaces, from the least you own to the most, and all three stay on the spec path.** You
+keep the pointed refusals, the seeding, the correctness checks and the schedule, and the data still
+never enters your context. You give up only the part you opt out of.
 
 | Surface | What you own | What the server still owns |
 |---|---|---|
@@ -418,7 +433,8 @@ without re-sending its markup. It must name the slug you are publishing to, and
 
 **1. All calculation is server-side. The browser draws; it never computes.** Your JavaScript may
 render, lay out, sort what it was handed, and drive controls. It must not sum, average, divide or
-otherwise work out a number from the values it was given. Every check this skill spends its
+otherwise work out a number from the values it was given - not even to roll them up to a coarser
+grain, which is a dataset you declare instead. Every check this skill spends its
 length on - the aggregate that has to match its column, the fan-out cross-check, the
 disagreeing-totals warning - is applied to the SQL. A number worked out in the browser has been
 through none of them, and nothing will ever check it again. Declare it as a measure and let the
@@ -491,10 +507,40 @@ wishes collide.** A page you write yourself and a dashboard on their own warehou
 together today. If they have asked for both, that is a real limit they should hear in plain words,
 not a reason to hand them tiles without saying why. **It is where things stand rather than a line
 anyone drew on purpose.** Offer `theme` over managed tiles, say plainly what it does and does not
-give them, and let them choose.
+give them, and let them choose - which means WAITING for their answer, not announcing one and
+carrying on.
 
 **`reads:` is a declaration, not a fetch**, so a `custom` tile naming a dataset whose data stays
 with Dashies renders nothing at all.
+
+#### Make it good
+
+A page you write is what the user sees of the product, so a bare template is a failure even when
+every number on it is right. Short rules, and each one separates designed from generated:
+
+- **One thing is biggest.** Pick the metric that matters most, make it the hero - about three
+  times the size of its label, with room around it - and demote the rest to a quieter row. Four
+  equal KPIs give the eye nowhere to land.
+- **One surface treatment, one accent.** Cards on a lightly tinted canvas with a hairline border
+  and no shadow, or cards on white with one soft shadow: pick one and use it everywhere. Spend one
+  accent colour on the primary series and the hero, and keep everything else neutral. No different
+  hue per bar, no gradient fills, no glow.
+- **Real typography.** A display size for the title and the hero, quiet uppercase labels with
+  letter-spacing, and every number in a monospace stack with `font-variant-numeric: tabular-nums`,
+  right-aligned so digits line up. Timid 14/16/18 steps read as a template.
+- **Dense and legible.** Tight rhythm inside a block, air between blocks, on an 8px grid. No chart
+  junk: no 3D, no gridlines that carry nothing, no shadows on bars.
+- **Both colour schemes**, through `prefers-color-scheme`, with real contrast in each and a visible
+  focus ring.
+- **No unstyled table, ever.** Hairline rules, a quiet header, numbers right-aligned. A table that
+  reads as a browser default throws the whole advantage away.
+- **Their brand, not ours.** If the user named a company or a look, derive the palette and the type
+  from it; a page that is supposed to be theirs does not ship Dashies' own blue.
+- **Say only what the data says.** No invented deltas, trend arrows or filler copy.
+
+Inline everything - your CSS, your script, your SVG - so the page depends on nothing that can change
+underneath it. Storage APIs (`localStorage`, cookies) throw in a published page, so keep state in
+memory and in the URL hash. And never replace `document.body` wholesale: fill your own elements.
 
 ---
 
@@ -694,6 +740,10 @@ never a spec edit - do not change `slug` to rename.
   errors, then publish the hash.
 - **Never leave the spec because a publish was refused.** Fix the refusal. Writing your own markup
   INSIDE the spec is supported and is a design decision; it is never a response to an error.
+- **If the user has not said how it should look, ask and wait; if they have, do what they said**,
+  and where the connection's numbers are not in the page, say so as a fact, offer what the page
+  can carry without ranking the options, and wait. Managed tiles are one answer, never the
+  default.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls. It must not work out a number from values it was handed -
   declare a measure and let the statement compute it. And it takes its numbers from the page the

@@ -109,10 +109,35 @@ never names is reported as bucketing in some other zone. Use the double form, or
 
 **A column that is already a `DATE` needs no conversion.**
 
-### Relative windows only
+### Relative windows, anchored to the data
 
-`now() - interval '18 months'`, never a hard-coded date range. A window that stops moving is a
-dashboard that quietly stops being about the present.
+Never a hard-coded date range: a window that stops moving is a dashboard that quietly stops being
+about the present. **And what the window is relative TO matters as much as that it is relative.**
+Anchor it to the newest complete period the SOURCE holds, not to the wall clock:
+
+```sql
+-- Snowflake, a monthly mart carrying its own completeness flag. This shape was measured
+-- right on a live dashboard: the newest bucket is complete, and the window holds the last
+-- 24 of them whether or not the mart has moved this month.
+where is_complete_month = true
+  and month_start_on >= dateadd(month, -24,
+        (select max(month_start_on) from your_db.analytics.fct_mrr_movements
+         where is_complete_month = true))
+```
+
+On a raw fact table with no flag, the anchor is `max(<date>)` and the newest period is partial
+unless the data happens to end on a period boundary, so exclude it in the same predicate: take
+the periods strictly before the period that holds `max(<date>)`, and count the window back from
+there.
+
+**A `current_date()` anchor is right only when the source is genuinely live** - the sample
+connection, whose dates are computed against today, or a table that is loaded every day. A mart's
+data ends at its last complete period, behind the wall clock by up to a period while it is
+maintained and permanently once it stops, so a wall-clock window is short by that gap on every
+day, and on a source that has stopped moving the data left inside it shrinks by a day every day
+while every number left on the page stays plausible, and nothing reports it. Measured on four
+published dashboards: the two anchored to `current_date()` read a source that had stopped
+moving; the two anchored to `max(month_start_on)` were the ones that were right.
 
 ---
 
@@ -133,6 +158,13 @@ all.
 
 **One read-only `SELECT` (or `WITH ... SELECT`) per dataset.** No DDL, no writes, no temp tables,
 no multiple statements.
+
+**And no `;` ANYWHERE INSIDE the statement, comments and string literals included.** The executor
+strips one TRAILING semicolon and then scans the rest of the statement for the raw character, so
+it does not know a comment from code: `-- partial; see below` and `where region = 'a;b'` are both
+refused as "more than one statement", and the message names neither the comment nor the literal.
+A trailing `;` is the one position that is tolerated. Rephrase the comment; where a literal
+semicolon is genuinely in your data, match it without typing one.
 
 Then `validate_cube_sql({ sql, connection })`. **It is the only place that can prove the
 statement survives the confinement, the caps and the timeout of the executor that will run it on
@@ -210,7 +242,8 @@ tell the user.
 |---|---|---|---|
 | Table reference | `from orders` | backtick `` `project.dataset.table` `` | database-qualified `from DB.SCHEMA.ORDERS` |
 | Bucket a date (business zone) | `date_trunc('month', ts AT TIME ZONE 'America/Los_Angeles')::date` | `timestamp_trunc(ts, MONTH, 'America/Los_Angeles')` (zone is the 3rd argument) | `date_trunc('MONTH', convert_timezone('UTC','America/Los_Angeles', ts))` |
-| Relative window | `now() - interval '12 months'` | `timestamp(date_sub(current_date('America/Los_Angeles'), interval 12 month))` | `dateadd('month', -12, current_timestamp())` |
+| Relative window, anchored to the data (`d` a DATE column; see "Relative windows, anchored to the data") | `d >= (select max(d) from t) - interval '12 months'` | `d >= date_sub((select max(d) from t), interval 12 month)` | `d >= dateadd('month', -12, (select max(d) from t))` |
+| Relative window, wall clock (only when the source is genuinely live) | `now() - interval '12 months'` | `timestamp(date_sub(current_date('America/Los_Angeles'), interval 12 month))` | `dateadd('month', -12, current_timestamp())` |
 | Conditional count | `count(*) filter (where c)` | `countif(c)` | `count_if(c)` |
 | Exact median | `percentile_cont(0.5) within group (order by x)` | `array_agg(x ignore nulls order by x)[safe_offset(div(count(x), 2))]` - there is no aggregate percentile | `percentile_cont(0.5) within group (order by x)` (not verified) |
 
@@ -292,7 +325,7 @@ schema, exploring it and validating a statement all still work.
 backtick-quoted and three-level `` `catalog`.`schema`.`table` `` - the built-in `samples` catalog
 (`samples.nyctaxi.trips`, `samples.tpch.*`) is handy for a demo with no seed table. It PRESERVES
 an unquoted alias. Bucket with `date_trunc('MONTH', ts)` or `date_format(ts, 'yyyy-MM')`; a
-relative window is `current_timestamp() - interval 12 months`; a conditional count is
+wall-clock relative window is `current_timestamp() - interval 12 months`; a conditional count is
 `count_if(c)`. A `TIMESTAMP` arrives as an ISO-8601 UTC string, so bucket or format it in SQL
 rather than parsing the text; big integers keep full precision as strings.
 
@@ -325,8 +358,8 @@ Type traps, all of which produce a failed read rather than a wrong number:
   `datetime2` truncate to whole seconds, so bucket or format in SQL rather than relying on
   sub-second precision.
 
-Bucket with `cast(ts as date)` or `datefromparts(year(ts), month(ts), 1)`; a relative window is
-`dateadd(month, -12, sysutcdatetime())`.
+Bucket with `cast(ts as date)` or `datefromparts(year(ts), month(ts), 1)`; a wall-clock relative
+window is `dateadd(month, -12, sysutcdatetime())`.
 
 The statement must be a single read-only `SELECT`, and here the guard is defense in depth only,
 because T-SQL statement terminators are optional. **The real gate is that the connection must use

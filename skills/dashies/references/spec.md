@@ -747,7 +747,14 @@ datasets:
         o.region                                                                                  as region,
         o.amount_cents                                                                            as amount_cents
       from analytics.fct_orders o
-      where o.placed_at >= now() - interval '18 months'
+      -- Anchored to the data's own newest COMPLETE month, never to the wall clock. A
+      -- mart ends behind today, so now() would shrink what the window holds every day,
+      -- and the newest month is partial unless the data ends on a month boundary, so
+      -- the second clause drops it and the chart below never shows a short final month.
+      where o.placed_at >= date_trunc('month',
+              (select max(o2.placed_at) from analytics.fct_orders o2)) - interval '18 months'
+        and o.placed_at < date_trunc('month',
+              (select max(o3.placed_at) from analytics.fct_orders o3))
     dimensions:
       month:  { type: date, label: Month }
       region: { type: category, domains: [AMER, EMEA, APAC], label: Region }

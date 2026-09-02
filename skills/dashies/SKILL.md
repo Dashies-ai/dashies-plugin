@@ -54,11 +54,14 @@ hand-written tile, or the whole page body, and all three stay on this path with 
 the schedule intact, on every connection. **A tile or a body you write is handed its numbers by
 the runtime**, through one call your script makes, on a warehouse dashboard exactly as on the
 sample connection. **What the user asked for decides which you reach for, and if they have not
-said, you ask and wait.** A look, a brand, typography, a picture the tile types do not draw - any
-of those is an instruction to write the markup, and doing it is the product working rather than an
-escape hatch. Asked only for the numbers and nothing about how they should look, ask before you
-choose; a `tiles` layout costs twenty lines, and it is theirs to take rather than yours to assume.
-"When you write the markup yourself", under Step 4, is where that decision lives.
+said, you ask and wait.** Any word about how it should LOOK - a layout, sections, colours, a dark
+background, typography, a brand, a logo, "beautiful", "like our site" - is an instruction to
+design the page and write it, and doing that is the product working rather than an escape hatch.
+The word "html" is the same instruction, and it is not a question to ask back. Asked only for the
+numbers and nothing at all about how they should look, ask before you choose - and recommend the
+page you design, saying that managed tiles are the option without design. A `tiles` layout costs
+twenty lines, and it is theirs to take rather than yours to assume. "When you write the markup
+yourself", under Step 4, is where that decision lives.
 
 ---
 
@@ -181,12 +184,12 @@ dashboards that already exist, and a single next step.
 
 | `action` | What to do |
 |---|---|
-| `connect_a_warehouse` | There are no connections. Send them to the link in `next_step.url`, and offer the sample data (below) - the answer does not mention it, so the offer is yours to make. |
+| `connect_a_warehouse` | There are no connections. Send them to the link in `next_step.url`, and offer the sample data (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. |
 | `fix_a_connection` | A credential is not working and nothing else is ready. **Say so before authoring anything**, name the error, send them to the app. |
 | `finish_setup_in_the_app` | A connection exists but was never tested. They finish setting it up, then call again. |
 | `choose_data_in_the_app` | A connection is verified and exposes nothing readable. They choose what to expose and check the login can read it. Both are app settings; **no query works around either**. |
-| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** If they have not said how the dashboard should look either, ask that in the same message (Step 4), not in a second round trip. |
-| `start_authoring` | Exactly one is ready. Go. |
+| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** This message is also where the design question goes: if the request said nothing about how the dashboard should look, ask both here, in one message that recommends the page you design, says tiles are the option without design, and ends on a question mark (Step 4). If the request carries any design language, or the word "html", there is no design question - say in the same message that you will design and write the page. **Measured: a session whose request said "html" asked which connection and which slug here and never said it would design the page, so design could only come up in a second round trip.** |
+| `start_authoring` | Exactly one is ready. Go - unless the request said nothing about how it should look, in which case the design question (Step 4) is the one round trip you owe first, and it ends on a question mark. A request carrying design language or "html" has already answered it: you write the page. |
 
 **A broken connection beside a working one still says `start_authoring`.** `fix_a_connection` is
 the answer only when *nothing* is ready. Read `connections[]` before telling a user everything is
@@ -321,10 +324,24 @@ different questions, and nothing on the published page tells them apart for a re
 - **Bucket dates in the business's own timezone.**
 - **Aggregate away anything sensitive.** Every viewer of the dashboard sees everything the
   dashboard carries, so a value nobody should see must not be in the statement's output at all.
-- **Relative time windows only.** "The last 18 months", not a hard-coded date range that stops
-  moving.
-- **One read-only `SELECT` (or `WITH ... SELECT`) per dataset.** No DDL, no writes, no temp
-  tables.
+- **Relative time windows, anchored to the DATA'S own latest complete period.** "The last 18
+  months" is right, and what it is relative TO decides whether the dashboard survives. Anchor the
+  window to the newest complete period the source holds - the shape is
+  `where <date> >= <18 months before (select max(<date>) from <source>)>`, with the partial
+  newest period excluded in the same predicate so the last bucket is a complete one - never to a
+  hard-coded date range that stops moving, and not to the wall clock either unless the source is
+  genuinely live. A mart's data ends at its last complete period, which sits behind the wall clock
+  by up to a period while the mart is maintained and permanently once it stops, so a window
+  anchored to `current_date()` is short by that gap on every day, and on a source that has stopped
+  moving it drains to nothing as the months pass while every number left on the page stays
+  plausible. **Measured, four published specs: two anchored to the wall clock, on a source that
+  had stopped moving, so the data left inside their windows shrinks by a day every day; the two
+  anchored to `max(month_start_on)` were the ones that were right.** The worked shape and the
+  per-engine spelling are in `references/sql.md` under "Relative windows, anchored to the data".
+- **One read-only `SELECT` (or `WITH ... SELECT`) per dataset, and no `;` inside it.** No DDL,
+  no writes, no temp tables. The single-statement check is a raw scan for the character, so a
+  semicolon in a `--` comment or a string literal is refused as "more than one statement" with
+  nothing pointing at the comment. `references/sql.md` carries the mechanism.
 
 **Then validate it with `validate_cube_sql`.** It is the only place that can prove the statement
 survives the confinement, the caps and the timeout of the executor that will run it on the
@@ -375,24 +392,44 @@ says what to change; you do not need to compute it.
 ### When you write the markup yourself
 
 **THE USER'S OWN BRIEF DECIDES THIS. There is no default of ours in either direction, and there
-are two cases.**
+are two cases. Which one you are in is decided by whether the request says ANYTHING about how the
+dashboard should look, and the bar for "anything" is low on purpose.**
 
-**If they have not said how it should look, STOP AND ASK, and wait for the answer.** Do not
-pick for them, and do not announce a choice and carry on in the same message. A real session did
-exactly that - it wrote "let them choose" and published tiles without waiting - and the user's
-words on finding them were "I said no tiles". The question costs one sentence: a laid-out page of
-managed tiles (charts, KPIs, tables and filters in Dashies' own look), or a page designed for them?
-If Step 1 also leaves you asking which connection, ask both in the same message; two questions in
-two round trips is a worse experience than one message carrying both. Twenty lines of `tiles:` is
-a real saving, and it is theirs to take rather than yours to assume.
+**If they have said nothing about how it should look, STOP AND ASK, and wait for the answer.** Do
+not pick for them, and do not announce a choice and carry on in the same message. A real session
+did exactly that - it wrote "let them choose" and published tiles without waiting - and the user's
+words on finding them were "I said no tiles". The question costs a few sentences, and it is not a
+neutral one: **recommend the page you design for them, and say that managed tiles are the option
+without design** - Dashies lays the charts, cards and tables out in its own look, and nothing about
+the page is designed for them. Recommended option first, then the other with the one sentence on
+what it gives up, then the question. A recommendation and not a default: they choose. If Step 1
+also leaves you asking which connection, ask both in the same message; two questions in two round
+trips is a worse experience than one message carrying both. **And end the message on the
+question.** "Confirm the connection (and slug, if you care) and I'll go from there" is a plan
+announced, not a decision handed over: a real session asked three times that way, with no question
+mark in the whole message, and it read as if the choice had already been made. Managed tiles cost
+twenty lines and are theirs to take if they want them; they are never yours to assume.
 
-**If they have said, DO WHAT THEY SAID.** "Beautiful HTML dashboards" is an instruction to
-write the markup, not a preference to be traded for a `theme` over tiles. A look, a brand,
-typography, a picture the tile types do not draw - any of those means you write the page. A
-layout on its own - four cards in a row, one chart below - is something the tiles draw correctly;
-deliver it and say that you did. Handing somebody who asked for HTML the tile vocabulary instead
-is how a dashboard ends up reading like a template with their title on it, which is the one
-outcome this product exists to avoid.
+**If they have said anything, DO WHAT THEY SAID, and anything means any design language at all:**
+a layout ("four big KPI cards across the top, one full-width chart underneath"), sections, colours,
+a dark background, a single accent, typography ("big type on the numbers"), a brand, a logo,
+"beautiful", "like our site". Every one of those is an instruction to design the page and write
+the markup, not a preference to be traded for a `theme` over tiles. **A layout alone is design
+language too.** Measured: a brief carrying a dark background, one accent, four big KPI cards, one
+full-width chart and big type went to managed tiles and a `theme`, with a page of your own never
+considered in the whole session. A brief is a request for a page that follows it, never for our
+tile vocabulary.
+
+**The word "html" is the same instruction, and it is not a question.** "Beautiful HTML dashboards"
+means you design and write the page; do not ask back which of the two they meant. A real session
+did - told "html", it asked whether html was what the user meant - and spent the user's turn
+confirming a thing they had already said. Handing somebody who asked for HTML the tile vocabulary
+instead is how a dashboard ends up reading like a template with their title on it, which is the
+one outcome this product exists to avoid.
+
+**So the "managed tiles, or a page I design?" question is for a request that says nothing about
+design at all** - "make me a dashboard of ARR growth" and no more. Anything past that about how
+it should look, you design.
 
 **Do not weigh the two answers, managed tiles or a page you write, by how common they are.**
 Nobody knows, and a count taken over the dashboards that already exist would measure only what
@@ -525,6 +562,14 @@ every number on it is right. Short rules, and each one separates designed from g
   reads as a browser default throws the whole advantage away.
 - **Their brand, not ours.** If the user named a company or a look, derive the palette and the type
   from it; a page that is supposed to be theirs does not ship Dashies' own blue.
+- **A logo they ask for is theirs, never one you invent.** If they have the file, or hand one over,
+  use it. If they say "the logo from our site" or "some logo from the web", fetch it yourself, now,
+  while authoring, and use what you fetched, saying in one sentence where it came from. Inline it
+  as a `data:` URI - an SVG or a small raster, since the body has ceilings - so nothing loads from
+  outside at view time and nothing changes underneath the page; the page's own script still calls
+  nothing (rule 2). Do not draw a mark of your own in its place: a real session declined to fetch
+  the logo it was asked for and drew an SVG of its own instead, which is the one substitution this
+  bullet exists to stop.
 - **Say only what the data says.** No invented deltas, trend arrows or filler copy.
 
 Inline everything - your CSS, your script, your SVG - so the page depends on nothing that can change
@@ -661,6 +706,12 @@ publishing:
 3. **Poll `get_refresh_status`** and read `phase`, which is the verdict - the rest of the response
    is the evidence behind it. The signal that the numbers are live is `last_successful_run`
    moving; that is the one comparand correct on a first publish and on a republish alike.
+   **A refresh you asked for has no in-flight state to read.** Until the run records, the answer
+   is byte for byte what it was before you asked - `waiting` on a first publish, `up_to_date` with
+   the OLD `last_successful_run` on a republish - and a first extraction on a warehouse dashboard
+   can take a minute or more (for your own expectation; to the user, still say what has to happen
+   and not how long). An answer that has not moved between polls is the run still going, not a
+   stuck queue: keep polling, and call it failed only when `phase` says `failed`.
 4. **Report when the numbers are live**, and give the URL again.
 
 **Handle the poll failing.** A refresh that errors is likelier on a first run than at any later
@@ -730,8 +781,10 @@ never a spec edit - do not change `slug` to rename.
   errors, then publish the hash.
 - **Never leave the spec because a publish was refused.** Fix the refusal. Writing your own markup
   INSIDE the spec is supported and is a design decision; it is never a response to an error.
-- **If the user has not said how it should look, ask and wait; if they have, do what they said.**
-  Managed tiles are one answer, never the default, and "beautiful HTML" is an instruction.
+- **If the user has said nothing about how it should look, ask and wait, recommending the page
+  you design and ending on the question; if they have said anything - a layout, colours, type, a
+  brand, "html" - design and write the page.** Managed tiles are the option without design, never
+  the default, and "html" is an instruction rather than a question to ask back.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls. It must not work out a number from values it was handed -
   declare a measure and let the statement compute it. And it takes its numbers from what the
@@ -741,7 +794,9 @@ never a spec edit - do not change `slug` to rename.
 - **Everything the dashboard carries is visible to everyone who can open it.** Viewers are its
   owner, or the workspace's members - never the public. But the data is not filtered per viewer,
   so a value nobody should see must not be in the statement's output at all.
-- **The SQL runs forever.** Relative time windows, a grain that stays sane as the data grows.
+- **The SQL runs forever.** Relative time windows anchored to the data's own latest complete
+  period, never to the wall clock on a source that stops moving, and a grain that stays sane as
+  the data grows.
 - **If it cannot fit, say so plainly and early, before you write SQL.** On the sample connection
   the honest answer is to aggregate it, bound the window, or split the report. **On a warehouse
   dashboard, aggregating it is not one of the options** - shorten the window, or split the report

@@ -59,7 +59,7 @@ If the marketplace clone fails on SSH host-key verification, use the HTTPS URL: 
 
 ### Cursor
 
-Cursor 2.5+: search **Dashies** under Customize -> Plugins, or run `/add-plugin` in the editor. The marketplace listing is pending Cursor's review; until it lands, [Add to Cursor](https://cursor.com/install-mcp?name=dashies&config=eyJ1cmwiOiJodHRwczovL21jcC5kYXNoaWVzLmFpL21jcCJ9) installs the connector and `npx skills add Dashies-ai/dashies-plugin --global --agent cursor` installs the skill.
+Cursor 2.5+: search **Dashies** under Customize -> Plugins, or run `/add-plugin` in the editor. The marketplace listing is pending Cursor's review; until it lands, the one-click **Add to Cursor** button in the [install guide](https://docs.dashies.ai/guides/install) adds the connector, and `npx skills add Dashies-ai/dashies-plugin --global --agent cursor` adds the skill.
 
 <details>
 <summary><b>Several clients at once, or any other MCP client</b></summary>
@@ -72,7 +72,7 @@ Cursor 2.5+: search **Dashies** under Customize -> Plugins, or run `/add-plugin`
 npx plugins add Dashies-ai/dashies-plugin
 ```
 
-Its Windows agent detection is still maturing, so prefer the per-tool commands above there. **On Codex, pick one route and never both**: this installer registers `dashies@plugins-cli`, while the native commands above register `dashies@dashies`, so running both shows two install cards.
+Its Windows agent detection is still maturing, so prefer the per-tool commands above there. **On Codex, pick one route and never both**: when this installer detects Codex it registers `dashies@plugins-cli`, while the native commands above register `dashies@dashies`, so running both shows two install cards. `codex plugin list` tells you which one you have.
 
 **Any MCP client, without the skill.** Dashies is a plain remote MCP server at `https://mcp.dashies.ai/mcp`. Claude web, desktop and Cowork add it under Settings -> Connectors; Codex can add just the connector with `codex mcp add dashies --url https://mcp.dashies.ai/mcp`. A bare connector publishes fine, but the authoring skill, which is most of the product's behaviour, only ships with the plugin.
 

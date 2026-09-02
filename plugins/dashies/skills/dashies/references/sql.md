@@ -4,8 +4,27 @@ Part of the `dashies` skill (Steps 2-3). One read-only `SELECT` per dataset, wri
 re-run unattended on the schedule forever. Turning the validated statement into a dashboard is
 Step 4, in `spec.md`.
 
-**Everything in the first four sections is engine-independent.** Only the syntax changes, and the
-dialects are at the bottom.
+## Read this before anything else in this file
+
+**MOST OF THIS FILE ASSUMES A STATEMENT THAT GROUPS AND AGGREGATES, AND THAT IS THE SHAPE FOR THE
+SAMPLE CONNECTION. A DASHBOARD READING A WAREHOUSE NEEDS THE OTHER SHAPE:** one row per underlying
+record, carrying the columns the numbers are worked out from, with each number declared in the
+spec rather than worked out in the SQL. `SKILL.md` Step 3 carries that rule, the test that goes
+with it, and why a count is the number most likely to be got wrong.
+
+**So wherever this file says to aggregate, to group to a grain, or to collapse something to the
+grain you meant, read it as the sample-connection instruction.** On a warehouse the same move
+hands Dashies a summary to summarize, and nothing refuses it.
+
+**This is stated once, here, rather than beside each instruction.** Four rounds of qualifying
+individual passages each found more of them, which is the evidence that per-site fencing does not
+converge on a file whose default assumption is the thing being qualified.
+
+**A SEPARATE AXIS, so the two are not confused: which SQL you WRITE differs by engine, and which
+SHAPE you write is decided by the connection.** A statement can be right on one and wrong on the
+other. **The engine difference most worth knowing about is timezone conversion**, because getting
+it wrong buckets your dates into the wrong periods without failing. `### Time` covers it; for
+per-engine syntax, go to `## Dialects`.
 
 ---
 
@@ -33,16 +52,26 @@ Two things worth doing before you design:
 
 ## Choose the grain
 
-**This is the load-bearing decision.** The statement returns one row per combination of the
-things you group by, with the numbers already aggregated. Everything the dashboard can show is
+**This is the load-bearing decision, and WHICH grain is right depends on the connection.**
+
+**Reading a warehouse, the statement returns one row per underlying record**, carrying the
+columns the numbers are worked out from, and Dashies works them out when someone opens the page.
+`SKILL.md` Step 3 carries that rule and the test that goes with it.
+
+**Reading the sample connection, the statement returns one row per combination of the things you
+group by, with the numbers already worked out**, and everything the dashboard can show is
 computed from those rows.
 
-### Every field somebody filters or charts on must be something you group by
+**The two sections below are that second shape.** They are right for the sample connection and
+wrong for a warehouse, where grouping to the grain the dashboard reports at hands Dashies a
+summary to summarize. **Reading them as general advice is exactly how that happens.**
+
+### Sample connection: every field somebody filters or charts on must be something you group by
 
 If it is not in the `GROUP BY`, it does not exist as far as the dashboard is concerned. Decide
 the filters and breakdowns first, then write the `GROUP BY` from that list.
 
-### Keep the set of values small wherever the question allows it
+### Sample connection: keep the set of values small wherever the question allows it
 
 A field with a handful of distinct values costs almost nothing. A field with thousands is
 expensive on every axis at once: it makes the data bigger, it makes the filter menu unusable, and
@@ -134,8 +163,10 @@ double-counting or it is not addable. The fixes:
 
 - state it as a **ratio of two numbers that ARE addable** (a sum over a sum, a sum over a count),
   so the division happens after the filtering rather than before;
-- **pre-aggregate the joined side** to the grain you meant, then join and re-aggregate. Sums of
-  sums stay exact;
+- **collapse the joined side to one row per underlying record**, then join. Reducing the many
+  side to one row per join key is the move and it leaves the records intact. **Do not collapse to
+  the grain the dashboard reports at**: that also stops the double-count, and on a warehouse
+  dataset it is the shape Step 3 exists to prevent;
 - count the parent rather than the joined rows: `count(distinct <the parent key>)`.
 
 **The publish report prompts this as an `obligation`** whenever the statement reads more than one
@@ -165,6 +196,15 @@ its own dataset that recomputes it under filters.
 
 **The dialect follows the connection's engine**, which `check_readiness` and `list_connections`
 both report. Author against `validate_cube_sql` for that connection rather than from memory.
+
+**NOT EVERY ENGINE HERE CAN BACK A DASHBOARD, AND THIS SECTION STILL COVERS ALL OF THEM ON
+PURPOSE.** Only Snowflake and BigQuery can hold a warehouse dashboard's data today; Postgres,
+Redshift, Databricks and SQL Server are refused at publish, at `/source/connection`. **What still
+works on every engine is `introspect_schema`, `explore_data` and `validate_cube_sql`** - the gate
+is on publishing a dashboard, not on using the warehouse. So this guidance is exactly what you
+need to read one of those schemas, explore it and check a statement, and a statement you get right
+today is still right on the day that engine can back a dashboard. Step 1 of the skill has what to
+tell the user.
 
 | Need | PostgreSQL | GoogleSQL (BigQuery) | Snowflake |
 |---|---|---|---|
@@ -215,8 +255,8 @@ one you are most likely to meet), Snowflake `VARIANT` / `OBJECT` / `ARRAY`, and 
 - **That join MULTIPLIES rows**, which is the fan-out above arriving by a different door. After
   unnesting an array of three, one source row has become three, so `count(*)` counts 3 and any
   total over a parent-row column triple-counts it. **Nothing rejects this**: the statement runs,
-  publishes and refreshes, and the numbers are simply wrong. Aggregate back to the grain you
-  meant.
+  publishes and refreshes, and the numbers are simply wrong. Collapse back to one row per record
+  of the thing you are counting - not to the grain the dashboard reports at.
 
 A nested column selected WHOLE arrives as JSON, which is usable neither as something to group by
 (its values are objects, not labels) nor as a number.
@@ -236,11 +276,17 @@ A nested column selected WHOLE arrives as JSON, which is usable neither as somet
 
 ### Redshift
 
+**Cannot back a dashboard today - see the note at the head of this section.** Reading the
+schema, exploring it and validating a statement all still work.
+
 A PostgreSQL dialect, so the PostgreSQL column applies almost verbatim. Use
 `to_char(ts, 'YYYY-MM-DD')` or `date_trunc('month', ts)::date` for a text or date field. The
 alias caveat above is the one thing that differs materially.
 
 ### Databricks
+
+**Cannot back a dashboard today - see the note at the head of this section.** Reading the
+schema, exploring it and validating a statement all still work.
 
 **Databricks SQL** (Spark SQL), a distinct dialect and not a PostgreSQL one. Table references are
 backtick-quoted and three-level `` `catalog`.`schema`.`table` `` - the built-in `samples` catalog
@@ -255,6 +301,9 @@ The statement must be a single read-only `SELECT`, and here the read-only guard 
 so a small serverless warehouse with a short auto-stop keeps scheduled refreshes cheap.
 
 ### Microsoft SQL Server
+
+**Cannot back a dashboard today - see the note at the head of this section.** Reading the
+schema, exploring it and validating a statement all still work.
 
 **T-SQL**, not a PostgreSQL dialect. Table references are `[bracket]`-quoted (`[dbo].[orders]`).
 It PRESERVES an output alias as written, measured on a case-insensitive collation - collation
@@ -289,14 +338,28 @@ user connects a `dash_ro`-style login, never an admin. Only their allowlisted sc
 
 ## Big tables
 
-- **Keep the grain small and the window tight.** This does more than everything else combined.
-- **Group on real columns where you can.** If the warehouse already carries a pre-bucketed
-  `day` / `week` / `month` column, group on it rather than truncating a raw timestamp.
-- **For a star schema, aggregate the fact table first, then join the small dimension table and
-  re-aggregate.** Sums of sums stay exact, and the join then has nothing to fan out.
+**ON A WAREHOUSE YOU CANNOT SHRINK A DATASET BY AGGREGATING IT**, which is what several of the
+bullets below reach for. **Your levers there are the window and the columns**: shorten the period,
+and return only the columns the numbers are worked out from and the fields people filter or chart
+on. **The window is the stronger of the two, and that is measured rather than judged** - extract
+cost is dominated by a per-ROW term, so removing rows beats removing bytes (`cube-caps.ts` carries
+the coefficients and the experiment).
+
+- **Keep the window tight.** This is the biggest single lever on both connection kinds.
+- **Keep the grain small**, on the sample connection. This is where most of the rest of that
+  connection's cost goes, and on a warehouse it is the shape the rule forbids.
+- **Group on real columns where you can**, again on the sample connection. If the warehouse
+  already carries a pre-bucketed `day` / `week` / `month` column, group on it rather than
+  truncating a raw timestamp.
+- **For a star schema, joining a fact table to a small dimension table does not fan out** - it
+  matches many rows to one. What fans out is joining two fact tables, or any join whose right
+  side can match more than once. **On the sample connection, aggregate the fact first, then join,
+  then re-aggregate.** On a warehouse, keep the records and reduce the RIGHT side to one row per
+  key BEFORE joining. **On neither shape do you collapse the fact to the grain you report at**,
+  however exact the arithmetic looks.
 - **If `validate_cube_sql` is slow or times out, the statement is too expensive** for something
-  that has to run unattended forever. Tighten the window or coarsen the grain; do not hope the
-  scheduled run will be luckier.
+  that has to run unattended forever. Tighten the window; on the sample connection you can also
+  coarsen the grain. Do not hope the scheduled run will be luckier.
 
 **If what the user asked for genuinely cannot fit, say so plainly and early, before you write
 SQL.** The honest answer is to aggregate it, bound the window, or split the report. Do not

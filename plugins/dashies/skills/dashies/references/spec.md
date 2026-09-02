@@ -7,7 +7,9 @@ carry real numbers. **You need not write any markup or styling** - a `tiles` lay
 lines and the server draws the page from it. **And you may write all of it**: the spec carries
 your own CSS, one hand-written tile, or the whole page body, on the same path with the same
 checks; see **Writing your own markup**. **Which one you reach for is the user's call rather than
-a default of ours.** A binding that names a column the SQL never returns, or a tile with
+a default of ours** - though on a dashboard reading a warehouse, your own CSS is the one of the
+three that still shows numbers, because the other two read the page and a warehouse dashboard's
+numbers are not in it. A binding that names a column the SQL never returns, or a tile with
 no type, is a **pointed publish error naming the exact field**, not a blank tile or a silently
 wrong number that ships and rots.
 
@@ -70,7 +72,7 @@ of those two, never both and never neither.
 | `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
 | `tiles` | array, 1-64 | The tiles, in document order (below). Exclusive with `look`. |
-| `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. See **Writing your own markup**. |
+| `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. Reads the page, so its numbers are there only on the sample connection. See **Writing your own markup**. |
 | `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
 | `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
 
@@ -102,10 +104,16 @@ one. An optional `label` (<=80 chars) sets the display name.
 
 **Declare the dimension's bound wherever you know it, and prefer to know it.** A `category`
 dimension declares `domains` - its value list, 1 to 200 unique entries, each a string, number or
-boolean. A `date` dimension declares `buckets` - the maximum bucket count, 1 to 1000. **This is
-the single most useful thing you can tell the server**: a dimension with a known, small set of
-values is what lets a dashboard be prepared cheaply and answer exactly under every filter. A
-dimension you cannot bound is a signal to go back to Step 3 and ask a narrower question.
+boolean. A `date` dimension declares `buckets` - the maximum bucket count, 1 to 1000. **On a
+dashboard reading the sample connection this is the single most useful thing you can tell the
+server**: a dimension with a known, small set of values is what lets a dashboard be prepared
+cheaply and answer exactly under every filter, and a dimension you cannot bound is a signal to go
+back to Step 3 and ask a narrower question.
+
+**On a dashboard that reads a warehouse, a bound buys nothing and narrowing is not the remedy for
+anything.** Dashies works those numbers out when someone opens the page rather than ahead of
+time, so there is no set of states to keep small. Declare `domains` there for the filter MENU and
+its order, which is the other thing they do, and nothing more.
 
 `domains` also fixes the ORDER of a filter menu - see "Member order" below.
 
@@ -113,6 +121,16 @@ dimension you cannot bound is a signal to go back to Step 3 and ask a narrower q
 
 - **agg measure** (`agg` required): `agg` is one of `sum` `count` `min` `max` `avg`
   `count_distinct` `median` `percentile_cont` `percentile_disc` `stddev` `variance` `mode`.
+
+  **FOUR OF THOSE TWELVE CANNOT BE USED ON A DASHBOARD THAT READS A WAREHOUSE:**
+  `percentile_disc`, `stddev`, `variance` and `mode`. Dashies works a warehouse dashboard's
+  numbers out when someone opens the page, and those four are not ones it can work out that way.
+  Asking for one is refused at `/datasets/<name>/measures`, and the refusal names the MEASURES
+  rather than the aggregate, so read the names it gives you. **The other eight are available
+  everywhere, and they include `sum`, `count`, `min` and `max`** - the refusal is a narrow one,
+  not a retreat to only the simplest numbers.
+
+  **All twelve remain available on the sample connection**, whose numbers travel inside the page.
   Optional `column` (the raw column the aggregate reads; defaults to the measure key),
   `percentile` (0 < p < 1, for `percentile_cont` / `percentile_disc`), `label` (<=80), `unit`,
   `intent`.
@@ -261,7 +279,7 @@ measure/dimension no dataset declares is an `[L3]` reference error.
 | `funnel` | `x`, `measure`, `stages` | Stage sizes in an order YOU declare: `stages` lists the dimension VALUES, 2-12, no repeats. It shows sizes only - it does NOT compute conversion between stages. Optional `height` (120-800), `drill`. See below. |
 | `filter` | `dimension` | `dimension`; `label` (<=80); optional `multi` / `range` (booleans, mutually exclusive - set at most one; a filter is single-select when neither is set). A `multi` or `range` filter asks more of the dataset than a single-select one, because it has to answer combinations rather than one value at a time; where a measure cannot answer them, publish refuses and says what to change. |
 | `text` | `body` | `body` (markdown, <=4000) - static prose, no data. |
-| `custom` | `reads`, and at least one of `html` / `js` | One tile you draw yourself, mounted in the managed grid. `reads` is 1-8 declared dataset names; `html` (<=100000) is mounted verbatim; `js` (<=200000) runs against that mount. It takes no `dataset`. Reach for it when the tile types do not draw the picture you need. See **Writing your own markup** below. |
+| `custom` | `reads`, and at least one of `html` / `js` | One tile you draw yourself, mounted in the managed grid. `reads` is 1-8 declared dataset names; `html` (<=100000) is mounted verbatim; `js` (<=200000) runs against that mount. It takes no `dataset`. Reach for it when the tile types do not draw the picture you need, and only on the sample connection: it reads the page, and a warehouse dashboard's numbers are not in it. See **Writing your own markup** below. |
 
 ## Member order on an axis - your ROW ORDER is the default
 
@@ -719,27 +737,28 @@ source:
 datasets:
   main:
     sql: |
+      -- One row per order. No GROUP BY: the numbers are declared below and
+      -- Dashies works them out. Bucketing the date is a per-row projection,
+      -- not an aggregation, so it stays here.
       select
         date_trunc('month', o.placed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York')::date as month,
         o.region                                                                                  as region,
-        sum(o.amount_cents)                                                                       as revenue_cents,
-        count(*)                                                                                  as orders
+        o.amount_cents                                                                            as amount_cents
       from analytics.fct_orders o
       where o.placed_at >= now() - interval '18 months'
-      group by 1, 2
-      order by 1, 2
     dimensions:
-      month:  { type: date, buckets: 18, label: Month }
+      month:  { type: date, label: Month }
       region: { type: category, domains: [AMER, EMEA, APAC], label: Region }
     measures:
       revenue_cents:
         agg: sum
+        column: amount_cents
         unit: { kind: currency, scale: cents, currency: USD }
         intent: >-
           dbt semantic layer, metric `revenue` (models/marts/metrics.yml). Definition taken from
           dbt, not re-derived.
       orders:
-        agg: sum
+        agg: count
         unit: { kind: count }
       aov:
         ratio: { num: revenue_cents, den: orders }
@@ -752,6 +771,16 @@ tiles:
   - { type: chart, chart: line, x: month, measure: revenue_cents, title: Revenue by month }
   - { type: table, columns: [region, revenue_cents, orders], group: region, title: By region }
 ```
+
+**This example reads a WAREHOUSE, so its statement returns one row per order and declares how
+each number is worked out.** `SKILL.md` Step 3 carries that rule. Two details are the rule in
+practice: `revenue_cents` names its `column` rather than relying on the key, and **`orders` is
+declared `agg: count` and is exact, because the rows ARE the orders.** Written the other way -
+grouped to `(month, region)` with `count(*) as orders` - that same measure would count the month
+and region pairs.
+
+**A dataset on the sample connection groups to the grain it reports at instead**, and then every
+field somebody filters on has to be in the `GROUP BY`. Same spec vocabulary, different statement.
 
 Note what is NOT in it: nothing about how the data will be prepared or where it will be kept.
 The publish report says what the server chose for `main` and why.
@@ -770,6 +799,12 @@ decisive. Their PRESENCE is necessary and not sufficient, because a dataset can 
 publish with its rows held outside the page - and when it does, a `warning:` line says the dataset
 "publishes with NO data". Read both. **Nothing refuses that combination at publish**, so the report
 is the whole of what you get.
+
+**On a dashboard that reads a warehouse that question is decided before you ask it, and the answer
+is no for every dataset**: its data stays with Dashies. A `custom` tile or a `look` body there
+renders, and finds no numbers. **The sample connection is where these three read their numbers**,
+and `theme` is the surface that still works over warehouse data because it styles tiles the server
+draws. `SKILL.md` carries the reason and what to tell the user.
 
 ### `theme` - your own CSS over the managed page
 

@@ -51,7 +51,11 @@ have left this path.
 
 **Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
 hand-written tile, or the whole page body, and all three stay on this path with every check and
-the schedule intact. **What the user asked for decides which you reach for.** A look, a brand, a
+the schedule intact. **On a dashboard that reads a warehouse, your own CSS is the one of those
+three that still shows numbers**, because it styles the tiles the server draws; a hand-written
+tile or body reads the page, and a warehouse dashboard's numbers are not in it. **On the sample
+connection all three work as they always did.** **What the user asked for decides which you reach
+for.** A look, a brand, a
 layout, a picture the tile types do not draw - any of those is an instruction to write the markup,
 and doing it is the product working rather than an escape hatch. Asked only for the numbers, a
 `tiles` layout costs twenty lines. "When you write the markup yourself", under Step 4, is where
@@ -194,6 +198,27 @@ stop answering.
 **Credentials are entered through the web app form only.** They never pass through you or the
 MCP, so you cannot connect a warehouse for the user.
 
+### Ready is not the same as usable, and the difference is the engine
+
+**A dashboard that reads a warehouse needs an engine Dashies can hold data for, and today that is
+Snowflake or BigQuery.** A Postgres, Redshift, Databricks or SQL Server connection can be verified,
+readable and perfectly ready, and still not back a dashboard: the publish is refused at
+`/source/connection`, and no rewrite of the SQL changes it at any value.
+
+**So read the engine before you write a line of SQL.** `check_readiness` and `list_connections`
+both report it. Finding out at publish costs the entire authoring pass, and it is the one refusal
+you can predict without asking the server.
+
+**An engine Dashies cannot hold data for is NOT a dead end for the session.**
+`introspect_schema`, `explore_data` and `validate_cube_sql` work on every engine. The user can
+still have their schema read, their data explored and a statement checked, and everything learned
+that way stays good for the day that engine can back a dashboard. **What is refused is publishing
+a dashboard, not working with the warehouse.** Say that, rather than telling somebody their
+warehouse is unsupported and stopping.
+
+**Believe the refusal over this page.** The sources it names are read out of the database as the
+refusal is built rather than written into it, so the set can widen without a word here changing.
+
 ### The user with no warehouse
 
 **Offer the sample data once, and say plainly that it is sample data.** Dashies provides a small
@@ -233,13 +258,68 @@ rather than off this page** - they differ per connection and they move.
 This is the step that makes or breaks a dashboard, because the statement you write here runs
 unattended, forever, with nobody watching.
 
-**The short version, with the depth in `references/sql.md`:**
+**THE SHAPE OF THE STATEMENT DEPENDS ON WHICH CONNECTION IT READS.** The rest of this step
+applies either way, and the depth is in `references/sql.md`, whose own opening carries the same
+split. Read the engine first (Step 1).
+
+### Reading a warehouse: return the records and let Dashies work the numbers out
+
+**Give it one row per underlying record, carrying the columns your numbers are worked out FROM.**
+Then say in the spec how each number is worked out - which calculation, over which column - and
+do not work it out in the SQL yourself.
+
+**Dashies holds the data and works the numbers out when someone opens the page.** So a number
+your statement has already worked out gets worked out a second time, on top of your own result.
+
+**Grouping is not the problem. The GRAIN is.** Grouping to the thing each row is ABOUT is fine:
+one row per order, carrying `count(line_items.id) as lines` for that order, and Dashies works
+across orders. Grouping to what the dashboard REPORTS at - one row per region - hands Dashies a
+summary to summarize.
+
+**In that example, declare `lines` as a TOTAL and not as a count.** Your SQL has already worked
+the count out, so from Dashies' side that column is now just a number to add up. Asking Dashies to
+count it counts your ORDERS instead. **Measured, on six line items across three orders: declared
+as a total it comes back as 6, and declared as a count it comes back as 3.**
+
+**If you are porting a dashboard that already groups, this is the test: does the calculation give
+the SAME ANSWER when it is done twice?** A plain total does. A smallest does. A largest does.
+
+**A COUNT DOES NOT, AND IT IS THE ONE TO WATCH**, because it is the number most likely to be
+already worked out and the one an author is most likely to assume is safe. Dashies counts the
+ROWS your statement returned, so a count over a million records grouped into five regions comes
+back as **five**. **Counts have to come from the records.**
+
+**A PLAIN TOTAL SURVIVES THE WRONG GRAIN, AND THAT IS EXACTLY WHY THIS MISTAKE LASTS.** Summing
+sums gives the right answer, so a dashboard grouped to what it reports at looks perfectly correct
+for as long as every number on it is a total. **You are getting away with it rather than doing it
+right**, and nothing tells you which. **It stops the moment somebody adds a count,
+a distinct count, an average or a median** - and by then the grain is the shape of the whole
+statement and every number on it moves together. **Measured on those same six line items: a total
+returns 6 at either grain, while a count returns 3 grouped by order and 2 grouped by region.**
+
+**EVERY FIELD SOMEBODY FILTERS OR CHARTS ON STILL HAS TO BE IN THE STATEMENT'S OUTPUT**, exactly
+as it is on the sample connection. What changes is that it is a COLUMN of the records rather than
+something you grouped by. A field that is not there does not exist as far as the dashboard is
+concerned, and that holds for both shapes.
+
+**AND A COUNT IS NOT A RESTRICTED NUMBER. NOTHING REFUSES ONE.** `count` is available on every
+dashboard and `references/spec.md` lists it beside the rest, so an author who has read that page
+has been told a true thing that points the other way. **What decides whether a count is RIGHT is
+how you ask for it, not whether you may ask.** Counted from the records it is exact; counted from
+a statement that has already counted, it is the number of your own rows. **Those are two
+different questions, and nothing on the published page tells them apart for a reader.**
+
+### Reading the sample connection
 
 - **Group at the grain people will actually look at.** Every field somebody filters or charts on
-  has to be something the statement groups by. Bucket dates in the business's own timezone.
+  has to be something the statement groups by.
 - **Keep what you group by to a small, known set of values** wherever the question allows it.
   This is the single biggest lever on whether the dashboard can be prepared cheaply, and asking
   for a narrower thing is almost always the better answer than asking for a wider one.
+
+### Either way
+
+- **Bucket dates in the business's own timezone.**
 - **Aggregate away anything sensitive.** Every viewer of the dashboard sees everything the
   dashboard carries, so a value nobody should see must not be in the statement's output at all.
 - **Relative time windows only.** "The last 18 months", not a hard-coded date range that stops
@@ -261,7 +341,11 @@ forever.
 **So before you publish, cross-check.** Take each number the dashboard claims can be added up
 from its parts, sum it across the whole statement, and compare against an independent direct
 aggregate over the source. If they differ, it is double-counting or it is not addable - fix it,
-by restating it as a ratio of two numbers that ARE addable, or by pre-aggregating the join.
+by restating it as a ratio of two numbers that ARE addable, or by collapsing the join.
+
+**Collapse it to ONE ROW PER UNDERLYING RECORD, never to the grain the dashboard reports at.**
+Both stop the fan-out; only the first survives Step 3's warehouse shape. Reducing the many side
+to one row per join key before joining is the move, and it leaves the records intact.
 
 The publish report raises this as an **`obligation`** whenever the statement reads more than one
 row source - a JOIN, a CTE, a comma join, a derived table. **That is a prompt to run the check,
@@ -301,6 +385,14 @@ template with their title on it, which is the one outcome this product exists to
 
 **Do not weigh the two by how common they are.** Nobody knows, and a count taken over the
 dashboards that already exist would measure only what the tool made easy.
+
+**WHICH SURFACES ARE AVAILABLE IS A DIFFERENT QUESTION FROM WHICH ONE THEY WANT, AND IT IS THE
+CONNECTION THAT DECIDES IT.** On a dashboard reading a warehouse the numbers are not in the page,
+so a body or a tile you write renders without them, and `theme` is the surface that carries a look
+there - your own CSS, accent, font and density over tiles the server draws. On the sample
+connection all three work. **Ask what they want first and let the connection decide how much of it
+you can give them**, then say which you are doing and why. Reading this the other way round is how
+somebody gets handed a page with nothing on it.
 
 **Three surfaces, cheapest first, and all three stay on the spec path.** You keep the pointed
 refusals, the seeding, the correctness checks and the schedule, and the data still never enters
@@ -349,6 +441,21 @@ another dataset.
 page** - and whether they are is decided per dataset by the server, from the SQL you wrote. You do
 not set it and you cannot ask for it.
 
+**ON A DASHBOARD THAT READS A WAREHOUSE THAT IS ALREADY DECIDED, AND THE ANSWER IS NO.** Its data
+stays with Dashies and is queried when the page is opened, for every dataset, however narrowly the
+question is asked - so there is nothing in the page for your script to find and **narrowing does
+not move it**. Your surfaces there are the managed tiles plus `theme`: your own CSS, accent, font
+and density over the page the server draws. That is real control over how it looks, and it is not
+the same as owning the body.
+
+**A dashboard on the sample connection keeps its numbers inside the page**, so `look` and a
+`custom` tile read them there exactly as before. It is the one place a renderer you wrote can be
+seen working end to end.
+
+**The rest of this section is how the report tells you which of those you have**, per dataset. It
+is worth knowing whichever you are on, because it is also what tells you a dataset has published
+with nothing in it yet.
+
 **The publish report answers it, and the answer takes TWO of its lines rather than one.**
 
 **First, the `Datasets:` block**, one sentence per dataset. The words to look for are **"inside
@@ -377,18 +484,14 @@ will join it up to your page for you.
 of what you get.
 
 **So dry-run FIRST and read both BEFORE you write any markup.** A dry run puts the spec through
-the whole pipeline and reports the same lines, so the answer costs one call. When a dataset's data
-stays with Dashies, the managed tiles are what render it. Either bind that dataset to managed
-tiles, or ask a narrower question - bound what it groups by, or shorten the period - so its
-numbers travel inside the page again.
+the whole pipeline and reports the same lines, so the answer costs one call.
 
-**SAY THIS OUT LOUD TO THE USER RATHER THAN QUIETLY PICKING FOR THEM, because it is the one place
-their two wishes collide.** A page you write yourself and a dataset whose data stays with Dashies
-do not go together today. If they have asked for both - a design of their own AND more data than a
-page can carry - that is a real limit they should hear about, not a reason for you to hand them
-tiles without saying why. **It is a limit of what is built so far rather than a line anyone drew
-on purpose**, so describe it as where things stand, offer the narrower question as the way to keep
-their design, and let them choose.
+**SAY THIS OUT LOUD TO THE USER RATHER THAN QUIETLY PICKING FOR THEM, because it is where their two
+wishes collide.** A page you write yourself and a dashboard on their own warehouse do not go
+together today. If they have asked for both, that is a real limit they should hear in plain words,
+not a reason to hand them tiles without saying why. **It is where things stand rather than a line
+anyone drew on purpose.** Offer `theme` over managed tiles, say plainly what it does and does not
+give them, and let them choose.
 
 **`reads:` is a declaration, not a fetch**, so a `custom` tile naming a dataset whose data stays
 with Dashies renders nothing at all.
@@ -458,11 +561,27 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
 
 ### If a dataset is refused
 
-The refusal says, in your own terms, what to change about the question: bound what it groups by
-to the values people actually filter by, or shorten the period the dashboard covers. **That is
-the part you can act on without the user - rewrite and publish again.** It may also offer to
-connect a warehouse Dashies can hold data for, or to try the same shape on the sample data;
-those are the user's calls, so relay them rather than acting on them.
+**Read the refusal's `path` before you read its sentence. The path names the thing to change,
+and it is the only part of a refusal you never have to interpret.**
+
+| `path` | What is wrong | Whose move |
+|---|---|---|
+| `/datasets/<name>/mode` | The SHAPE of the question. Dashies cannot work out every state its filters can be in ahead of time. | Yours. Bound what it groups by to the values people actually filter by, or shorten the period the dashboard covers, then publish again. |
+| `/datasets/<name>/measures` | Some of this dataset's NUMBERS cannot be worked out the way this dashboard would need them to be. | Yours, but narrowing does nothing. Ask for those numbers a different way, or drop them. |
+| `/datasets/<name>/sql` | The STATEMENT has already worked some of its numbers out across records. | Yours. Ask for the plain values and let Dashies combine them. |
+| `/source/connection` | The CONNECTION cannot be used for a dashboard of this kind. | **The user's.** Relay it. |
+
+**`/source/connection` is the one to recognise, because it is the one where trying harder makes
+things worse.** No rewrite of the SQL clears it, at any value: the refusal is not about the
+question, so narrowing it and publishing again returns the same refusal, and doing that in a loop
+is the failure this table exists to prevent. Relay the remedies rather than acting on them - they
+are to connect a warehouse Dashies can hold data for, or to try the same shape on the sample data,
+and both are the user's call.
+
+**Read the path rather than the wording.** Two refusals can describe similar-sounding problems and
+want opposite responses; the path separates them and a paraphrase does not. A refusal that names
+particular measures is not asking you to narrow anything, however much it sounds like the first
+row.
 
 ### Publishing into a workspace
 
@@ -565,6 +684,11 @@ never a spec edit - do not change `slug` to rename.
 
 - **A dashboard needs a connection to stay current.** No connection means nothing to re-run.
   Offer the sample data and the link; do not publish something that pretends to refresh.
+- **A dashboard on a warehouse needs Snowflake or BigQuery.** Postgres, Redshift, Databricks and
+  SQL Server are refused at publish, at `/source/connection`, and no rewrite of the SQL clears it.
+  Read the engine before writing any SQL. Reading a schema, exploring it and validating a
+  statement work on every engine, so say what is refused rather than calling their warehouse
+  unsupported.
 - **You write the spec; the server writes the dashboard.** A structural fault is a pointed
   publish error naming the exact field, not a rendering surprise. Dry-run first, fix the pointed
   errors, then publish the hash.
@@ -580,8 +704,10 @@ never a spec edit - do not change `slug` to rename.
   owner, or the workspace's members - never the public. But the data is not filtered per viewer,
   so a value nobody should see must not be in the statement's output at all.
 - **The SQL runs forever.** Relative time windows, a grain that stays sane as the data grows.
-- **If it cannot fit, say so plainly and early, before you write SQL.** The honest answer is to
-  aggregate it, bound the window, or split the report. Do not silently narrow their grain, do not
+- **If it cannot fit, say so plainly and early, before you write SQL.** On the sample connection
+  the honest answer is to aggregate it, bound the window, or split the report. **On a warehouse
+  dashboard, aggregating it is not one of the options** - shorten the window, or split the report
+  into more than one dashboard. Do not silently narrow their grain, do not
   drop a filter dimension to make something fit without telling them, and do not promise that a
   later refresh will fill in more than the statement returns.
 - **Numeric honesty is automatic.** Every value renders exactly or shows `-`; a past-precision
@@ -603,7 +729,7 @@ Load the one you need for the step you are on; do not front-load them.
 
 | Reference | Covers | Load for |
 |---|---|---|
-| `references/sql.md` | Introspection; choosing the grain; keeping what you group by small; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
+| `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
 | `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, the data block and its shape), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,

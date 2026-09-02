@@ -736,13 +736,21 @@ query and fails on its own; the unfiltered load answering says nothing about it.
 every declared dimension. A dimension no served dataset declares is refused rather than quietly
 dropped, so a typo in a filter key is told to you.
 
-**Read the first line and relay it.** It is the verdict: `N of M plans answered`, then one
-sentence per failure naming the dataset, the filter and the error. **Relay a failure in the
-service's own words, unchanged** - the sentence names the object or the limit, and a summary of
-it loses the thing somebody has to act on.
+**Read the first line and relay it WHOLE.** It reads `Verified "<slug>": <verdict>`, and the
+verdict carries up to four clauses in a fixed order: `N of M plans answered.`, then ONE clause
+listing the plans that did not, by dataset and filter, then a clause for any still reshaping,
+then one for any the time budget never reached. **A verdict that is `N of M plans answered.`
+with nothing after it is the one that means everything worked.**
+
+**The errors are NOT on that line.** They come further down, under `Failures, in the tier's own
+words:`, one sentence per failure naming the dataset, the filter, and what the service actually
+said. **Relay those unchanged** - the sentence names the object or the limit, and a summary of it
+loses the thing somebody has to act on. Relaying only the first line tells the user how many
+plans failed and never tells them why.
 
 **Never tell the user a dashboard is done on a failed plan**, and the statuses are not
-interchangeable. **Two of them are not failures at all:**
+interchangeable. **`reshaping` and `not_run` are not failures at all**, and everything else
+here is:
 
 - **`reshaping` is the NORMAL state during a republish, and needs no action.** The data was
   extracted under the previous spec, the extraction under the new one is already dispatched,

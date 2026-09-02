@@ -1,7 +1,7 @@
 {
   "name": "dashies",
   "displayName": "Dashies",
-  "version": "0.38.0",
+  "version": "0.38.1",
   "description": "Publish AI-built dashboards to a stable dashies.ai URL and keep them refreshed on a schedule. Bundles the dashies authoring skill and the Dashies publish MCP (OAuth 2.1 + PKCE, no tokens to paste).",
   "author": {
     "name": "Dashies"

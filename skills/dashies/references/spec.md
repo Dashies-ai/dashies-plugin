@@ -47,10 +47,10 @@ ignored.
   FAILED publish lists only real errors, so its count is the number of things you actually have to
   fix. Two things that are NOT unreferenced: a measure used only as a ratio's `num` / `den` (the
   ratio is the reference), and a dimension in a dataset with no tile that could have shown it (a
-  KPI-only dataset never warns about its grain). **A `look` spec has no tiles at all, so it
-  collects one of these per dataset and one per measure on every publish** (measured; dimensions
-  stay quiet, because that rule needs a tile that could have shown them). They are noise there and
-  not a finding - **do not delete a measure your own renderer reads in order to silence one.** A
+  KPI-only dataset never warns about its grain). **A `look` spec has no tiles at all, so where
+  this rule fires on one it is noise rather than a finding** - the page reads its data through
+  your own code, which this rule cannot see. **Do not delete a measure your own renderer reads in
+  order to silence one.** A
   `custom` tile is the opposite case: its `reads` marks every measure and dimension of the
   datasets it names as referenced, so it silences them properly.
 - **No em or en dashes** in any spec string - titles, notes, labels, text tiles. Plain ASCII
@@ -171,10 +171,27 @@ markup**.
 `{ kind: currency|percent|count|number, ... }`. `currency` REQUIRES `scale` (`cents` or `units`)
 and takes an optional uppercase three-letter `currency` code (`^[A-Z]{3}$`, e.g. `USD`);
 `percent` REQUIRES `scale` (`fraction` for 0..1, `points` for 0..100); `count` and `number` take
-no `scale`. Optional `decimals` (0-6), `compact`. **Pick `scale` to match what your SQL emits** -
-if the column is already dollars use `units`, if it is integer cents use `cents`. The wrong scale
-is a 100x display error nothing can catch for you, because it is a display choice rather than a
-structural fault.
+no `scale`. Optional `decimals` (0-6), `compact`. **Pick `scale` to match what your SQL emits.**
+The wrong scale is a 100x display error nothing can catch for you, because it is a display choice
+rather than a structural fault.
+
+**`cents` and `points` depend on WHICH PAGE you are writing, and the schema accepts them either
+way, so the refusal comes at publish rather than at validation.**
+
+- **On a `tiles` page they are REFUSED.** A managed tile has no display divisor, so the figure
+  would render 100x. Divide in SQL and declare what the column then holds: an integer-cents
+  column becomes `amount_cents / 100.0` and `scale: units`, a 0-to-100 percent becomes
+  `pct / 100.0` and `scale: fraction`. The compiler steers you the same way.
+- **On a `look` page they are ACCEPTED, and your markup is handed the divisor.** On a `cube`,
+  `rows` or `resolved` dataset, a measure you read through `dashies.data` arrives UNDIVIDED with
+  `scale: 100` beside its `format`, so you divide where you draw it. Two cases are still refused
+  there. **A dataset in any OTHER mode**, because its data block carries no format and no
+  divisor, so your callback would get the 100x value with nothing beside it saying so. You do
+  not choose the mode and you do not have to work out which one you got: the publish report says
+  what the server chose for each dataset, and the refusal names it. **And a
+  measure your own markup draws through a managed binding** rather than reading it yourself: a
+  `data-dash` binding is handed the raw value. A `data-group` binding, and a table binding that
+  names no columns, each draw every measure of their dataset, so either one is enough.
 
 **Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind` always
 reaches the tile (a `percent` measure renders as a percent, a `count` as an integer), but
@@ -739,13 +756,17 @@ source:
 datasets:
   main:
     sql: |
-      -- One row per order. No GROUP BY: the numbers are declared below and
-      -- Dashies works them out. Bucketing the date is a per-row projection,
-      -- not an aggregation, so it stays here.
       select
+        -- One row per order. No GROUP BY: the numbers are declared below and
+        -- Dashies works them out. Bucketing the date is a per-row projection,
+        -- not an aggregation, so it stays here. These comments sit INSIDE the
+        -- statement rather than above it, because the first token has to be
+        -- `select` or `with`: a leading comment is refused.
         date_trunc('month', o.placed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York')::date as month,
         o.region                                                                                  as region,
-        o.amount_cents                                                                            as amount_cents
+        -- Money divided here: a managed tile has no display divisor, so a
+        -- `scale: cents` declaration is refused on a tiles page.
+        o.amount_cents / 100.0                                                                    as amount
       from analytics.fct_orders o
       -- Anchored to the data's own newest COMPLETE month, never to the wall clock. A
       -- mart ends behind today, so now() would shrink what the window holds every day,
@@ -759,10 +780,10 @@ datasets:
       month:  { type: date, label: Month }
       region: { type: category, domains: [AMER, EMEA, APAC], label: Region }
     measures:
-      revenue_cents:
+      revenue:
         agg: sum
-        column: amount_cents
-        unit: { kind: currency, scale: cents, currency: USD }
+        column: amount
+        unit: { kind: currency, scale: units, currency: USD }
         intent: >-
           dbt semantic layer, metric `revenue` (models/marts/metrics.yml). Definition taken from
           dbt, not re-derived.
@@ -770,23 +791,37 @@ datasets:
         agg: count
         unit: { kind: count }
       aov:
-        ratio: { num: revenue_cents, den: orders }
+        ratio: { num: revenue, den: orders }
         label: Average order value
-        unit: { kind: currency, scale: cents, currency: USD }
+        unit: { kind: currency, scale: units, currency: USD }
 tiles:
   - { type: filter, dimension: region, label: Region }
-  - { type: kpi, measure: revenue_cents, title: Revenue }
+  - { type: kpi, measure: revenue, title: Revenue }
   - { type: kpi, measure: aov, title: Average order value }
-  - { type: chart, chart: line, x: month, measure: revenue_cents, title: Revenue by month }
-  - { type: table, columns: [region, revenue_cents, orders], group: region, title: By region }
+  - { type: chart, chart: line, x: month, measure: revenue, title: Revenue by month }
+  - { type: table, columns: [region, revenue, orders], group: region, title: By region }
 ```
 
 **This example reads a WAREHOUSE, so its statement returns one row per order and declares how
 each number is worked out.** `SKILL.md` Step 3 carries that rule. Two details are the rule in
-practice: `revenue_cents` names its `column` rather than relying on the key, and **`orders` is
+practice: `revenue` names its `column` rather than relying on the key, and **`orders` is
 declared `agg: count` and is exact, because the rows ARE the orders.** Written the other way -
 grouped to `(month, region)` with `count(*) as orders` - that same measure would count the month
 and region pairs.
+
+**Two things in that statement are there to get past a guard, and both are worth copying.**
+
+- **The money is divided in SQL and declared `scale: units`, because this page is `tiles`.**
+  A managed tile has no display divisor, so `scale: cents` is refused on this path and the
+  compiler's steer is `divide in SQL (sum(amount_cents)/100.0 as revenue) and declare scale:
+  units`. Dividing at the row, as here, is the same move one level down. The percent equivalent
+  is `divide in SQL (avg(pct)/100.0 as share) and declare scale: fraction`. **Do not reach for
+  `kind: number` instead**: that publishes and throws the currency away, so the figure renders as
+  a bare number rather than money. **Markup you write yourself is the exception, not this page** -
+  see the scale rules under the field table.
+- **The comments sit inside the statement, under `select`.** The first token has to be `select`
+  or `with`, so a statement that OPENS with `--` is refused before anything else is read.
+  Comments anywhere after that first token are fine.
 
 **A dataset on the sample connection groups to the grain it reports at instead**, and then every
 field somebody filters on has to be in the `GROUP BY`. Same spec vocabulary, different statement.
@@ -954,14 +989,14 @@ without it is refused on either, since those would ship frozen.
 
 ### The shape your script is handed
 
-`dashies.data` takes one function and nothing else, and calls it with the datasets your markup is
+`dashies.data` takes a function and calls it with the datasets your markup is
 entitled to, keyed by name: every dataset for a `look` body, the `reads` list for a `custom` tile.
 It calls it again whenever any of their state changes, so a filter change reaches your page as
 `ready`, then `loading`, then `ready`. On a warehouse dashboard the numbers are worked out by
 Dashies when someone opens the page; on the sample connection they travel inside it; your function
 is handed the same shape either way.
 
-Each dataset is an object with exactly these seven fields:
+Each dataset is an object carrying these fields:
 
 | Key | Value |
 |---|---|
@@ -1194,11 +1229,11 @@ describe a tile that publishes clean and then refuses to draw.
 | `stack_percent_mixed_sign` | a `stack: percent` column seeded both positive and negative segments | use `stack: normal` (same exact values, signed axis) or a `chart`. No share of a mixed-sign column is a true proportion, and the runtime refuses that column |
 | `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. The runtime filter drops it |
 | `null_leading_dimension` | a declared dimension is NULL across the whole leading head of the dataset | a null dimension cell renders as a blank label, so a table leads with unlabelled rows. The warning names the column and how many of the dataset's rows carry the null, so you can tell a handful to label from a broken join. Label it in SQL (`coalesce(...)` to an explicit value) if the null is meaningful, or filter it out if it is not |
-| `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | declare `scale: points` |
+| `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | on a `tiles` page, divide by 100.0 in SQL and keep `scale: fraction` (a managed tile has no display divisor, so `scale: points` is refused there); on a `look` body, declare `scale: points` and your markup is handed the value with `scale: 100` beside it, subject to the two look-page refusals under the field table |
 | `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |
 | `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
 | `col_extra` | the query outputs a column nothing declared reads, so it reaches every viewer and is read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship real data is an ERROR, not this warning) |
-| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced. A `look` spec has no tiles, so it raises one of these per dataset and per measure on every publish; see "House rules" again before acting on one |
+| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced. On a `look` spec this rule cannot see your renderer, so where it fires there it is noise; see "House rules" again before acting on one |
 | `publishes with NO data`, and its always-present partner `publishes pending` | the dataset's rows are kept OUTSIDE the page, so it publishes empty and its tiles read "Updating". They fire as a PAIR, so match either | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the tiles in. **If you wrote the markup, your script is handed `status: "pending"` for exactly this wait** - see "Writing your own markup" - so draw "no data yet" and stay until the refresh lands (`SKILL.md` Step 7) |
 
 The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,

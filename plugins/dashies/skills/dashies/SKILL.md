@@ -712,7 +712,59 @@ publishing:
    can take a minute or more (for your own expectation; to the user, still say what has to happen
    and not how long). An answer that has not moved between polls is the run still going, not a
    stuck queue: keep polling, and call it failed only when `phase` says `failed`.
-4. **Report when the numbers are live**, and give the URL again.
+4. **Then prove the page can actually be read**, with `verify_dashboard({ slug })`.
+   `get_refresh_status` says rows were written; this says the query service ANSWERS the
+   questions the page will ask. They are not the same claim, and the gap between them has
+   shipped a dead dashboard.
+5. **Report when the numbers are live**, and give the URL again.
+
+### `get_refresh_status` says the data landed. `verify_dashboard` says the page works.
+
+**An agent once reported a dashboard live and confirmed fresh, with the exact row count it had
+predicted, while every panel on it read "the served query was refused". Every instrument it had
+said OK.** `validate_cube_sql` proves the statement runs in the warehouse. `get_refresh_status`
+proves the refresh wrote rows. Neither proves the query service can answer the plans the page
+issues, and you cannot open the page to find out.
+
+`verify_dashboard({ slug })` issues those plans, the same ones, through the same path a viewer
+takes, and reports what came back. Call it after the first refresh lands, and after every
+republish.
+
+**If the dashboard has filters, verify each value it offers.** A filtered plan is a different
+query and fails on its own; the unfiltered load answering says nothing about it. Pass
+`filters: { region: "EMEA" }` for one value, a list for several, or `all_values: true` to sweep
+every declared dimension. A dimension no served dataset declares is refused rather than quietly
+dropped, so a typo in a filter key is told to you.
+
+**Read the first line and relay it.** It is the verdict: `N of M plans answered`, then one
+sentence per failure naming the dataset, the filter and the error. **Relay a failure in the
+service's own words, unchanged** - the sentence names the object or the limit, and a summary of
+it loses the thing somebody has to act on.
+
+**Never tell the user a dashboard is done on a failed plan**, and the statuses are not
+interchangeable. **Two of them are not failures at all:**
+
+- **`reshaping` is the NORMAL state during a republish, and needs no action.** The data was
+  extracted under the previous spec, the extraction under the new one is already dispatched,
+  and the same plan answers once it lands. It is counted apart from both answered and failed,
+  so do not read it against the verdict, do not report the dashboard broken, and **do not
+  retry in a loop** - poll `get_refresh_status` until a newer successful run, then verify again.
+- **`refused` is not `failed`.** A refusal is the service declining the DECLARED GRAIN as too
+  wide. It is a real finding about what a page you wrote can receive, and it says nothing about
+  the narrower grains managed tiles ask for.
+- **`failed` and `unavailable` are worse than a refusal**: every narrower question fails the
+  same way.
+- **`not_run` is neither a pass nor a fail.** The verification's own budget ran out before it
+  reached that plan, so nothing was learned about it. Run it again rather than reading it as
+  fine; the verdict line names the count so it cannot pass for answered.
+- **`denied` is ours, not theirs.** The route refused the capability the verification minted.
+  That is a Dashies defect, so say so rather than sending the user hunting in their SQL.
+
+**It proves the page can be READ, not that the numbers are RIGHT.** The cross-check in Step 3 is
+a different obligation and this does not replace it.
+
+A dashboard that keeps its data inside the page has nothing for the service to answer, and the
+tool says so rather than inventing a pass.
 
 **Handle the poll failing.** A refresh that errors is likelier on a first run than at any later
 moment: a credential that expired between authoring and refreshing, a table that moved. If it
@@ -756,6 +808,10 @@ with `spec_edits`, and worth passing on a full `spec` too.
 
 Every edit re-runs and re-checks everything, so an edit that would break a binding is a pointed
 error, not a broken live dashboard.
+
+**Verify after a republish, not only after a first publish.** A republish re-extracts, and a
+dataset whose shape changed answers nothing until that lands - `verify_dashboard` is what tells
+you it has.
 
 **A dashboard with no stored spec** - published before specs existed - has nothing for
 `get_dashboard_spec` to read. Call **`derive_dashboard_spec({ slug })}`** first: a read-only aid

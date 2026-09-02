@@ -51,16 +51,14 @@ have left this path.
 
 **Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
 hand-written tile, or the whole page body, and all three stay on this path with every check and
-the schedule intact. **On a dashboard that reads a warehouse, your own CSS is the one of those
-three that still shows numbers**, because it styles the tiles the server draws; a hand-written
-tile or body reads the page, and a warehouse dashboard's numbers are not in it. **On the sample
-connection all three work as they always did.** **What the user asked for decides which you reach
-for, and if they have not said, you ask and wait.** A look, a brand, typography, a picture the
-tile types do not draw - any of those is an instruction to write the markup, and doing it is the
-product working rather than an escape hatch. Asked only for the numbers and nothing about how
-they should look, ask before you choose; a `tiles` layout costs twenty lines, and it is theirs to
-take rather than yours to assume. "When you write the markup yourself", under Step 4, is where
-that decision lives.
+the schedule intact, on every connection. **A tile or a body you write is handed its numbers by
+the runtime**, through one call your script makes, on a warehouse dashboard exactly as on the
+sample connection. **What the user asked for decides which you reach for, and if they have not
+said, you ask and wait.** A look, a brand, typography, a picture the tile types do not draw - any
+of those is an instruction to write the markup, and doing it is the product working rather than an
+escape hatch. Asked only for the numbers and nothing about how they should look, ask before you
+choose; a `tiles` layout costs twenty lines, and it is theirs to take rather than yours to assume.
+"When you write the markup yourself", under Step 4, is where that decision lives.
 
 ---
 
@@ -389,29 +387,20 @@ two round trips is a worse experience than one message carrying both. Twenty lin
 a real saving, and it is theirs to take rather than yours to assume.
 
 **If they have said, DO WHAT THEY SAID.** "Beautiful HTML dashboards" is an instruction to
-write the markup. A look, a brand, typography, a picture the tile types do not draw - any of
-those means you write the page. A layout on its own - four cards in a row, one chart below - is
-something the tiles draw correctly; deliver it and say that you did. Handing somebody who asked
-for HTML the tile vocabulary instead is how a dashboard ends up reading like a template with
-their title on it, which is the one outcome this product exists to avoid. Where the connection's
-numbers are not in the page - the boundary below - say so as the fact it is, offer what the page
-can carry without ranking the options, and wait for their answer.
+write the markup, not a preference to be traded for a `theme` over tiles. A look, a brand,
+typography, a picture the tile types do not draw - any of those means you write the page. A
+layout on its own - four cards in a row, one chart below - is something the tiles draw correctly;
+deliver it and say that you did. Handing somebody who asked for HTML the tile vocabulary instead
+is how a dashboard ends up reading like a template with their title on it, which is the one
+outcome this product exists to avoid.
 
 **Do not weigh the two answers, managed tiles or a page you write, by how common they are.**
 Nobody knows, and a count taken over the dashboards that already exist would measure only what
 the tool made easy.
 
-**WHICH SURFACES ARE AVAILABLE IS A DIFFERENT QUESTION FROM WHICH ONE THEY WANT, AND IT IS THE
-CONNECTION THAT DECIDES IT.** On a dashboard reading a warehouse the numbers are not in the page,
-so a body or a tile you write renders without them, and `theme` is the surface that carries a look
-there - your own CSS, accent, font and density over tiles the server draws. On the sample
-connection all three work. **Ask what they want first and wait for the answer; then let the
-connection decide how much of it you can give them**, and say which you are doing and why. Reading
-this the other way round is how somebody gets handed a page with nothing on it.
-
-**Three surfaces, from the least you own to the most, and all three stay on the spec path.** You
-keep the pointed refusals, the seeding, the correctness checks and the schedule, and the data still
-never enters your context. You give up only the part you opt out of.
+**Three surfaces, from the least you own to the most, and all three stay on the spec path on every
+connection.** You keep the pointed refusals, the seeding, the correctness checks and the schedule,
+and the data still never enters your context. You give up only the part you opt out of.
 
 | Surface | What you own | What the server still owns |
 |---|---|---|
@@ -421,8 +410,8 @@ never enters your context. You give up only the part you opt out of.
 
 `look` is exclusive with `tiles`, and with `theme` and `layout` too, because it owns the page.
 `source`, `datasets` and the schedule are written exactly as they always are. The fields, the
-mount contract, and the shape your script reads are in **`references/spec.md`** under **Writing
-your own markup**.
+mount contract, and the shape your script is handed are in **`references/spec.md`** under
+**Writing your own markup**.
 
 **`look: { from: <slug> }` is the same surface without the bytes.** It means "keep the body this
 dashboard already has", so you can change a dataset or a schedule on a hand-authored dashboard
@@ -441,7 +430,7 @@ through none of them, and nothing will ever check it again. Declare it as a meas
 statement compute it.
 
 **2. Your JavaScript never calls out to a server. Not ours, not the warehouse, not anyone's.**
-It reads what the page already carries, and every number on the page arrives through the spec's
+It draws what the runtime hands it, and every number on the page arrives through the spec's
 datasets. **The reason is the product**: a dashboard is worth having because it re-runs its own
 SQL on a schedule with nobody watching, and because those numbers were checked on the way in. A
 number your page fetched for itself has neither property - it was not checked at publish, no
@@ -451,67 +440,67 @@ let the spec carry it.
 **This is a rule, not a performance note.** If a design seems to need a call, the design needs
 another dataset.
 
-#### The boundary that decides whether your renderer works at all
+#### How your script gets its numbers
 
-**Your own script reads the numbers out of the page, so it only works when the numbers are IN the
-page** - and whether they are is decided per dataset by the server, from the SQL you wrote. You do
-not set it and you cannot ask for it.
+**The runtime fetches; you draw.** Your script asks for nothing and reads nothing out of the page.
+It hands the runtime one function, and the runtime calls it with the datasets your markup is
+entitled to - every dataset for a `look` body, the `reads:` list for a `custom` tile - and calls it
+again whenever their state changes. That holds on a warehouse dashboard exactly as on the sample
+connection. The call is `dashies.data(function (datasets) { ... })` and it is the whole surface:
+there is no way to name a query, a filter, a measure or a dataset the spec did not declare, so a
+script that takes its numbers from this call and nowhere else is keeping rule 2.
 
-**ON A DASHBOARD THAT READS A WAREHOUSE THAT IS ALREADY DECIDED, AND THE ANSWER IS NO.** Its data
-stays with Dashies and is queried when the page is opened, for every dataset, however narrowly the
-question is asked - so there is nothing in the page for your script to find and **narrowing does
-not move it**. Your surfaces there are the managed tiles plus `theme`: your own CSS, accent, font
-and density over the page the server draws. That is real control over how it looks, and it is not
-the same as owning the body.
+Each dataset carries exactly seven fields - `status`, `rows`, `truncated`, `dimensions`,
+`measures`, `as_of` and `error` - and nothing else. **`status` is one of four words, and `rows` is
+`null` in three of them:**
 
-**A dashboard on the sample connection keeps its numbers inside the page**, so `look` and a
-`custom` tile read them there exactly as before. It is the one place a renderer you wrote can be
-seen working end to end.
+- **`pending`** - never computed. A warehouse dashboard is here on every dataset until its first
+  refresh, which is not imminent. Say "no data yet" on the page. Do not spin.
+- **`loading`** - being worked out now, including after a filter change. Say so, rather than
+  leaving the previous numbers up as if they were current: a filter change on a warehouse
+  dashboard takes seconds, and a page that shows nothing happening during them reads as stuck. The
+  runtime shows a loading state over your page by default; reading `status` is how you put one on
+  your own numbers.
+- **`ready`** - `rows` is the answer: one row per combination of the dataset's declared
+  dimensions, each carrying every declared measure, worked out under the page's current filters.
+- **`error`** - `error` says why. Draw the message, not the previous rows.
 
-**The rest of this section is how the report tells you which of those you have**, per dataset. It
-is worth knowing whichever you are on, because it is also what tells you a dataset has published
-with nothing in it yet.
+**`rows` is `null` outside `ready`, never an empty array**, because a script that sums an empty
+array draws a confident zero. **Branch on `status`; never sum what arrives.** Every value in `rows`
+was worked out by the statement, which is rule 1 holding; a coarser grain is another dataset.
 
-**The publish report answers it, and the answer takes TWO of its lines rather than one.**
+**A measure arrives as a JavaScript number when a float64 holds it exactly, and otherwise as its
+exact digits in a string; `null` where the cell has no value.** So check for `null` first and
+draw `-`, then draw the value as text with `String(v)`, which is exact for both forms and never
+throws. `toLocaleString()` is not the recipe: it rounds a decimal for display and throws on
+`null`, and either one inside your callback costs the whole region. Never put a measure into
+arithmetic with a literal, not even `+ 1` for display: a value float64 cannot hold exactly
+arrives as a string of digits, and `Number()` it only if you accept the rounding. Arithmetic on a
+measure is rule 1 broken whatever its type.
 
-**First, the `Datasets:` block**, one sentence per dataset. The words to look for are **"inside
-the page"**, and it is their ABSENCE that is decisive: a dataset whose sentence says **"its data
-stays with Dashies and is queried when someone opens the page"** has nothing in the page for your
-script to read, and never will. Their PRESENCE is necessary and not sufficient, which is what the
-second line is for.
+**When the grain you draw is too wide for one answer, the page reports `status: "error"` naming
+the refusal, and the managed tiles on that dataset stop with it** - a request is answered or
+refused as a whole, so a mixed page fails closed rather than drawing some tiles beside an empty
+region of yours. **The remedy is yours: bound the dimensions that dataset declares, with `domains`
+or `buckets`, and if the page still reports that the grain is too wide, declare fewer of them.**
+`rows` is the declared grain, so the width is decided by the declaration and not by which columns
+you draw; a narrower grain is a narrower dataset. `truncated` is a field a
+producer may set when `rows` is not the whole answer; when it is `true`, say so on the page rather
+than drawing a complete picture.
 
-**Second, the `warning:` lines.** A dataset can say "inside the page" and still publish with its
-rows held outside it, and the report says so in plain words: a warning that the dataset
-**"publishes with NO data"**. **Treat that warning as overriding the sentence.**
+**A page that draws its own markup carries `<script data-dashies-runtime></script>`.** That marker
+is what calls your function; without it nothing does, on any connection. A `tiles` page gets it
+for free; a `look` body writes it, and the publish report warns when it is missing on a warehouse
+dashboard, or when a body that calls `dashies.data` has none.
 
-**The rest of that warning describes MANAGED tiles, so read it against the page you are actually
-building.** It says the dataset's tiles read "Updating" until the first refresh.
+**Before its first refresh a warehouse dashboard is `pending` on every dataset, and the publish
+report says so twice**: the `Datasets:` sentence says its data stays with Dashies, and a `warning:`
+says the dataset "publishes with NO data". Neither decides whether your page can work; they tell you
+it publishes empty, which is Step 7's wait. Say that to the user, trigger the refresh, and stay
+until `status` turns `ready`.
 
-- **A `custom` tile sits in the same grid as the managed ones**, so that sentence is about those,
-  and they do fill in. **Your own mount is not one of them and nothing fills it** - and if yours
-  is the only tile on the page, nothing fills in anywhere.
-- **A `look` page has no managed tiles at all**, so nothing anywhere says "Updating" and the page
-  simply renders empty.
-
-Either way **no part of that warning is about the renderer you wrote**, so nothing on the report
-will join it up to your page for you.
-
-**Nothing refuses this at publish**, so there is no error to wait for and the report is the whole
-of what you get.
-
-**So dry-run FIRST and read both BEFORE you write any markup.** A dry run puts the spec through
-the whole pipeline and reports the same lines, so the answer costs one call.
-
-**SAY THIS OUT LOUD TO THE USER RATHER THAN QUIETLY PICKING FOR THEM, because it is where their two
-wishes collide.** A page you write yourself and a dashboard on their own warehouse do not go
-together today. If they have asked for both, that is a real limit they should hear in plain words,
-not a reason to hand them tiles without saying why. **It is where things stand rather than a line
-anyone drew on purpose.** Offer `theme` over managed tiles, say plainly what it does and does not
-give them, and let them choose - which means WAITING for their answer, not announcing one and
-carrying on.
-
-**`reads:` is a declaration, not a fetch**, so a `custom` tile naming a dataset whose data stays
-with Dashies renders nothing at all.
+The example that handles all of this, the mount contract and the field tables are in
+**`references/spec.md`** under **Writing your own markup**.
 
 #### Make it good
 
@@ -591,17 +580,18 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
 
 - **`Datasets:`** - one sentence per dataset saying what will happen to it and why. Every dataset
   is listed, including the unremarkable ones. Relay it; it is the honest answer to "how will this
-  stay current". **If you are writing your own markup it is HALF of what decides whether your
-  renderer can work at all**, and the `warnings` below are the other half - see "When you write the
-  markup yourself" under Step 4, which is where the pair is read together.
+  stay current". A dataset whose sentence says its data stays with Dashies publishes empty and
+  fills in after the first refresh; if you wrote the markup, that is the `pending` state your
+  script is handed (Step 4, "How your script gets its numbers").
 - **`warnings`** - non-blocking advisories. **Two are worth reading closely.** The first: when two
   datasets compute the same measure the same way and their fully-rolled-up values disagree, and a
   tile actually SHOWS the differing one, the report says so with four facts per dataset. This is
   information, not a verdict - a month-to-date figure beside a year-to-date one legitimately
   disagrees - so read the scope fact and decide. It caught a real playtest error that put
-  $596,348,393 on a card against a real $36,384,217. The second matters only if you are writing
-  your own markup, and then it is decisive: a dataset warning that it **"publishes with NO data"**
-  is one whose rows are kept outside the page, so a renderer you wrote will find nothing there.
+  $596,348,393 on a card against a real $36,384,217. The second, a dataset warning that it
+  **"publishes with NO data"**, is the same first-refresh wait stated as a warning: the tiles the
+  server drew read "Updating", and a script you wrote is handed `status: "pending"` until the
+  refresh lands.
 - **`obligations`** - the Step-3 cross-check, prompted.
 - Then share the returned `url`.
 
@@ -658,8 +648,8 @@ a clean dry run is not evidence the connection is bindable in the scope you are 
 ## Step 7 - Stay until the numbers land
 
 **A dashboard whose data is kept with Dashies publishes empty by design**, and the tiles the
-SERVER drew read "Updating" until the first refresh lands. **A page you wrote yourself has no such
-tiles: it renders empty and says nothing**, which is the same wait with less explanation on it.
+SERVER drew read "Updating" until the first refresh lands. **A page you wrote yourself is handed
+`status: "pending"` for the same wait**, and says "no data yet" only if you drew that state.
 **Handing a user either page is the opposite of the effect you are trying to produce.** So after
 publishing:
 
@@ -740,14 +730,12 @@ never a spec edit - do not change `slug` to rename.
   errors, then publish the hash.
 - **Never leave the spec because a publish was refused.** Fix the refusal. Writing your own markup
   INSIDE the spec is supported and is a design decision; it is never a response to an error.
-- **If the user has not said how it should look, ask and wait; if they have, do what they said**,
-  and where the connection's numbers are not in the page, say so as a fact, offer what the page
-  can carry without ranking the options, and wait. Managed tiles are one answer, never the
-  default.
+- **If the user has not said how it should look, ask and wait; if they have, do what they said.**
+  Managed tiles are one answer, never the default, and "beautiful HTML" is an instruction.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls. It must not work out a number from values it was handed -
-  declare a measure and let the statement compute it. And it takes its numbers from the page the
-  spec produced, never from a call of its own.
+  declare a measure and let the statement compute it. And it takes its numbers from what the
+  runtime hands it, never from a call of its own.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
 - **Everything the dashboard carries is visible to everyone who can open it.** Viewers are its
@@ -780,7 +768,7 @@ Load the one you need for the step you are on; do not front-load them.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
-| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, the data block and its shape), the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` with the example that handles every state), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /

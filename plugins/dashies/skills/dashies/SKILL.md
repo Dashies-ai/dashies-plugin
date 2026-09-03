@@ -184,12 +184,12 @@ dashboards that already exist, and a single next step.
 
 | `action` | What to do |
 |---|---|
-| `connect_a_warehouse` | There are no connections. Send them to the link in `next_step.url`, and offer the sample data (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. |
+| `connect_a_warehouse` | There are no connections of the user's own, and no READY Dashies sample data connection (below) - a ready one is named under `start_authoring` instead, and one that is present but not ready is listed and not offered. Send them to the link in `next_step.url`, and offer the built-in sample (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. |
 | `fix_a_connection` | A credential is not working and nothing else is ready. **Say so before authoring anything**, name the error, send them to the app. |
 | `finish_setup_in_the_app` | A connection exists but was never tested. They finish setting it up, then call again. |
 | `choose_data_in_the_app` | A connection is verified and exposes nothing readable. They choose what to expose and check the login can read it. Both are app settings; **no query works around either**. |
 | `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** This message is also where the design question goes: if the request said nothing about how the dashboard should look, ask both here, in one message that recommends the page you design, says tiles are the option without design, and ends on a question mark (Step 4). If the request carries any design language, or the word "html", there is no design question - say in the same message that you will design and write the page. **Measured: a session whose request said "html" asked which connection and which slug here and never said it would design the page, so design could only come up in a second round trip.** |
-| `start_authoring` | Exactly one is ready. Go - unless the request said nothing about how it should look, in which case the design question (Step 4) is the one round trip you owe first, and it ends on a question mark. A request carrying design language or "html" has already answered it: you write the page. |
+| `start_authoring` | Exactly one is ready. Go - unless the request said nothing about how it should look, in which case the design question (Step 4) is the one round trip you owe first, and it ends on a question mark. A request carrying design language or "html" has already answered it: you write the page. **If the one ready connection is the Dashies sample data** (`shared_sample: true`, and the text says so), the user has no warehouse of their own: say plainly that it is sample data, offer the connect link from `next_step.url` in the SAME message, and then go - see "The user with no warehouse". |
 
 **A broken connection beside a working one still says `start_authoring`.** `fix_a_connection` is
 the answer only when *nothing* is ready. Read `connections[]` before telling a user everything is
@@ -223,11 +223,28 @@ refusal is built rather than written into it, so the set can widen without a wor
 
 ### The user with no warehouse
 
-**Offer the sample data once, and say plainly that it is sample data.** Dashies provides a small
-orders-and-customers dataset behind the built-in connection, so somebody who will not connect a
-warehouse today can still see a real dashboard work end to end. Put the offer and the link to
+**Dashies provides sample data two ways, and `check_readiness` says which one applies. Offer it
+once, and say plainly that it is sample data.** Put the offer and the link to
 `https://dashies.ai/app/connections` in the same breath, and **do not repeat the offer** - a
-sample dashboard is not the thing being sold. A dashboard built on it says so on its own face.
+sample dashboard is not the thing being sold.
+
+**The Dashies sample data connection** is the first way. It is a read-only Snowflake warehouse
+Dashies provides, holding synthetic data, listed in every space with `shared_sample: true` and
+labelled "Dashies sample data". Treat it as the warehouse it is: `introspect_schema` shows its
+tables, the statement takes the warehouse shape (Step 3), the publish keeps the data with Dashies
+and answers when a viewer opens the page, and it refreshes on a schedule - on every plan. When the
+user has no connection of their own and it is ready, `check_readiness` answers `start_authoring`
+naming it. Three things are owed the moment you use it: say that the numbers are sample data and
+not theirs; offer connecting their own warehouse in the same message; and make the dashboard say
+it is sample data on its own face - a title or a line of copy, because the page carries no stamp
+for this one. Never try to edit, test or delete the connection: it is shared and read-only, and
+every such call is refused.
+
+**The built-in `self` sample** is the second way, and `check_readiness` falls back to it whenever
+the shared connection is absent or not ready (`connect_a_warehouse_or_try_sample`). It is a small
+orders-and-customers dataset behind the built-in connection, so somebody who will not connect a
+warehouse today can still see a real dashboard work end to end. It is static - it does not
+refresh on a schedule - and a dashboard built on it says so on its own face.
 
 **You have to name the schema, and `introspect_schema` will not show it to you.** Set
 `source.connection: self` and read from these two, schema-qualified, exactly as written:
@@ -643,27 +660,55 @@ every number on it is right. Short rules, and each one separates designed from g
 - **A logo the repo already carries is used without being asked.** Before you write the header,
   look at the repo the session sits in: a `brand/` or `assets/brand/` directory, a `logo*.svg` or
   `logo*.png` at the root or under `public/`, or a `CLAUDE.md` that names one. If any of those
-  exists, the page uses it - inlined as a `data:` URI in the header beside the title (an SVG, or a
-  small raster, since the body has ceilings), sized as a mark and not a banner, the light or dark
-  variant matching the page's colour scheme (both inlined when the repo carries both, so each
-  scheme shows its own) - and takes its accent colour and its type from the `README.md` beside the
-  mark (`brand/README.md`) when there is one, so the page is set in their palette rather than a
-  guess at it, unless the user named a look of their own. Say in one sentence to the user where
-  the logo came from. When nothing is found, the page carries no mark unless they hand one over or
-  ask you to fetch one: never invent one.
-- **A logo they ask for is theirs, never one you invent.** If they have the file, or hand one over,
-  use it. If they say "the logo from our site" or "some logo from the web", fetch it yourself, now,
-  while authoring, and use what you fetched, saying in one sentence where it came from. Inline it
-  as a `data:` URI - an SVG or a small raster, since the body has ceilings - so nothing loads from
-  outside at view time and nothing changes underneath the page; the page's own script still calls
-  nothing (rule 2). Do not draw a mark of your own in its place: a real session declined to fetch
-  the logo it was asked for and drew an SVG of its own instead, which is the one substitution this
-  bullet exists to stop.
+  exists, the page uses it - in the header beside the title, sized as a mark and not a banner, the
+  light or dark variant matching the page's colour scheme (both, when the repo carries both, each
+  under its own `prefers-color-scheme` rule so each scheme shows its own) - and takes its accent
+  colour and its type from the `README.md` beside the mark (`brand/README.md`) when there is one,
+  so the page is set in their palette rather than a guess at it, unless the user named a look of
+  their own. **How a mark reaches the page is the `assets` block in the next bullet, by URL, never
+  bytes you type**: a file in the repo is usable when it is also hosted at an https URL (the
+  project's own site, its CDN, a public git host's raw file), and you declare that URL. When it
+  exists only as a local file, say so in one sentence and ask for a hosted URL - that is the current
+  limit, and a page with no mark beats a page with a mark you reproduced. Say in one sentence to
+  the user where the logo came from. When nothing is found, the page carries no mark unless they
+  hand one over or ask you to fetch one: never invent one.
+- **A logo they ask for is theirs, never one you invent, and the SERVER fetches it - you do not.**
+  Whether they name a file, hand over a URL, or say "the logo from our site", the logo goes in the
+  spec's `assets` block by URL, and the markup references it by name:
+
+  ```yaml
+  assets:
+    logo:
+      url: https://www.example.com/brand/logo.svg
+  ```
+
+  ```html
+  <img class="brand" src="asset:logo" alt="Example">
+  ```
+
+  (`url(asset:logo)` in CSS.) At every dry run and publish the server fetches the URL, checks that
+  it is an SVG, PNG, JPEG, WebP or GIF of at most 512 KiB, inlines the bytes wherever the page
+  references the name so nothing loads from outside at view time, and pins what it fetched: the
+  report's `Assets:` block lists each one with its content type, byte size and sha256, and the
+  sha256 is written into the stored spec so a later republish keeps the same bytes and warns if the
+  URL has started serving different ones (delete the `sha256` line to take the new file). **Never
+  inline the bytes yourself and never type a `data:` URI.** A real session reproduced a 5.8 KB SVG
+  wordmark from memory as valid base64 and well-formed markup with an invented path - the company's
+  own name came out misspelt in its logo, published with no warning - and no check on the page can
+  see that; the server fetching is the only thing that can. A hand-typed `data:` URI that does not
+  even decode is reported as a warning naming the byte, and the fix is the same: declare it. If the
+  logo exists only as a local file with no URL, say so and ask for a hosted URL. Do not draw a mark
+  of your own in its place: a real session declined to fetch the logo it was asked for and drew an
+  SVG of its own instead, which is the one substitution this bullet exists to stop. To change a
+  logo later, send the body (`look: { html }`): a `look: { from }` republish keeps the stored page
+  byte for byte, so it is refused when an asset's bytes would change. The field table and the
+  checks are in `references/spec.md` under **Assets**.
 - **Say only what the data says.** No invented deltas, trend arrows or filler copy.
 
-Inline everything - your CSS, your script, your SVG - so the page depends on nothing that can change
-underneath it. Storage APIs (`localStorage`, cookies) throw in a published page, so keep state in
-memory and in the URL hash. And never replace `document.body` wholesale: fill your own elements.
+Inline everything - your CSS, your script - so the page depends on nothing that can change
+underneath it; an image comes through `assets`, which inlines it for you. Storage APIs
+(`localStorage`, cookies) throw in a published page, so keep state in memory and in the URL hash.
+And never replace `document.body` wholesale: fill your own elements.
 
 ---
 
@@ -956,7 +1001,9 @@ never a spec edit - do not change `slug` to rename.
 ## Guardrails recap
 
 - **A dashboard needs a connection to stay current.** No connection means nothing to re-run.
-  Offer the sample data and the link; do not publish something that pretends to refresh.
+  Offer the sample data and the link - the Dashies sample data connection when `check_readiness`
+  names it, else the built-in `self` sample - and say it is sample data; do not publish
+  something that pretends to refresh.
 - **A dashboard on a warehouse needs Snowflake or BigQuery.** Postgres, Redshift, Databricks and
   SQL Server are refused at publish, at `/source/connection`, and no rewrite of the SQL clears it.
   Read the engine before writing any SQL. Reading a schema, exploring it and validating a

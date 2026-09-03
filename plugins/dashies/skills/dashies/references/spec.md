@@ -70,6 +70,7 @@ of those two, never both and never neither.
 | `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
 | `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
+| `assets` | map, 1-8 | Optional. Images the SERVER fetches, checks and inlines for you: each key `^[a-z][a-z0-9_]{0,31}$` names an `{ url }` (https only), referenced from your markup as `asset:<name>`. Never type image bytes into a spec. See **Assets** under **Writing your own markup**. |
 | `tiles` | array, 1-64 | The tiles, in document order (below). Exclusive with `look`. |
 | `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. Your script is handed its numbers by the runtime on every connection. See **Writing your own markup**. |
 | `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
@@ -990,6 +991,63 @@ without it is refused on either, since those would ship frozen.
 - **Dashies' bindings** - `data-dash` attributes the runtime fills. Every binding must resolve
   against your declared datasets, checked at publish, and a body with bindings and no marker is
   refused rather than shipped with frozen numbers.
+
+### Assets - images the server fetches for you
+
+A logo or a mark never reaches the page as bytes you typed. Declare it once, at the top level of
+the spec, by URL, and reference it by name from any surface you write:
+
+```yaml
+assets:
+  logo:
+    url: https://www.example.com/brand/logo.svg
+  mark_dark:
+    url: https://www.example.com/brand/mark-dark.png
+```
+
+| Key | Type | Notes |
+|---|---|---|
+| `url` | https URL (<=2048) | Required. Fetched by the server on every dry run and publish: https only, port 443, no credentials in the URL, at most 5 redirects, and every hop checked against the same outbound host policy a warehouse connection passes (no private or reserved address, none of Dashies' own hosts). |
+| `sha256` | 64 hex chars | **Written by the server, never by you.** The pin of what was fetched, recorded into the stored spec on publish and read back on the next one. Delete the line to take a file the URL has since changed. |
+| `intent` | string (<=1000) | Optional note, as elsewhere. |
+
+**Reference syntax:** `src="asset:logo"` on any element in `look.html` or a `custom` tile's `html`
+or `js`, and `url(asset:logo)` in `theme.css` or inside a `<style>` block. Both are rewritten to the
+fetched bytes when the page is built, so the stored page is self-contained and nothing loads from
+outside at view time. A reference to a name you did not declare is refused at that surface, naming
+the byte; a declared asset nothing references is a warning.
+
+**What is checked, per asset:** the bytes are an SVG, PNG, JPEG, WebP or GIF by their content -
+not the URL's extension nor the origin's header, so a `.svg` URL serving a PNG is inlined as a
+PNG and reported as one; an SVG is read through and refused if it carries a `<script>`, a
+`<foreignObject>`, an event attribute, or any external reference (`href`, `xlink:href`, a `url()`
+or `@import` in its styles), because the page must stay self-contained; one asset is at most
+512 KiB and all of them together at most 2 MiB - a mark, not a banner - and a spec declares at
+most 8.
+
+**The report's `Assets:` block** carries one line per asset: the URL that answered, the content
+type, the byte size, the sha256, and whether it was pinned, unchanged, kept or re-pinned. On a
+later publish, if the URL stops answering, the stored copy of the pinned bytes carries the page
+and the report says so - only when that copy is the recorded file; a copy that is not is refused
+rather than used; if the URL now serves different bytes, the pinned ones are kept and the report
+says how to take the new file. A scheduled refresh never touches an asset: it rewrites the data
+block and nothing else.
+
+**A `look: { from }` republish keeps the stored page byte for byte**, so an asset whose bytes
+would change - a URL that now serves a different file, a `sha256` line deleted to take one, an
+asset declared for the first time - is refused at `/assets/<name>`: the new bytes could reach
+nothing on a page that was built without them. Send the body with `look: { html }` to change a
+logo; an asset whose bytes are unchanged, or whose stored copy carries the page while its URL is
+down, is fine under `from`.
+
+**A light and a dark mark are two assets**, each referenced under its own `prefers-color-scheme`
+rule.
+
+**A hand-typed `data:image/...;base64,` URI still publishes, and every one is decoded and
+checked**: base64 that does not decode, bytes that are not the declared type, or an SVG that does
+not parse is a warning naming the byte offset and pointing here. A URI that passes is not thereby
+correct - the corruption that was measured decoded cleanly into well-formed markup with an
+invented path - which is why the rule is to declare rather than to type.
 
 ### The shape your script is handed
 

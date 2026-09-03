@@ -570,6 +570,19 @@ arithmetic with a literal, not even `+ 1` for display: a value float64 cannot ho
 arrives as a string of digits, and `Number()` it only if you accept the rounding. Arithmetic on a
 measure is rule 1 broken whatever its type.
 
+**A `ratio` measure you declared arrives on each row under its own key, worked out by the runtime
+from its two operands**: a number, the float64 quotient of the two, when both operands are values
+a float64 holds exactly; `null` where the denominator is null or zero; and `null`, never a
+quotient of a rounded operand, where an operand is past what a float64 holds. On a warehouse
+dashboard the query service combines every operand exactly at the grain you asked for. Where the
+page itself combines cells (the sample connection), a `sum` or `count` operand is combined over
+the group, and any other operand over a group of more than one row leaves the ratio `null`. A
+`num_scope` / `den_scope` of `all` takes that operand from the unfiltered total. It is listed on
+`measures` beside the agg measures, as
+`{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale? }`.
+**Never recompute it from its operands** - `r.revenue / r.orders` in your callback is rule 1 broken,
+and the quotient is already on the row under the key you declared.
+
 **Every refusal is at the declared boundary, and it is loud.** A `by` naming a dimension the
 dataset does not declare is `status: "error"` on that dataset for that subscription, naming the
 declared dimensions, and it stays that way: there is no silent fall-back to the declared grain. A
@@ -780,12 +793,26 @@ publishing:
    another refresh and keep polling until the newest run is current. An answer that has not moved
    between polls is the run still going, not a stuck queue: keep polling, and call it failed only
    when `phase` says `failed`.
+   **Wait in the foreground between polls.** A sleep sent to the background returns at once, so
+   the next poll lands a moment later and reads the same answer, and a run that has not moved
+   between two such polls looks stuck when nothing is wrong. Block, then poll. **And never report
+   a duration you did not measure**: the run's start time is already in that sentence, so a wait
+   that feels long is a reason to read it rather than to narrate one. Measured once, on a chain
+   of three datasets totalling about a million rows: each run landed in about two minutes. A wait
+   of that length is not a stall. That figure is for your own expectation; item 1 still governs
+   what you tell the user.
 4. **Then prove the page can actually be read**, with `verify_dashboard({ slug })`.
    `get_refresh_status` says rows were written; this says the query service ANSWERS the
    questions the page will ask. They are not the same claim, and the gap between them has
    shipped a dead dashboard. **If it answers that the first refresh has not landed, or names a
    dataset that has not been extracted yet, that is this same wait and not an error**: go back
    to step 3, poll until `last_successful_run` moves, then verify again.
+   **Then read the echoed rows against your own declarations.** Each answered plan prints the
+   first row and the unfiltered total with every declared measure under its own key, a declared
+   `ratio` included, and names any declared measure the answer did not carry under `declared
+   measures NOT in the answer`. Check that list against every key your page reads: a key that
+   never arrives draws as a dash, and nothing else will say so. Where you can open the page,
+   read one number per panel back and compare it with the echoed row.
 5. **Report when the numbers are live**, and give the URL again.
 
 **A republish while a refresh is in flight needs nothing special from you.** The server handles

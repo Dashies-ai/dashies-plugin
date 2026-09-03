@@ -157,9 +157,10 @@ markup**.
   sum really is intentional because the rows do not overlap, ignore the warning.
 
 - **ratio measure** (`ratio` required): `{ num: <measure key>, den: <measure key> }` - a ratio of
-  two other declared measures, recomputed correctly under filters and never a stored pre-divided
-  average. Each side may optionally set `num_scope` / `den_scope: all` to divide by the unfiltered
-  total instead of the filtered one. Optional `label` (<=80), `unit`, `intent`.
+  two other declared measures, worked out by the runtime under every filter state and delivered
+  on each row under its key (never a stored pre-divided average, and never something your markup
+  recomputes). Each side may optionally set `num_scope` / `den_scope: all` to take that operand
+  from the unfiltered total instead of the filtered one. Optional `label` (<=80), `unit`, `intent`.
 
   **This is how you carry a rate or a percentage, and it is the exact way to carry an AVERAGE**:
   `num` is the sum measure, `den` is a `count(*)` measure, which makes the tile exactly sum
@@ -1017,7 +1018,7 @@ Each dataset is an object carrying these ten fields and no others:
 | `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. |
 | `truncated` | `true` when `rows` is not the whole answer. |
 | `dimensions` | `[{ key, type? }]` - every DECLARED dimension, `type` present only when it is `date`. |
-| `measures` | `[{ key, agg, format?, scale? }]` - `format` rides here when a `unit` was declared, and `scale` beside it where the declared scale asks your markup to divide for display. |
+| `measures` | `[{ key, agg, format?, scale? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale asks your markup to divide for display. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
 | `as_of` | When this dataset was last computed. |
 | `error` | `null` unless `status` is `"error"`, and then the reason, in words. |
 | `error_kind` | `null` unless `status` is `"error"`, and then `"refused"` - the service declined this question, so change the question - or `"failed"` - everything else, including the service accepting the question and breaking, where a narrower question fails the same way. |

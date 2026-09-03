@@ -37,7 +37,7 @@ Publish AI-built HTML dashboards to a shareable URL and keep them refreshing on 
 
 - **The `dashies` authoring skill.** The playbook your AI follows to build a dashboard that can re-run its own SQL: which connection, one read-only `SELECT` per dataset, what each column means, and how often to refresh. It loads automatically after install.
 - **The Dashies publish MCP server.** Tools for publishing, versioning, scheduling and inspecting dashboards, over OAuth. There is no API key to paste.
-- **A URL that stays alive.** Every dashboard lives at `https://<your-handle>.dashies.ai/<slug>`, or `https://<workspace>.dashies.ai/<slug>` for a team: versioned, access-gated, and rebuilt from your warehouse on the cadence you choose.
+- **A URL that stays alive.** Every dashboard lives in a workspace, at `https://<workspace>.dashies.ai/<slug>`: versioned, members-only, and rebuilt from your warehouse on the cadence you choose.
 
 ## Install
 
@@ -79,7 +79,7 @@ Its Windows agent detection is still maturing, so prefer the per-tool commands a
 </details>
 
 > [!TIP]
-> **No tokens, ever.** The first time your AI calls a Dashies tool, a browser tab opens for a one-time sign-in (OAuth 2.1 + PKCE with dynamic client registration). The token lives in your OS keychain and refreshes itself.
+> **No tokens, ever.** Sign-in is a one-time browser step (OAuth 2.1 + PKCE with dynamic client registration). In Claude Code, run `/mcp`, select **dashies** and choose **Authenticate**; other clients open the browser on the first Dashies tool call. The consent screen asks which workspace the tool may publish into, so sign up at [dashies.ai](https://dashies.ai) first: signing up creates your workspace. The token lives in your OS keychain and refreshes itself.
 
 ## Your first dashboard
 
@@ -92,7 +92,7 @@ Build me a Dashies dashboard of last month's signups by plan, and refresh it dai
 Your AI reads the schema of your connected source, writes and validates the SQL, publishes a spec, and hands back a link:
 
 ```text
-https://<your-handle>.dashies.ai/signups-by-plan
+https://<workspace>.dashies.ai/signups-by-plan
 ```
 
 No warehouse yet? The built-in `self` connection (your own no-PII Dashies usage metrics) is always available, so the [quickstart](https://docs.dashies.ai/start/quickstart) works with no warehouse and no paid plan.
@@ -107,7 +107,7 @@ flowchart LR
     A["You describe<br/>the dashboard"] --> B["Your AI writes a spec:<br/>connection, SQL, columns,<br/>layout, cadence"]
     B --> C["publish_dashboard"]
   end
-  C --> D[("your-handle.dashies.ai/slug")]
+  C --> D[("workspace.dashies.ai/slug")]
   subgraph loop["On schedule, without AI"]
     E["Hourly, daily,<br/>weekly or monthly"] --> F["Re-run the saved SQL<br/>against your source"]
     F --> G["Write fresh numbers<br/>into the dashboard"]
@@ -124,9 +124,9 @@ flowchart LR
 - **Scheduled refresh.** Hourly, daily, weekly or monthly, with an every-N multiplier and a timezone anchor. Or refresh on demand.
 - **Version history.** Every republish snapshots the previous body. Twenty autosaves are kept, plus up to thirty named versions, and you can roll back to any of them.
 - **Safe renames.** The old slug 301-redirects to the new one, so links you already shared keep working.
-- **Access-gated by default.** A dashboard opens for its owner or for the members of its workspace; anyone signed out is sent to sign in. Nothing is public.
+- **Access-gated by default.** A dashboard opens for the members of its workspace; anyone signed out is sent to sign in. Nothing is public.
 - **Sandboxed rendering.** Published dashboards run under a strict sandbox CSP, isolated from the rest of the origin.
-- **Warehouse connections.** Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks and Microsoft SQL Server, connected in the web app so credentials never pass through your AI.
+- **Warehouse connections.** Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks and Microsoft SQL Server, connected in the web app so credentials never pass through your AI. A refreshing dashboard publishes against Snowflake or BigQuery today; the other engines can be connected, explored and validated, but not published against.
 
 ## The MCP tools
 

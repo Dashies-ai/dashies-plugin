@@ -468,7 +468,10 @@ and the data still never enters your context. You give up only the part you opt 
 `look` is exclusive with `tiles`, and with `theme` and `layout` too, because it owns the page.
 `source`, `datasets` and the schedule are written exactly as they always are. The fields, the
 mount contract, and the shape your script is handed are in **`references/spec.md`** under
-**Writing your own markup**.
+**Writing your own markup**. **`references/charts.md`** carries copy-paste recipes for the charts a
+page you write most often needs - a KPI card with a delta, bars, a line over time, a stacked bar, a
+table - each drawn from what `dashies.data` hands you, inline, with nothing loading from outside
+the page.
 
 **`look: { from: <slug> }` is the same surface without the bytes.** It means "keep the body this
 dashboard already has", so you can change a dataset or a schedule on a hand-authored dashboard
@@ -501,9 +504,10 @@ another dataset.
 #### How your script gets its numbers
 
 **The runtime fetches; you draw.** Your script asks for nothing and reads nothing out of the page.
-It hands the runtime one function, and the runtime calls it with the datasets your markup is
-entitled to - every dataset for a `look` body, the `reads:` list for a `custom` tile - and calls it
-again whenever their state changes. That holds on a warehouse dashboard exactly as on the sample
+It hands the runtime one function, and the runtime calls it with the datasets THAT CALL ASKED FOR,
+and calls it again whenever their state changes. What your markup may read is the ceiling on what a
+call can ask for - every dataset for a `look` body, the `reads:` list for a `custom` tile - and the
+options object below is how a call asks for less. That holds on a warehouse dashboard exactly as on the sample
 connection. The surface is two calls, and it is closed: there is no way to name a query, a measure
 or a dataset the spec did not declare, nor a grain or a filter outside the dimensions it declares,
 so a script that takes its numbers from these calls and nowhere else is keeping rule 2.
@@ -511,7 +515,8 @@ so a script that takes its numbers from these calls and nowhere else is keeping 
 ```js
 // Subscribe. The runtime calls your function now, and again on every change.
 dashies.data(function (datasets, page) {
-  var ds = datasets.main;    // one entry per dataset your markup is entitled to
+  var ds = datasets.main;    // one entry per dataset THIS CALL NAMED (below); reading one it did
+                             // not name throws, naming the dataset and the fix
   ds.rows;                   // the answer, or null outside "ready"
   ds.grain;                  // the dimension keys rows are grouped by
   ds.filters;                // the page filters that APPLIED to this dataset
@@ -529,16 +534,23 @@ dashies.filter({ region: 'EMEA', channel: null });                  // several a
 
 **A coarser grain is asked for, never worked out.** `by` names a subset of that dataset's declared
 dimensions, and `rows` come back grouped by exactly those, one row per combination, every measure
-worked out by the same machinery that answers a managed chart. `by: []` is the grand total. A
-dataset the options do not name arrives at its declared grain. One subscription carries one grain
-per dataset; a page that wants a month series AND a region breakdown from one dataset calls
-`dashies.data` twice, and each call is handed its own rows. On a warehouse dashboard the declared
-grain is not requested unless something subscribes at it, so a wide dataset can serve a narrow
-view without paying for its width.
+worked out by the same machinery that answers a managed chart. `by: []` is the grand total. One
+subscription carries one grain per dataset; a page that wants a month series AND a region
+breakdown from one dataset calls `dashies.data` twice, and each call is handed its own rows. On a
+warehouse dashboard the declared grain is not requested unless something subscribes at it, so a
+wide dataset can serve a narrow view without paying for its width.
+
+**A CALL ASKS FOR EXACTLY WHAT ITS OPTIONS NAME.** Pass no options, or `{}`, and you are handed
+every dataset your markup may read, each at its declared grain. Name any dataset and you are asking
+for those and no others: a dataset you leave out is not fetched, and reading it in that callback
+throws, naming the dataset and the fix. So a call that draws one dataset names one dataset, and
+costs one dataset. **Measured: a page whose every call named only the dataset it read was also
+asking for an eleven-dimension dataset nobody drew, which was refused on every page load, silently,
+because no callback read it.**
 
 **A filter is set, never simulated.** `dashies.filter` sets the same page state a managed filter
 control sets: it lands in the URL hash, so a shared link opens on the same view, and every dataset
-is fetched again under it. Draw your own controls and have them call `dashies.filter`; never
+a call asked for is fetched again under it. Draw your own controls and have them call `dashies.filter`; never
 filter `rows` in the browser. `ds.filters` says which filters reached that dataset - a dimension
 it does not declare is absent from it, so `'region' in ds.filters` is the honest test for "this
 number is filtered by region", and its absence is the label to draw when a filter did not reach a
@@ -585,10 +597,14 @@ was worked out for you, at the grain you asked for, which is rule 1 holding.
 exact digits in a string; `null` where the cell has no value.** So check for `null` first and
 draw `-`, then draw the value as text with `String(v)`, which is exact for both forms and never
 throws. `toLocaleString()` is not the recipe: it rounds a decimal for display and throws on
-`null`, and either one inside your callback costs the whole region. Never put a measure into
-arithmetic with a literal, not even `+ 1` for display: a value float64 cannot hold exactly
-arrives as a string of digits, and `Number()` it only if you accept the rounding. Arithmetic on a
-measure is rule 1 broken whatever its type.
+`null`, and either one inside your callback costs the whole region. **What rule 1 forbids is
+working a number OUT** - combining two values, summing a column, taking a difference or a share -
+and it forbids that whatever the type. **Converting one already-final value's unit for display is
+a different act and is expected of you**: a measure declared `scale: cents` or `scale: points`
+arrives UNDIVIDED with that divisor beside it on `measures`, precisely so your markup divides
+where it draws. Do that, and nothing else: never `+ 1`, never a literal that changes what the
+number is. A value the runtime could not hand over as a Number arrives as a string of digits, so
+shift its decimal point rather than dividing; `Number()` it only if you accept the rounding.
 
 **A `ratio` measure you declared arrives on each row under its own key, worked out by the runtime
 from its two operands**: a number, the float64 quotient of the two, when both operands are values
@@ -841,22 +857,27 @@ publishing:
    and on a personal dashboard whose data is kept with Dashies the publish itself starts one,
    so that answer right after a publish is the normal case. It is not a failure and not a reason
    to call again: the run it points you to is the one to poll.
-3. **Poll `get_refresh_status`** and read `phase`, which is the verdict - the rest of the response
-   is the evidence behind it. `updating` means a refresh is in flight, and the sentence under the
-   phase says since when; a refresh you asked for shows there the moment it is accepted. The
-   signal that the numbers are live is `last_successful_run` moving to a later value than the one
-   you read before asking, with `phase` at `up_to_date`; that is the one comparand correct on a
-   first publish and on a republish alike. **Read the sentence under the phase, not only the
-   word.** An `up_to_date` whose sentence says the last refresh "ran an OLDER version" is
-   describing the run from before your republish, and the run line marks it `SUPERSEDED`: ask for
-   another refresh and keep polling until the newest run is current. An answer that has not moved
-   between polls is the run still going, not a stuck queue: keep polling, and call it failed only
-   when `phase` says `failed`.
-   **Wait in the foreground between polls.** A sleep sent to the background returns at once, so
-   the next poll lands a moment later and reads the same answer, and a run that has not moved
-   between two such polls looks stuck when nothing is wrong. Block, then poll. **And never report
-   a duration you did not measure**: the run's start time is already in that sentence, so a wait
-   that feels long is a reason to read it rather than to narrate one. Measured once, on a chain
+3. **Poll `get_refresh_status` with `wait_seconds: 45`** and read `phase`, which is the verdict -
+   the rest of the response is the evidence behind it. `updating` means a refresh is in flight, and
+   the sentence under the phase says since when; a refresh you asked for shows there the moment it
+   is accepted. The signal that the numbers are live is `last_successful_run` moving to a later
+   value than the one you read before asking, with `phase` at `up_to_date`; that is the one
+   comparand correct on a first publish and on a republish alike. **Read the sentence under the
+   phase, not only the word.** An `up_to_date` whose sentence says the last refresh "ran an OLDER
+   version" is describing the run from before your republish, and the run line marks it
+   `SUPERSEDED`: ask for another refresh and keep polling until the newest run is current. An
+   answer that has not moved between polls is the run still going, not a stuck queue: keep
+   polling, and call it failed only when `phase` says `failed`.
+   **The wait is inside the tool call, and it is the only wait that waits.** With
+   `wait_seconds: 45` the call holds itself open while a refresh is in flight and returns the
+   moment the refresh finishes or when the budget runs out, saying which in `wait_outcome` and
+   how long it held in `waited_ms`. While it still reports `updating`, call it again with
+   `wait_seconds: 45`. Never `sleep` between polls, never wait in the background, and never end
+   your turn while a refresh you triggered is in flight: your CLI blocks a foreground sleep and
+   a background one returns at once, so either hands the user a dashboard that is not ready.
+   **And never report a duration you did not measure**: if you say how long it took, quote
+   `waited_ms`; the run's start time is already in the sentence under the phase, so a wait that
+   feels long is a reason to read it rather than to narrate one. Measured once, on a chain
    of three datasets totalling about a million rows: each run landed in about two minutes. A wait
    of that length is not a stall. That figure is for your own expectation; item 1 still governs
    what you tell the user.
@@ -1059,6 +1080,7 @@ Load the one you need for the step you are on; do not front-load them.
 |---|---|---|
 | `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
 | `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/charts.md` | Copy-paste inline-SVG chart recipes for a page you write: a shared stylesheet and helpers, then a KPI card with a delta, horizontal and vertical bars, a line over time, a stacked bar and a compact table, each drawn from what `dashies.data` hands you | Step 4, when you write the markup |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /

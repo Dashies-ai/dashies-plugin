@@ -195,6 +195,18 @@ way, so the refusal comes at publish rather than at validation.**
   `data-dash` binding is handed the raw value. A `data-group` binding, and a table binding that
   names no columns, each draw every measure of their dataset, so either one is enough.
 
+**A worked line, because the rule "the browser draws, it never computes" is easy to over-read
+here.** A `percent` measure declared `scale: fraction` arrives as `0.42`; drawing it as `42%` is
+presentation and allowed - it is what the managed tile's own formatter does (`Intl.NumberFormat`
+with `style: 'percent'` multiplies by 100 on the way to the string), and dividing a `scale: 100`
+value where you draw it is the same step in the other direction. What the rule forbids is a
+number worked out of two values: `r.discount / r.revenue` is a `ratio` you declare, `r.a + r.b` a
+measure you declare, and a rollup is `by`. One caveat, about exactness rather than arithmetic: a
+value that arrived as its exact digits in a string is one the runtime could not hand over as a
+Number, so draw those digits as they came (and where such a value carries a `scale`, shift its
+decimal point rather than dividing, which would round it). `references/charts.md` carries a `text()` helper that does this from the
+`format` and `scale` on `ds.measures`.
+
 **Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind` always
 reaches the tile (a `percent` measure renders as a percent, a `count` as an integer), but
 `decimals` currently rides the dashboard's CURRENCY descriptor: it is emitted only as an override
@@ -1052,8 +1064,10 @@ invented path - which is why the rule is to declare rather than to type.
 ### The shape your script is handed
 
 `dashies.data` takes a function, and an optional options object, and calls the function with the
-datasets your markup is entitled to, keyed by name: every dataset for a `look` body, the `reads`
-list for a `custom` tile. It calls it again whenever any of their state changes, so a filter change
+datasets THIS CALL ASKED FOR, keyed by name. What your markup is entitled to is the CEILING on what
+a call may ask for - every dataset for a `look` body, the `reads` list for a `custom` tile - and the
+options object is how a call asks for less: name any dataset and you are handed those and no
+others. It calls it again whenever any of the state it asked for changes, so a filter change
 reaches your page as `ready`, then `loading`, then `ready` - whether a managed control, a shared
 link or your own `dashies.filter` call caused it. On a warehouse dashboard the numbers are worked
 out by Dashies when someone opens the page; on the sample connection they travel inside it; your
@@ -1064,9 +1078,14 @@ dashies.data(function (datasets, page) { /* draw */ }, { main: { by: ['month'] }
 ```
 
 The options object is keyed by dataset name, and the one key it carries today is `by`: a subset
-of that dataset's declared dimension keys. A dataset you do not name arrives at its declared grain.
-The function's own second argument, `page`, carries one field, `filters`: the page's whole filter
-state, over every dimension any dataset on the page declares.
+of that dataset's declared dimension keys. **Naming a dataset is how you ask for it.** With no
+options, or `{}`, you are handed every dataset your markup may read, each at its declared grain;
+name any dataset and the call asks for exactly the datasets it names, each at its `by` or, where
+that entry has no `by`, at its declared grain. **A dataset you leave out of an options object that
+names others is not fetched at all, and reading it in that callback throws a `TypeError` naming the
+dataset and the fix** - never a quietly different answer. The function's own second argument,
+`page`, carries one field, `filters`: the page's whole filter state, over every dimension any
+dataset on the page declares.
 
 Each dataset is an object carrying these ten fields and no others:
 
@@ -1221,7 +1240,8 @@ dashies.filter({ region: 'EMEA', channel: null });                  // several a
 ```
 
 **`by`.** A subset of that dataset's declared dimension keys, in any order; `grain` comes back in
-declared order, with duplicates removed, so a page can zip it against a row. `rows` are one per
+declared order, with duplicates removed, so a page can zip it against a row. An entry with no `by`
+still asks for that dataset, at its declared grain. `rows` are one per
 combination of those keys, every measure worked out at that grain: on a warehouse dashboard by the
 query service, on the sample connection composed from what the page holds under each measure's
 declared aggregate, and refused - `status: "error"` naming the measure - where that cannot be
@@ -1245,9 +1265,9 @@ merged into ONE call, last writer per dimension, and applied under the same all-
 so one bad key among them drops every queued filter, with one error on the console and no throw.
 An initial view is therefore one call at the top of your script, checked twice as carefully.
 
-**A filter change fetches every dataset again, including one that does not declare the dimension.**
-On a warehouse dashboard that dataset goes `loading` then `ready` with the rows it had, and its
-`filters` does not carry the dimension - which is how a page labels a number honestly: read
+**A filter change fetches every dataset THIS CALL ASKED FOR again, including one that does not
+declare the dimension.** On a warehouse dashboard that dataset goes `loading` then `ready` with the
+rows it had, and its `filters` does not carry the dimension - which is how a page labels a number honestly: read
 `'region' in ds.filters` to say "filtered by region", and its absence to say the filter did not
 reach this number. Do not remember what you asked for and label from that: a shared link changes the
 state without going through your call, and on a tiles page so does a managed control.

@@ -837,11 +837,12 @@ correctness checks and the schedule all still apply, and the data still never en
 these, and the two rules that govern all three. This section is the mechanics.**
 
 **Your script is handed its numbers; it never reads them out of the page and never asks a server
-for them.** One call, `dashies.data`, on every connection, for a `custom` tile and a `look` body
-alike; the shape and the example are under **The shape your script is handed** below. The publish
-report's `Datasets:` sentence and its "publishes with NO data" warning say whether a dataset
-publishes empty and fills in after the first refresh - which your script sees as `status:
-"pending"` - and they no longer decide whether your page can work.
+for them.** Two calls, on every connection, for a `custom` tile and a `look` body alike:
+`dashies.data` subscribes, and `dashies.filter` sets a page filter. The shape and the example are
+under **The shape your script is handed** below, and the two calls' full surface under **Filters
+and a coarser grain**. The publish report's `Datasets:` sentence and its "publishes with NO data"
+warning say whether a dataset publishes empty and fills in after the first refresh - which your
+script sees as `status: "pending"` - and they no longer decide whether your page can work.
 
 ### `theme` - your own CSS over the managed page
 
@@ -890,7 +891,9 @@ the spec did not declare, and it does not change what any dataset computes.
   Measured in a browser under the real serving rules, so do not plan around it failing to run.
 - Your `js` runs inside a function that is handed `mount`, that div, and a `dashies` scoped to the
   datasets named in `reads`. Draw into `mount`; subscribe with `dashies.data` exactly as a `look`
-  body would, and your function is handed those datasets and no others.
+  body would, and your function is handed those datasets and no others. `dashies.filter` from a
+  tile sets the PAGE's filter, exactly as a managed filter tile does: `reads` narrows what a tile
+  may read, not what it may set.
 - `js` is refused if it contains `</script`.
 - It runs BEFORE the runtime boots. Do not look for `window.__dashiesRuntime` and do not read the
   page for numbers; subscribe and wait to be called.
@@ -989,65 +992,108 @@ without it is refused on either, since those would ship frozen.
 
 ### The shape your script is handed
 
-`dashies.data` takes a function and calls it with the datasets your markup is
-entitled to, keyed by name: every dataset for a `look` body, the `reads` list for a `custom` tile.
-It calls it again whenever any of their state changes, so a filter change reaches your page as
-`ready`, then `loading`, then `ready`. On a warehouse dashboard the numbers are worked out by
-Dashies when someone opens the page; on the sample connection they travel inside it; your function
-is handed the same shape either way.
+`dashies.data` takes a function, and an optional options object, and calls the function with the
+datasets your markup is entitled to, keyed by name: every dataset for a `look` body, the `reads`
+list for a `custom` tile. It calls it again whenever any of their state changes, so a filter change
+reaches your page as `ready`, then `loading`, then `ready` - whether a managed control, a shared
+link or your own `dashies.filter` call caused it. On a warehouse dashboard the numbers are worked
+out by Dashies when someone opens the page; on the sample connection they travel inside it; your
+function is handed the same shape either way.
 
-Each dataset is an object carrying these fields:
+```js
+dashies.data(function (datasets, page) { /* draw */ }, { main: { by: ['month'] } });
+```
+
+The options object is keyed by dataset name, and the one key it carries today is `by`: a subset
+of that dataset's declared dimension keys. A dataset you do not name arrives at its declared grain.
+The function's own second argument, `page`, carries one field, `filters`: the page's whole filter
+state, over every dimension any dataset on the page declares.
+
+Each dataset is an object carrying these ten fields and no others:
 
 | Key | Value |
 |---|---|
 | `status` | `"pending"`, `"loading"`, `"ready"` or `"error"` (below). |
-| `rows` | When `ready`, an array of row objects, one per combination of the declared dimensions, each carrying every declared measure, worked out under the page's current filters. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. |
+| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. |
 | `truncated` | `true` when `rows` is not the whole answer. |
-| `dimensions` | `[{ key, type? }]` - `type` is present only when it is `date`. |
-| `measures` | `[{ key, agg, format? }]` - `format` rides here when a `unit` was declared. |
+| `dimensions` | `[{ key, type? }]` - every DECLARED dimension, `type` present only when it is `date`. |
+| `measures` | `[{ key, agg, format?, scale? }]` - `format` rides here when a `unit` was declared, and `scale` beside it where the declared scale asks your markup to divide for display. |
 | `as_of` | When this dataset was last computed. |
 | `error` | `null` unless `status` is `"error"`, and then the reason, in words. |
+| `error_kind` | `null` unless `status` is `"error"`, and then `"refused"` - the service declined this question, so change the question - or `"failed"` - everything else, including the service accepting the question and breaking, where a narrower question fails the same way. |
+| `grain` | The dimension keys `rows` are grouped by, in declared order: the declared keys, or the `by` you asked for. Zip it against a row to read its group. |
+| `filters` | The page filters that APPLIED to this dataset, over the dimensions it declares: a string for one value, an array of strings for a set, `{ from, to }` for a range. A dimension with no filter is ABSENT, never `null`, so `'region' in ds.filters` reads "this number is filtered by region". |
 
 **The four states, and what the page says in each:**
 
-- **`pending`** - never computed. A warehouse dashboard is here on every dataset until its first
-  refresh, which is not imminent. Say "no data yet". Do not spin.
+- **`pending`** - no answer yet, and nothing failed. A dataset is here while Dashies is still
+  extracting it, or re-extracting it, on a dashboard that already has data: the runtime asks
+  again on its own, on a growing interval, so the page recovers with no reload. A dashboard that
+  has never refreshed at all is here on every dataset, and a page opened before its first refresh
+  lands does not fill itself in - it is reloaded once the numbers are there, which is why
+  `SKILL.md` Step 7 has you stay until they are. Say "no data yet". Do not spin, and do not draw
+  an error.
 - **`loading`** - being worked out, including after a filter change. Say so; do not leave the
   previous numbers up as current. The runtime draws its own loading indication over your page by
   default, and reading this state is how you draw one on your own numbers.
 - **`ready`** - draw `rows`.
 - **`error`** - draw `error`. One case to recognise: an answer refused because the grain you draw
-  is too wide. The managed tiles on that dataset stop with it, and the remedy is to bound the
-  dataset's dimensions, or declare fewer of them: the width is the declaration's, not your
-  columns'.
+  is too wide, which arrives with `error_kind: "refused"`. The managed tiles on that dataset stop
+  with it, and the remedy is to subscribe at the grain you draw with `by` so the wide one is never
+  requested, to bound the dataset's dimensions, or to declare fewer of them: the width is what
+  was requested, never which columns you draw.
 
-**Want a different grain? Declare a dataset for it.** `rows` is the declared grain and nothing else;
-adding rows up in the page to reach a coarser one is rule 1 broken, and nothing will ever check the
-number it produces.
+**Want a different grain? Ask for it with `by`.** `rows` are grouped by exactly what you asked for,
+by the same machinery that answers a managed chart; adding rows up in the page to reach a coarser
+grain is rule 1 broken, and nothing will ever check the number it produces. Declaring a second
+dataset over the same records at the coarser grain is the same mistake at publish time: it extracts
+and stores a second copy of those records to precompute rows the runtime produces on demand.
+**Filters and a coarser grain**, below, carries the whole surface.
 
 **The example. It handles every state, sums nothing, asks for nothing, shows the order the three
-elements go in, and reads the dataset from the worked example above at its declared grain, month
-by region:**
+elements go in, and reads the dataset from the worked example above - declared month by region -
+as a month series with a region control:**
 
 ```html
 <script type="application/json" id="dashies-data">{}</script>
 <section id="orders">
-  <h2>Orders by month and region</h2>
+  <h2>Orders by month <span class="scope"></span></h2>
+  <label>Region
+    <select class="region">
+      <option value="">All regions</option>
+      <option>AMER</option><option>EMEA</option><option>APAC</option>
+    </select>
+  </label>
   <p class="state" hidden></p>
   <table>
-    <thead><tr><th>Month</th><th>Region</th><th class="num">Orders</th></tr></thead>
+    <thead><tr><th>Month</th><th class="num">Orders</th></tr></thead>
     <tbody></tbody>
   </table>
   <p class="cut" hidden>Showing part of the answer.</p>
 </section>
 <script data-dashies-runtime></script>
 <script>
-dashies.data(function (datasets) {
+var root = document.getElementById('orders');
+var select = root.querySelector('.region');
+select.addEventListener('change', function () {
+  // Set the page filter; the runtime fetches again and calls the function below again.
+  dashies.filter('region', select.value === '' ? null : select.value);
+});
+
+dashies.data(function (datasets, page) {
   var ds = datasets.main;
-  var root = document.getElementById('orders');
   var state = root.querySelector('.state');
   var body = root.querySelector('tbody');
   var cut = root.querySelector('.cut');
+  var scope = root.querySelector('.scope');
+
+  // The control reads the PAGE state, so it is right after a reload from a shared link.
+  var region = typeof page.filters.region === 'string' ? page.filters.region : '';
+  if (select.value !== region) select.value = region;
+  // The label reads what reached THIS dataset, so it cannot claim a filter that did not apply.
+  scope.textContent = 'region' in ds.filters
+    ? '(' + [].concat(ds.filters.region).join(', ') + ')'
+    : '(all regions)';
 
   body.innerHTML = '';
   if (ds.status !== 'ready') {
@@ -1064,31 +1110,98 @@ dashies.data(function (datasets) {
   cut.hidden = !ds.truncated;
   ds.rows.forEach(function (row) {
     var tr = document.createElement('tr');
-    [row.month, row.region, row.orders == null ? '-' : String(row.orders)]
-      .forEach(function (text, i) {
-        var td = document.createElement('td');
-        if (i === 2) td.className = 'num';
-        td.textContent = text;
-        tr.appendChild(td);
-      });
+    [row.month, row.orders == null ? '-' : String(row.orders)].forEach(function (text, i) {
+      var td = document.createElement('td');
+      if (i === 1) td.className = 'num';
+      td.textContent = text;
+      tr.appendChild(td);
+    });
     body.appendChild(tr);
   });
-});
+}, { main: { by: ['month'] } });   // one row per month; the regions are rolled up FOR you
 </script>
 ```
 
-Four things in it are load-bearing. **The data block comes first**, above the script that calls
-`dashies.data`; publish fills it in, so `{}` is all you write. **The marker is there**, so the
-function is called at all.
-**Every branch other than `ready` writes a sentence to the page and draws nothing**, so a viewer
-never sees a number that is not the current answer. **Nothing is added up**: `orders` is drawn as
-it arrived, through `String()` after the `null` check that renders `-` rather than 0. A measure
-arrives as a number when a float64 holds it exactly and otherwise as its exact digits in a
-string, so `String()` is exact for both and a value like `"1234567890123456789"` is deliberate
-rather than a bug. `toLocaleString()` is not the recipe: it rounds a decimal for display and
-throws on `null`, and a throw inside the callback blanks the whole region. `Number()` it only if
-you accept the rounding, and never put a measure into arithmetic with a literal, which is rule 1
-broken whatever its type.
+Everything load-bearing in it, in order. **The data block comes first**, above the script that
+calls `dashies.data`; publish fills it in, so `{}` is all you write. **The marker is there**, so
+the function is called at all. **The month series is asked for with `by`**, so the runtime hands
+over one row per month and the page adds nothing up across regions. **The control sets the
+filter and reads it back from `page.filters`**, so a shared link opens on the view it names and
+the select agrees with it; its options are the dimension's declared `domains`, written into the
+markup, because a subscription at `by: ['region']` would itself be filtered once a region is
+chosen and the menu would collapse to that one value. **The label reads `ds.filters`**, so it can
+never claim a filter that did not reach the number. **Every branch other than `ready` writes a
+sentence to the page and draws nothing**, so a viewer never sees a number that is not the current
+answer. **Nothing is added up**: `orders` is drawn as it arrived, through `String()` after the
+`null` check that renders `-` rather than 0. A measure arrives as a number when a float64 holds
+it exactly and otherwise as its exact digits in a string, so `String()` is exact for both and a
+value like `"1234567890123456789"` is deliberate rather than a bug. `toLocaleString()` is not the
+recipe: it rounds a decimal for display and throws on `null`, and a throw inside the callback
+blanks the whole region. `Number()` it only if you accept the rounding, and never put a measure
+into arithmetic with a literal, which is rule 1 broken whatever its type.
+
+### Filters and a coarser grain
+
+Two things a page used to have no sanctioned way to do, and now does, through the same machinery
+that answers a managed filter tile and a managed chart. Neither adds a request your spec could not
+already cause: a filter names a declared dimension and a value, and `by` names a subset of
+declared dimensions. There is still no way to name a measure, a dataset or a query the spec did
+not declare.
+
+```js
+// A coarser grain, per dataset, on the subscription. [] is the grand total.
+dashies.data(function (datasets, page) { /* ... */ }, { main: { by: ['month'] } });
+
+// The page filter on a declared dimension. Returns nothing; the runtime fetches again and
+// calls every subscriber again.
+dashies.filter('region', 'EMEA');                                   // exactly this value
+dashies.filter('region', ['EMEA', 'APAC']);                         // any of these
+dashies.filter('month', { from: '2026-01-01', to: '2026-06-30' });  // inclusive; date dimensions only
+dashies.filter('region', null);                                     // clear
+dashies.filter({ region: 'EMEA', channel: null });                  // several at once, one re-render
+```
+
+**`by`.** A subset of that dataset's declared dimension keys, in any order; `grain` comes back in
+declared order, with duplicates removed, so a page can zip it against a row. `rows` are one per
+combination of those keys, every measure worked out at that grain: on a warehouse dashboard by the
+query service, on the sample connection composed from what the page holds under each measure's
+declared aggregate, and refused - `status: "error"` naming the measure - where that cannot be
+exact. One subscription carries one grain per dataset. A page that wants two grains of one dataset
+subscribes twice; a page that wants two aggregates of one column declares two measures, because
+`by` carries every declared measure at its declared aggregate and no subset. A `by` naming a
+dimension the dataset does not declare is `status: "error"` on that dataset for that subscription,
+for good, naming the declared dimensions; there is no silent fall-back to the declared grain,
+because a wrong-shaped answer drawn as a right one is the failure this surface exists to remove.
+
+**`dashies.filter`.** One dimension and a value, or one object of several, which applies all of
+them or none. A value is a string, an array of strings, `{ from, to }` on a `date` dimension, or
+`null` to clear. It sets the same state a managed filter control sets, and the value is written to
+the URL hash by the same code, so a shared link opens on the same view. Setting a value equal to
+the current one does nothing. A call naming a dimension no dataset on the page declares, a range
+on a dimension that is not a `date`, a set larger than a shared link can carry (the refusal names
+the cap), or a single `date` value containing `..` throws a `TypeError` at the call site once the
+page has booted, and changes nothing. The same call made in your script's own top-level run,
+before the runtime has booted, is queued and applied at boot. Every call queued that way is
+merged into ONE call, last writer per dimension, and applied under the same all-or-none rule -
+so one bad key among them drops every queued filter, with one error on the console and no throw.
+An initial view is therefore one call at the top of your script, checked twice as carefully.
+
+**A filter change fetches every dataset again, including one that does not declare the dimension.**
+On a warehouse dashboard that dataset goes `loading` then `ready` with the rows it had, and its
+`filters` does not carry the dimension - which is how a page labels a number honestly: read
+`'region' in ds.filters` to say "filtered by region", and its absence to say the filter did not
+reach this number. Do not remember what you asked for and label from that: a shared link changes the
+state without going through your call, and on a tiles page so does a managed control.
+
+**`page.filters` is for drawing controls.** It carries the whole page state on every delivery, so
+a control drawn inside the callback is right after a reload from a shared link and after every
+change from anywhere. There is no synchronous read of the filter state: before boot it could only
+lie, and after boot the callback already has it.
+
+**Never duplicate records to precompute a rollup or a filter state.** `SKILL.md` carries the
+measured instance under "How your script gets its numbers". A rollup is `by`; a filter state is
+`dashies.filter`; a sentinel value per filter state and a dataset per grain are the same mistake
+in two shapes, and both are paid at extraction as well as at view time.
 
 ### Reading the data block directly
 

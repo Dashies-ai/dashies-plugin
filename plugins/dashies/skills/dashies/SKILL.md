@@ -50,14 +50,14 @@ refresh, or hand a user a file you put together yourself. If you find yourself d
 have left this path.
 
 **Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
-hand-written tile, or the whole page body, and all three stay on this path with every check and
-the schedule intact, on every connection. **A tile or a body you write is handed its numbers by
-the runtime**, through one call your script makes, on a warehouse dashboard exactly as on the
-sample connection. **What the user asked for decides which you reach for, and if they have not
-said, you ask and wait.** Any word about how it should LOOK - a layout, sections, colours, a dark
-background, typography, a brand, a logo, "beautiful", "like our site" - is an instruction to
-design the page and write it, and doing that is the product working rather than an escape hatch.
-The word "html" is the same instruction, and it is not a question to ask back. Asked only for the
+hand-written tile, or the whole page body, and all three stay on this path with every check and the
+schedule intact, on every connection. **A tile or a body you write is handed its numbers by the
+runtime**, through one call your script makes (`dashies.data`), on a warehouse dashboard exactly as
+on the sample connection. **What the user asked for decides which you reach for, and if they have
+not said, you ask and wait.** Any word about how it should LOOK - a layout, sections, colours, a
+dark background, typography, a brand, a logo, "beautiful", "like our site" - is an instruction to
+design the page and write it, and doing that is the product working rather than an escape hatch. The
+word "html" is the same instruction, and it is not a question to ask back. Asked only for the
 numbers and nothing at all about how they should look, ask before you choose - and recommend the
 page you design, saying that managed tiles are the option without design. A `tiles` layout costs
 twenty lines, and it is theirs to take rather than yours to assume. "When you write the markup
@@ -460,11 +460,11 @@ without re-sending its markup. It must name the slug you are publishing to, and
 **1. All calculation is server-side. The browser draws; it never computes.** Your JavaScript may
 render, lay out, sort what it was handed, and drive controls. It must not sum, average, divide or
 otherwise work out a number from the values it was given - not even to roll them up to a coarser
-grain, which is a dataset you declare instead. Every check this skill spends its
-length on - the aggregate that has to match its column, the fan-out cross-check, the
-disagreeing-totals warning - is applied to the SQL. A number worked out in the browser has been
-through none of them, and nothing will ever check it again. Declare it as a measure and let the
-statement compute it.
+grain, which you ask the runtime for instead (`by`, under "How your script gets its numbers").
+Every check this skill spends its length on - the aggregate that has to match its column, the
+fan-out cross-check, the disagreeing-totals warning - is applied to the SQL. A number worked out
+in the browser has been through none of them, and nothing will ever check it again. Declare it as
+a measure and let the statement compute it.
 
 **2. Your JavaScript never calls out to a server. Not ours, not the warehouse, not anyone's.**
 It draws what the runtime hands it, and every number on the page arrives through the spec's
@@ -474,7 +474,8 @@ number your page fetched for itself has neither property - it was not checked at
 refresh maintains it, and it will go stale or wrong on its own. Declare the data as a dataset and
 let the spec carry it.
 
-**This is a rule, not a performance note.** If a design seems to need a call, the design needs
+**This is a rule, not a performance note.** If a design seems to need a call, what it needs is a
+filter or a coarser grain, which the runtime answers through `dashies.filter` and `by` (below), or
 another dataset.
 
 #### How your script gets its numbers
@@ -483,28 +484,82 @@ another dataset.
 It hands the runtime one function, and the runtime calls it with the datasets your markup is
 entitled to - every dataset for a `look` body, the `reads:` list for a `custom` tile - and calls it
 again whenever their state changes. That holds on a warehouse dashboard exactly as on the sample
-connection. The call is `dashies.data(function (datasets) { ... })` and it is the whole surface:
-there is no way to name a query, a filter, a measure or a dataset the spec did not declare, so a
-script that takes its numbers from this call and nowhere else is keeping rule 2.
+connection. The surface is two calls, and it is closed: there is no way to name a query, a measure
+or a dataset the spec did not declare, nor a grain or a filter outside the dimensions it declares,
+so a script that takes its numbers from these calls and nowhere else is keeping rule 2.
 
-Each dataset carries exactly seven fields - `status`, `rows`, `truncated`, `dimensions`,
-`measures`, `as_of` and `error` - and nothing else. **`status` is one of four words, and `rows` is
-`null` in three of them:**
+```js
+// Subscribe. The runtime calls your function now, and again on every change.
+dashies.data(function (datasets, page) {
+  var ds = datasets.main;    // one entry per dataset your markup is entitled to
+  ds.rows;                   // the answer, or null outside "ready"
+  ds.grain;                  // the dimension keys rows are grouped by
+  ds.filters;                // the page filters that APPLIED to this dataset
+  page.filters;              // the page's whole filter state
+}, { main: { by: ['month'] } });   // optional: a COARSER grain, per dataset
 
-- **`pending`** - never computed. A warehouse dashboard is here on every dataset until its first
-  refresh, which is not imminent. Say "no data yet" on the page. Do not spin.
+// Set, replace or clear the page filter on a declared dimension. It returns nothing;
+// the runtime fetches again and calls your function again.
+dashies.filter('region', 'EMEA');                                   // one value
+dashies.filter('region', ['EMEA', 'APAC']);                         // any of a set
+dashies.filter('month', { from: '2026-01-01', to: '2026-06-30' });  // a range, date dimensions only
+dashies.filter('region', null);                                     // clear
+dashies.filter({ region: 'EMEA', channel: null });                  // several at once, one re-render
+```
+
+**A coarser grain is asked for, never worked out.** `by` names a subset of that dataset's declared
+dimensions, and `rows` come back grouped by exactly those, one row per combination, every measure
+worked out by the same machinery that answers a managed chart. `by: []` is the grand total. A
+dataset the options do not name arrives at its declared grain. One subscription carries one grain
+per dataset; a page that wants a month series AND a region breakdown from one dataset calls
+`dashies.data` twice, and each call is handed its own rows. On a warehouse dashboard the declared
+grain is not requested unless something subscribes at it, so a wide dataset can serve a narrow
+view without paying for its width.
+
+**A filter is set, never simulated.** `dashies.filter` sets the same page state a managed filter
+control sets: it lands in the URL hash, so a shared link opens on the same view, and every dataset
+is fetched again under it. Draw your own controls and have them call `dashies.filter`; never
+filter `rows` in the browser. `ds.filters` says which filters reached that dataset - a dimension
+it does not declare is absent from it, so `'region' in ds.filters` is the honest test for "this
+number is filtered by region", and its absence is the label to draw when a filter did not reach a
+number. `page.filters` is the whole page state, which is what a control reads to draw itself after
+a reload from a shared link. A dimension with no filter is absent, never `null`.
+
+**NEVER DUPLICATE RECORDS TO PRECOMPUTE A ROLLUP OR A FILTER STATE.** Measured on a real served
+dashboard: an agent that believed the browser could neither filter nor roll up emitted every
+record once per combination of a sentinel value per dimension - `cross join unnest([category,
+'All categories'])` and its siblings - and turned 881,000 lines into 8.9 million rows across three
+datasets, then wrote its own client-side filter controls over them. Every one of those rows was a
+copy the runtime would have produced on demand, and every one was extracted, stored and shipped.
+Declare the record grain once. A rollup is `by`; a filter state is `dashies.filter`; a sentinel
+value per filter state and a dataset per grain are the same mistake in two shapes.
+
+Each dataset carries exactly ten fields - `status`, `rows`, `truncated`, `dimensions`, `measures`,
+`as_of`, `error`, `error_kind`, `grain` and `filters` - and nothing else. **`status` is one of
+four words, and `rows` is `null` in three of them:**
+
+- **`pending`** - no answer yet, and nothing failed. A dataset is here while Dashies is still
+  extracting it, or re-extracting it, on a dashboard that already has data: the runtime asks
+  again on its own, on a growing interval, so the page recovers with no reload. A dashboard that
+  has never refreshed at all is here on every dataset, and a page opened before its first refresh
+  lands does not fill itself in - it is reloaded once the numbers are there, which is why Step 7
+  has you stay until they are. Say "no data yet" on the page. Do not spin, and do not draw an
+  error.
 - **`loading`** - being worked out now, including after a filter change. Say so, rather than
   leaving the previous numbers up as if they were current: a filter change on a warehouse
   dashboard takes seconds, and a page that shows nothing happening during them reads as stuck. The
   runtime shows a loading state over your page by default; reading `status` is how you put one on
   your own numbers.
-- **`ready`** - `rows` is the answer: one row per combination of the dataset's declared
-  dimensions, each carrying every declared measure, worked out under the page's current filters.
-- **`error`** - `error` says why. Draw the message, not the previous rows.
+- **`ready`** - `rows` is the answer: one row per combination of the dimensions in `grain`, each
+  carrying every declared measure, worked out under the filters in `filters`.
+- **`error`** - `error` says why, and `error_kind` says which kind: `refused` is the service
+  declining the question it was asked, so change the question; `failed` is everything else,
+  including the service breaking on a question it accepted, where a narrower question fails the
+  same way. Draw the message, not the previous rows.
 
 **`rows` is `null` outside `ready`, never an empty array**, because a script that sums an empty
 array draws a confident zero. **Branch on `status`; never sum what arrives.** Every value in `rows`
-was worked out by the statement, which is rule 1 holding; a coarser grain is another dataset.
+was worked out for you, at the grain you asked for, which is rule 1 holding.
 
 **A measure arrives as a JavaScript number when a float64 holds it exactly, and otherwise as its
 exact digits in a string; `null` where the cell has no value.** So check for `null` first and
@@ -515,15 +570,22 @@ arithmetic with a literal, not even `+ 1` for display: a value float64 cannot ho
 arrives as a string of digits, and `Number()` it only if you accept the rounding. Arithmetic on a
 measure is rule 1 broken whatever its type.
 
+**Every refusal is at the declared boundary, and it is loud.** A `by` naming a dimension the
+dataset does not declare is `status: "error"` on that dataset for that subscription, naming the
+declared dimensions, and it stays that way: there is no silent fall-back to the declared grain. A
+`dashies.filter` naming a dimension no dataset on the page declares, a range on a dimension that
+is not a `date`, or a set larger than a shared link can carry throws a `TypeError` at the call
+site once the page has booted and changes nothing; a call that names several dimensions applies
+all of them or none.
+
 **When the grain you draw is too wide for one answer, the page reports `status: "error"` naming
-the refusal, and the managed tiles on that dataset stop with it** - a request is answered or
-refused as a whole, so a mixed page fails closed rather than drawing some tiles beside an empty
-region of yours. **The remedy is yours: bound the dimensions that dataset declares, with `domains`
-or `buckets`, and if the page still reports that the grain is too wide, declare fewer of them.**
-`rows` is the declared grain, so the width is decided by the declaration and not by which columns
-you draw; a narrower grain is a narrower dataset. `truncated` is a field a
-producer may set when `rows` is not the whole answer; when it is `true`, say so on the page rather
-than drawing a complete picture.
+the refusal, with `error_kind: "refused"`, and the managed tiles on that dataset stop with it** -
+a request is answered or refused as a whole, so a mixed page fails closed rather than drawing some
+tiles beside an empty region of yours. **The remedy is yours: subscribe at the grain you actually
+draw with `by`, so the wide one is never requested; bound the dimensions that dataset declares,
+with `domains` or `buckets`; and if the page still reports that the grain is too wide, declare
+fewer of them.** `truncated` is a field a producer may set when `rows` is not the whole answer;
+when it is `true`, say so on the page rather than drawing a complete picture.
 
 **A page that draws its own markup carries `<script data-dashies-runtime></script>`.** That marker
 is what calls your function; without it nothing does, on any connection. A `tiles` page gets it
@@ -702,21 +764,36 @@ publishing:
    happen, not how long it takes.
 2. **Ask for it rather than waiting**, where you can: `trigger_refresh` runs it now instead of at
    the next scheduled time. It works on personal and workspace dashboards; a workspace dashboard
-   needs the same seat as republishing it, and a view-only member is refused.
+   needs the same seat as republishing it, and a view-only member is refused. **If a refresh is
+   already in flight, or one finished within the last minute, it says so and starts nothing** -
+   and on a personal dashboard whose data is kept with Dashies the publish itself starts one,
+   so that answer right after a publish is the normal case. It is not a failure and not a reason
+   to call again: the run it points you to is the one to poll.
 3. **Poll `get_refresh_status`** and read `phase`, which is the verdict - the rest of the response
-   is the evidence behind it. The signal that the numbers are live is `last_successful_run`
-   moving; that is the one comparand correct on a first publish and on a republish alike.
-   **A refresh you asked for has no in-flight state to read.** Until the run records, the answer
-   is byte for byte what it was before you asked - `waiting` on a first publish, `up_to_date` with
-   the OLD `last_successful_run` on a republish - and a first extraction on a warehouse dashboard
-   can take a minute or more (for your own expectation; to the user, still say what has to happen
-   and not how long). An answer that has not moved between polls is the run still going, not a
-   stuck queue: keep polling, and call it failed only when `phase` says `failed`.
+   is the evidence behind it. `updating` means a refresh is in flight, and the sentence under the
+   phase says since when; a refresh you asked for shows there the moment it is accepted. The
+   signal that the numbers are live is `last_successful_run` moving to a later value than the one
+   you read before asking, with `phase` at `up_to_date`; that is the one comparand correct on a
+   first publish and on a republish alike. **Read the sentence under the phase, not only the
+   word.** An `up_to_date` whose sentence says the last refresh "ran an OLDER version" is
+   describing the run from before your republish, and the run line marks it `SUPERSEDED`: ask for
+   another refresh and keep polling until the newest run is current. An answer that has not moved
+   between polls is the run still going, not a stuck queue: keep polling, and call it failed only
+   when `phase` says `failed`.
 4. **Then prove the page can actually be read**, with `verify_dashboard({ slug })`.
    `get_refresh_status` says rows were written; this says the query service ANSWERS the
    questions the page will ask. They are not the same claim, and the gap between them has
-   shipped a dead dashboard.
+   shipped a dead dashboard. **If it answers that the first refresh has not landed, or names a
+   dataset that has not been extracted yet, that is this same wait and not an error**: go back
+   to step 3, poll until `last_successful_run` moves, then verify again.
 5. **Report when the numbers are live**, and give the URL again.
+
+**A republish while a refresh is in flight needs nothing special from you.** The server handles
+the overlap. Poll again: if `get_refresh_status` then says the last refresh ran an older version,
+ask for another refresh and keep polling, exactly as above. A `failed` whose run line says the
+dashboard was published again while the refresh was running is the server standing that run down
+for your republish, and a refresh of the new version starts in its place: poll again rather than
+reporting it. The overlap is not a failure.
 
 ### `get_refresh_status` says the data landed. `verify_dashboard` says the page works.
 
@@ -737,10 +814,10 @@ every declared dimension. A dimension no served dataset declares is refused rath
 dropped, so a typo in a filter key is told to you.
 
 **Read the first line and relay it WHOLE.** It reads `Verified "<slug>": <verdict>`, and the
-verdict carries up to four clauses in a fixed order: `N of M plans answered.`, then ONE clause
-listing the plans that did not, by dataset and filter, then a clause for any still reshaping,
-then one for any the time budget never reached. **A verdict that is `N of M plans answered.`
-with nothing after it is the one that means everything worked.**
+verdict opens with `N of M plans answered.` and then carries one clause per kind of plan that did
+not answer: the plans that failed, by dataset and filter; any still reshaping; any not yet
+extracted; any the time budget never reached. **A verdict that is `N of M plans answered.` with
+nothing after it is the one that means everything worked.**
 
 **The errors are NOT on that line.** They come further down, under `Failures, in the tier's own
 words:`, one sentence per failure naming the dataset, the filter, and what the service actually
@@ -749,9 +826,13 @@ loses the thing somebody has to act on. Relaying only the first line tells the u
 plans failed and never tells them why.
 
 **Never tell the user a dashboard is done on a failed plan**, and the statuses are not
-interchangeable. **`reshaping` and `not_run` are not failures at all**, and everything else
-here is:
+interchangeable. **`reshaping`, `not_run` and a plan still waiting on its first extraction are
+not failures at all**, and the rest are:
 
+- **A plan waiting on its first extraction is the first-refresh wait, and needs no action but
+  patience.** The dataset is declared and nothing has failed; the tool reports it apart from a
+  failure, and a page you wrote is handed `status: "pending"` for it. Poll
+  `get_refresh_status` until `last_successful_run` moves, then verify again.
 - **`reshaping` is the NORMAL state during a republish, and needs no action.** The data was
   extracted under the previous spec, the extraction under the new one is already dispatched,
   and the same plan answers once it lands. It is counted apart from both answered and failed,
@@ -851,8 +932,10 @@ never a spec edit - do not change `slug` to rename.
   the default, and "html" is an instruction rather than a question to ask back.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls. It must not work out a number from values it was handed -
-  declare a measure and let the statement compute it. And it takes its numbers from what the
-  runtime hands it, never from a call of its own.
+  declare a measure and let the statement compute it. A coarser grain is asked for with `by` and
+  a filter is set with `dashies.filter`; never roll up or filter in the browser, and never
+  duplicate records with sentinel values to precompute either. And it takes its numbers from what
+  the runtime hands it, never from a call of its own.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
 - **Everything the dashboard carries is visible to everyone who can open it.** Viewers are its
@@ -887,10 +970,10 @@ Load the one you need for the step you are on; do not front-load them.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
-| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` with the example that handles every state), the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /
 `spec_hash` / `spec_edits` / `base_spec_hash`, `get_dashboard_spec`, `derive_dashboard_spec`,
-`set_refresh_schedule`, `trigger_refresh`, `get_refresh_status`, `get_source_config`,
-`update_dashboard` - match the shipped MCP tools.
+`set_refresh_schedule`, `trigger_refresh`, `get_refresh_status`, `verify_dashboard`,
+`get_source_config`, `update_dashboard` - match the shipped MCP tools.

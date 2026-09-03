@@ -356,8 +356,11 @@ forever.
 
 **So before you publish, cross-check.** Take each number the dashboard claims can be added up
 from its parts, sum it across the whole statement, and compare against an independent direct
-aggregate over the source. If they differ, it is double-counting or it is not addable - fix it,
-by restating it as a ratio of two numbers that ARE addable, or by collapsing the join.
+aggregate over the source. When this session has no warehouse tool of its own, run that
+independent aggregate through `explore_data`; its complete-or-refused answer is the oracle, and a
+session with only the Dashies MCP is the normal case rather than a reduced one. If they differ,
+it is double-counting or it is not addable - fix it, by restating it as a ratio of two numbers
+that ARE addable, or by collapsing the join.
 
 **Collapse it to ONE ROW PER UNDERLYING RECORD, never to the grain the dashboard reports at.**
 Both stop the fan-out; only the first survives Step 3's warehouse shape. Reducing the many side
@@ -637,6 +640,17 @@ every number on it is right. Short rules, and each one separates designed from g
   reads as a browser default throws the whole advantage away.
 - **Their brand, not ours.** If the user named a company or a look, derive the palette and the type
   from it; a page that is supposed to be theirs does not ship Dashies' own blue.
+- **A logo the repo already carries is used without being asked.** Before you write the header,
+  look at the repo the session sits in: a `brand/` or `assets/brand/` directory, a `logo*.svg` or
+  `logo*.png` at the root or under `public/`, or a `CLAUDE.md` that names one. If any of those
+  exists, the page uses it - inlined as a `data:` URI in the header beside the title (an SVG, or a
+  small raster, since the body has ceilings), sized as a mark and not a banner, the light or dark
+  variant matching the page's colour scheme (both inlined when the repo carries both, so each
+  scheme shows its own) - and takes its accent colour and its type from the `README.md` beside the
+  mark (`brand/README.md`) when there is one, so the page is set in their palette rather than a
+  guess at it, unless the user named a look of their own. Say in one sentence to the user where
+  the logo came from. When nothing is found, the page carries no mark unless they hand one over or
+  ask you to fetch one: never invent one.
 - **A logo they ask for is theirs, never one you invent.** If they have the file, or hand one over,
   use it. If they say "the logo from our site" or "some logo from the web", fetch it yourself, now,
   while authoring, and use what you fetched, saying in one sentence where it came from. Inline it

@@ -43,10 +43,17 @@ Publish AI-built HTML dashboards to a shareable URL and keep them refreshing on 
 
 ### Claude Code
 
-```text
-/plugin marketplace add https://dashies.ai/marketplace.json
-/plugin install dashies@dashies
+```sh
+claude plugin marketplace add https://dashies.ai/marketplace.json
+claude plugin install dashies@dashies --scope user
 ```
+
+`--scope user` installs Dashies for every project rather than binding it to the
+directory you are in, which is the difference between the `dashies` skill
+existing in your next repository and not. Run these in a shell, then
+`/reload-plugins` in Claude Code or start a new session. Inside Claude Code,
+`/plugin install dashies@dashies` takes no scope flag and asks where to install
+instead - the answer is **Install for you (user scope)**.
 
 ### Codex
 

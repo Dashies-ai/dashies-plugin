@@ -221,6 +221,36 @@ warehouse is unsupported and stopping.
 **Believe the refusal over this page.** The sources it names are read out of the database as the
 refusal is built rather than written into it, so the set can widen without a word here changing.
 
+### How many datasets a dashboard can hold, said before the SQL
+
+**`check_readiness` names the number, in `next_step.text`, on every warehouse branch.** It does
+not depend on the data, the connection or the statements, so it is a fixed property of the PLAN
+and is knowable before a line of SQL is written. Read it and settle the shape of the report first:
+how many datasets, and which of the numbers you were asked for share one.
+
+**On a warehouse connection that is the number of datasets the dashboard may HOLD, full stop**,
+because every dataset there keeps its data with Dashies. There is no cheaper kind of dataset to
+put a small thing in, so a three-row lookup costs exactly what a million-row fact table costs.
+Plan the COUNT first and the size second - how many datasets and how big they are are separate
+questions, and the count is the one that is invisible in the SQL.
+
+**A spec far over the number can be refused twice, with two different numbers, so read the second
+refusal rather than assuming the first was the whole story.** A separate ceiling bounds how many
+datasets a spec may DECLARE at all, and it is checked earlier, so a spec well past it is told that
+number first and told the holding number only after it has been trimmed. Both are real; the
+holding number is the one that decides the design, and `check_readiness` names it before either
+refusal can happen.
+
+**Meeting it at dry run costs the whole authoring pass.** Measured: a session designed four
+datasets, wrote and cross-checked all four statements against the warehouse, validated them, wrote
+a hand-authored page, and learned the number at dry run. The dataset it had to give up was a
+three-row price ladder; no narrowing could ever have cleared it, and folding it into another
+dataset made the dashboard worse. **If the request needs more datasets than the number allows, say
+so before you write SQL** and split the report across more than one dashboard.
+
+**No number is written on this page**, deliberately: the orientation call reports it and the
+refusal quotes it, and a third copy here would go stale against both.
+
 ### The user with no warehouse
 
 **Dashies provides sample data two ways, and `check_readiness` says which one applies. Offer it
@@ -792,12 +822,21 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
 
 ### If a dataset is refused
 
-**Read the refusal's `path` before you read its sentence. The path names the thing to change,
-and it is the only part of a refusal you never have to interpret.**
+**Read the refusal's `path` first. It names the thing to change and it never needs
+interpreting - but it does not always name the CAUSE.** One path, `/datasets/<name>/mode`,
+carries two refusals whose remedies are opposites, so on that one path read the sentence as
+well and take the row it matches. Every other path in the table has exactly one row.
+
+**The table covers the paths this workflow produces, not every path the server can emit**, so a
+path that is not here is not a contradiction. Datasets written the way this skill describes carry
+no `mode` and no `data` key, and the server picks the mode; a spec that does pin those keys can be
+refused at a path with no row. **Believe the refusal either way** - it names its own remedy, and
+the row is only a shortcut for reading it.
 
 | `path` | What is wrong | Whose move |
 |---|---|---|
-| `/datasets/<name>/mode` | The SHAPE of the question. Dashies cannot work out every state its filters can be in ahead of time. | Yours. Bound what it groups by to the values people actually filter by, or shorten the period the dashboard covers, then publish again. |
+| `/datasets/<name>/mode`, saying the dashboard has already spoken for every dataset it can hold | The NUMBER of datasets, not this one's shape. | Yours, and **narrowing does nothing at any size** - the limit is on how many datasets hold data, not on how big one is. Fold it into a dataset that already holds data, drop one the dashboard does not need, or give it a dashboard of its own. |
+| `/datasets/<name>/mode`, saying the filter states cannot be worked out ahead of time | The SHAPE of the question. Dashies cannot work out every state its filters can be in ahead of time. | Yours. Bound what it groups by to the values people actually filter by, or shorten the period the dashboard covers, then publish again. |
 | `/datasets/<name>/measures` | Some of this dataset's NUMBERS cannot be worked out the way this dashboard would need them to be. | Yours, but narrowing does nothing. Ask for those numbers a different way, or drop them. |
 | `/datasets/<name>/sql` | The STATEMENT has already worked some of its numbers out across records. | Yours. Ask for the plain values and let Dashies combine them. |
 | `/source/connection` | The CONNECTION cannot be used for a dashboard of this kind. | **The user's.** Relay it. |
@@ -810,9 +849,13 @@ are to connect a warehouse Dashies can hold data for, or to try the same shape o
 and both are the user's call.
 
 **Read the path rather than the wording.** Two refusals can describe similar-sounding problems and
-want opposite responses; the path separates them and a paraphrase does not. A refusal that names
-particular measures is not asking you to narrow anything, however much it sounds like the first
-row.
+want opposite responses, and a paraphrase never separates them. Only the shared path above needs
+the sentence read as well. A refusal that names particular measures is not asking you to narrow
+anything, however much it sounds like the shape row.
+
+**A count refusal is the one you should never have met**, because the number is knowable before a
+line of SQL exists - see "How many datasets a dashboard can hold" under Step 1. Meeting it here
+means the design was not checked against it.
 
 ### Publishing into a workspace
 

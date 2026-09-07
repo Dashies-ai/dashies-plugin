@@ -1063,9 +1063,16 @@ publishing:
    the next scheduled time. It works on personal and workspace dashboards; a workspace dashboard
    needs the same seat as republishing it, and a view-only member is refused. **If a refresh is
    already in flight, or one finished within the last minute, it says so and starts nothing** -
-   and on a personal dashboard whose data is kept with Dashies the publish itself starts one,
-   so that answer right after a publish is the normal case. It is not a failure and not a reason
-   to call again: the run it points you to is the one to poll.
+   and on a dashboard whose data is kept with Dashies the publish itself starts one, workspace
+   and personal alike, so that answer right after a publish is the normal case. It is not a
+   failure and not a reason to call again: the run it points you to is the one to poll.
+   **The publish receipt already told you whether you are starting a run or joining one.** It
+   carries a `First data:` line: `extracting now` (that run is going, and it is the one to poll),
+   `loaded N rows` (it ran to completion during the publish, so there is no first-refresh wait),
+   `no new extract was started` (a run for this dashboard was already in flight or had just
+   finished moments ago), or `not started yet` (nothing was started; `get_refresh_status` shows
+   the schedule and current state, and **the reason is deliberately not disclosed to you**, so do
+   not go hunting for it and do not guess at one). Read that line before you ask.
 3. **Poll `get_refresh_status` with `wait_seconds: 45`** and read `phase`, which is the verdict -
    the rest of the response is the evidence behind it. `updating` means a refresh is in flight, and
    the sentence under the phase says since when; a refresh you asked for shows there the moment it
@@ -1185,9 +1192,6 @@ tool says so rather than inventing a pass.
 **Handle the poll failing.** A refresh that errors is likelier on a first run than at any later
 moment: a credential that expired between authoring and refreshing, a table that moved. If it
 fails, say what failed and what it points at rather than continuing to poll.
-
-**Nothing in the publish itself starts a refresh for a workspace dashboard**, so for those the
-sequence is publish, then ask.
 
 ---
 

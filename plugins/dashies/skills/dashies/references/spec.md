@@ -1340,16 +1340,39 @@ because a wrong-shaped answer drawn as a right one is the failure this surface e
 
 **`dashies.filter`.** One dimension and a value, or one object of several, which applies all of
 them or none. A value is a string, an array of strings, `{ from, to }` on a `date` dimension, or
-`null` to clear. It sets the same state a managed filter control sets, and the value is written to
-the URL hash by the same code, so a shared link opens on the same view. Setting a value equal to
-the current one does nothing. A call naming a dimension no dataset on the page declares, a range
-on a dimension that is not a `date`, a set larger than a shared link can carry (the refusal names
-the cap), or a single `date` value containing `..` throws a `TypeError` at the call site once the
-page has booted, and changes nothing. The same call made in your script's own top-level run,
-before the runtime has booted, is queued and applied at boot. Every call queued that way is
-merged into ONE call, last writer per dimension, and applied under the same all-or-none rule -
-so one bad key among them drops every queued filter, with one error on the console and no throw.
-An initial view is therefore one call at the top of your script, checked twice as carefully.
+`null` to clear. It sets the same state a managed filter control sets, and **the URL hash carries
+the page's WHOLE filter state whenever that state differs from the page's default view; the page
+rewrites it to a bare URL as soon as the state returns to that default.** So the hash is
+all-or-nothing rather than per dimension: once anything differs, every dimension travels in the
+link, including the ones sitting at your default. A call your script makes before the viewer has
+touched anything is what DECLARES that default, so it moves the yardstick rather than navigating
+away from it; a call made after that is written to the hash exactly as a control's would be. And a
+BARE link is not an unfiltered one: it runs your script again, so your defaults apply to it.
+Setting a value equal to the current one does nothing. A call naming a dimension no dataset on the
+page declares, a range on a dimension that is not a `date`, a set larger than a shared link can
+carry (the refusal names the cap), or a single `date` value containing `..` throws a `TypeError` at
+the call site once the page has booted, and changes nothing. The same call made in your script's
+own top-level run, before the runtime has booted, is queued and applied at boot. Every call queued
+that way is merged into ONE call, last writer per dimension, and applied under the same all-or-none
+rule - so one bad key among them drops every queued filter, with one error on the console and no
+throw.
+
+**An initial view is therefore ONE UNCONDITIONAL call at the top of your script, checked twice as
+carefully. Do not guard it on `location.hash`.** A call queued that way fills only the dimensions
+the URL hash did not carry, so a shared link's own filters win on every dimension it names and your
+defaults land on every dimension it leaves out.
+
+**Only a call QUEUED BEFORE BOOT is read that way.** A call made after boot overrides the hash on
+every dimension it names, exactly as it always did, and **a call from inside a `dashies.data`
+callback is one**, because it runs on the first delivery. If your default can only be computed from
+the numbers, so it has to live in that callback, guard it on `page.filters` - `if
+(!page.filters.region) ...` - so it fills the dimension without overwriting a shared link that
+already named it.
+
+**One residual, worth knowing before you give a dimension a default.** A viewer who CLEARS that
+dimension and shares the link gets your default back when somebody opens it. A cleared dimension
+simply has no entry in the hash, so the link cannot say "no filter here" as distinct from "nothing
+to say about this one", and your call fills it again.
 
 **A filter change fetches every dataset THIS CALL ASKED FOR again, including one that does not
 declare the dimension.** On a warehouse dashboard that dataset goes `loading` then `ready` with the

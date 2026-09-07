@@ -75,7 +75,8 @@ of those two, never both and never neither.
 | `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. Your script is handed its numbers by the runtime on every connection. See **Writing your own markup**. |
 | `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
 | `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
-| `entitlement` | object | Optional, and only alongside a dataset that declares one: `admins: "filtered" \| "unfiltered"`. Absent means `filtered`, and `unfiltered` is accepted and not honoured yet, so an admin is filtered either way today. Declaring it with no dataset-level `entitlement` is refused. See **Row-level security**. |
+| `entitlement` | object | Optional, and only alongside a dataset that declares one: `admins: "filtered" \| "unfiltered"`. Absent means `filtered`, and `unfiltered` exempts admins of the dashboard's own workspace from the filter once the dashboard is published carrying it. Declaring it with no dataset-level `entitlement` is refused. See **Row-level security**. |
+| `row_level_security_removed` | boolean | Optional, and written by hand or not at all: `true` says a per-viewer filter this dashboard used to carry is gone on purpose. A republish that drops the `entitlement` block is refused without it, and declaring it beside an `entitlement` block is refused too. See **Row-level security**. |
 
 `source` (required `connection` plus `schedule`):
 
@@ -883,7 +884,9 @@ A dataset-level `entitlement`:
 
 Both are matched as whole strings, there is no wildcard, and a viewer's value set is the UNION over
 every grant that names them. **An empty union is not an error**: that viewer gets a designed page
-saying they have no access to this dashboard's data, rather than an empty dashboard or an error.
+saying they have no access to this dashboard's data, rather than an empty dashboard or an error. **An
+admin the dashboard has exempted is never in this state**, because "granted nothing" is not a true
+sentence about somebody the dashboard has exempted; they are served every row.
 
 **A second designed page covers the state where the dashboard's own record says it filters and the
 page being served carries no filter for any dataset**, and unlike the one above EVERY viewer gets
@@ -895,14 +898,29 @@ row in the refusals table that closes this section.
 
 The dashboard-level `entitlement` carries one field, `admins`, which is `filtered` or `unfiltered`.
 **Absent means `filtered`**: row-level security applies to everyone including workspace admins, so
-forgetting to write it cannot widen what anybody sees. **`unfiltered` is accepted by the vocabulary
-and nothing honours it yet**, so an admin is filtered today whatever the dashboard declares. A
-dashboard-level block with no dataset-level block is refused; it opts out of a filter that does not
-exist.
+forgetting to write it cannot widen what anybody sees. **`unfiltered` is honoured, and it exempts
+admins of the dashboard's own workspace and nobody else**: a creator who is not an admin, and every
+ordinary member, stay filtered. The role is resolved from the workspace membership rather than from
+anything the page can say, and what the document declares reaches a viewer only once the dashboard
+has been published carrying it, because a refresh does not rewrite that part of what is served. A
+workspace admin can also turn the exemption on or off for one dashboard from the app, which takes
+effect without a publish and wins over what the document says. A dashboard-level block with no
+dataset-level block is refused; it opts out of a filter that does not exist.
 
-**A republish decides afresh whether the dashboard filters.** The block is read off the document
-being published, so a full `spec` republish that omits it silently stops the filtering, with no
-refusal. `spec_edits` cannot do that, because it leaves what it does not name alone.
+**A republish cannot stop the filtering by accident.** The block is read off the document being
+published, so a full `spec` republish that omits it would leave every row served to every viewer,
+and it is refused before anything is written, at the path `row_level_security_removed`. Stopping on
+purpose is that key, written by hand at the top level as `row_level_security_removed: true`;
+`derive_dashboard_spec` never emits it, so it is in a document only because an author put it there.
+**Say what it does before writing it and let the user decide**: it stops the filter for EVERY
+viewer, where the `admins: unfiltered` opt-out stops it only for workspace admins, so it is a change
+to who can see the data rather than a way past a refusal. Declaring it beside an `entitlement`
+block is refused, which keeps one declaration to one removal rather than letting it sit in the
+document authorising the next. **The same refusal covers the case
+where Dashies could not read whether the dashboard filters**, and both wordings name the removal
+key, so the sentence is what tells them apart: on that one, publish again rather than declaring a
+removal nobody has established is a removal. `spec_edits` meets none of this, because it leaves what
+it does not name alone.
 
 **Every key value in the extracted data must be granted to somebody or named in `hidden_values`.**
 A refresh that finds one that is neither STOPS: it publishes nothing, the dashboard keeps the
@@ -928,6 +946,9 @@ appears on more than one row, read the sentence as well as the path:
 | `/datasets/<name>/entitlement` | The dataset declares another `mode`, or none. Write `mode: resolved`. |
 | `entitlement` | The same Enterprise refusal, where the only block is the dashboard-level one. It is checked first, so it is what a root-only block on a space without the capability reports. |
 | `entitlement` | A dashboard-level block with no dataset-level one. |
+| `row_level_security_removed` | This dashboard filters its rows per viewer today and the document declares no `entitlement` block. Restoring the block keeps the filter and needs nobody's permission; declaring the removal stops it for EVERY viewer, so say what it does and let the user decide. |
+| `row_level_security_removed` | Dashies could not read whether the dashboard filters, so the publish is refused rather than admitted. Publish again; do not declare the removal to get past it. |
+| `row_level_security_removed` | The document declares an `entitlement` block AND the removal, which cannot both be true of one dashboard. Delete one of them. |
 
 ## Writing your own markup
 

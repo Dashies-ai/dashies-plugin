@@ -152,6 +152,12 @@ person or secret is recoverable by anyone in that audience**, and watch small-ce
 could re-identify someone. A value nobody should see must not be in the statement's output at
 all.
 
+**Row-level security narrows the audience per ROW and does not change the paragraph above.** Where
+`check_readiness` says it is available, a dataset can declare an `entitlement` block and each
+viewer is served only the rows whose key value they were granted (`SKILL.md` Step 4). It filters by
+one declared column: every other column of a row a viewer may see reaches them in full, and a
+sensitive column is therefore still a statement-shaping problem rather than a grants problem.
+
 ---
 
 ## Write the statement, then validate it

@@ -75,6 +75,7 @@ of those two, never both and never neither.
 | `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. Your script is handed its numbers by the runtime on every connection. See **Writing your own markup**. |
 | `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
 | `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
+| `entitlement` | object | Optional, and only alongside a dataset that declares one: `admins: "filtered" \| "unfiltered"`. Absent means `filtered`, and `unfiltered` is accepted and not honoured yet, so an admin is filtered either way today. Declaring it with no dataset-level `entitlement` is refused. See **Row-level security**. |
 
 `source` (required `connection` plus `schedule`):
 
@@ -88,11 +89,15 @@ of those two, never both and never neither.
 
 Required: `sql`, `dimensions`, `measures`. **Nothing else is yours to decide** - how the data is
 prepared and where it is kept is chosen by the server from exactly these three plus the source,
-and the publish report tells you what it chose for each dataset and why.
+and the publish report tells you what it chose for each dataset and why. **Row-level security is
+the one exception**, and it is an exception in both directions: a dataset that filters its rows per
+viewer declares an `entitlement` block, and then it must also declare `mode: resolved`, which is
+the only `mode` this document ever asks you to write. See **Row-level security**.
 
 | Key | Type | Notes |
 |---|---|---|
 | `sql` | string (8-100000) | The single read-only `SELECT` from Step 3, already validated. |
+| `entitlement` | object | Optional. Which column decides who may see a row, and who is granted which values. Requires `mode: resolved` on the same dataset. See **Row-level security**. |
 | `dimensions` | map, 1-12 | Each key `^[a-z][a-z0-9_]{0,63}$` is an output column of `sql`. Value: `{ type?, label?, domains?, buckets?, intent? }`. |
 | `measures` | map, 1-24 | Each key `^[a-z][a-z0-9_]{0,63}$` is a measure. Value: an **agg measure** or a **ratio measure** (below). |
 | `intent` | string (<=2000) | Optional semantic hint for this dataset. |
@@ -189,8 +194,10 @@ way, so the refusal comes at publish rather than at validation.**
   `scale: 100` beside its `format`, so you divide where you draw it. Two cases are still refused
   there. **A dataset in any OTHER mode**, because its data block carries no format and no
   divisor, so your callback would get the 100x value with nothing beside it saying so. You do
-  not choose the mode and you do not have to work out which one you got: the publish report says
-  what the server chose for each dataset, and the refusal names it. **And a
+  not choose the mode and you do not have to work out which one you got, with one exception: a
+  dataset that declares an `entitlement` declares `mode: resolved` itself (see **Row-level
+  security**), and `resolved` is one of the three modes named above. Otherwise the publish report
+  says what the server chose for each dataset, and the refusal names it. **And a
   measure your own markup draws through a managed binding** rather than reading it yourself: a
   `data-dash` binding is handed the raw value. A `data-group` binding, and a table binding that
   names no columns, each draw every measure of their dataset, so either one is enough.
@@ -842,6 +849,85 @@ field somebody filters on has to be in the `GROUP BY`. Same spec vocabulary, dif
 
 Note what is NOT in it: nothing about how the data will be prepared or where it will be kept.
 The publish report says what the server chose for `main` and why.
+
+## Row-level security
+
+**Each viewer is served only the rows they were granted.** It is available on a workspace dashboard
+on an Enterprise plan, reading a warehouse, and `check_readiness`'s `row_level_security` field is
+what answers whether this space has it. **Ask the user about it once when that field says available,
+and never raise it when it does not** - `SKILL.md` Step 1 carries that rule and it is the load
+bearing half.
+
+The filter is applied where the data is queried rather than in the page, on every tile and on every
+number a page you wrote asks for. So a dataset that declares an entitlement declares `mode:
+resolved` beside it, and a page you wrote is handed the viewer's own rows through `dashies.data`
+with nothing further to do.
+
+A dataset-level `entitlement`:
+
+| Field | Type | Required | Bounds and notes |
+|---|---|---|---|
+| `key` | string | yes | An output column of THIS dataset's `sql`, matching `^[a-z][a-z0-9_]{0,63}$`. Its value decides who may see the row. |
+| `grants` | object | yes | Exactly one of `sql` or `list`. |
+| `grants.sql` | string | one of | 8 to 100,000 characters. A read-only `SELECT` run on the same connection as this dataset's own SQL, returning EXACTLY TWO columns, identity first and key value second, read by POSITION rather than by name. One row per pair. A third column is refused at refresh; the two in the wrong order are not, and leave every viewer unmapped. |
+| `grants.list` | array | one of | 1 to 500 entries of `{ identity, values }`. `identity` is 1 to 320 characters; `values` is 1 to 200 unique key values (string, number or boolean). |
+| `hidden_values` | array | no | 1 to 200 unique key values hidden from everyone, the author included. **Write them as strings**: the schema admits numbers and booleans here and the refresh reader accepts only strings and `null`, so a number is a valid publish that stops the next refresh. `null` is how you say a NULL key is deliberate. |
+| `grain` | string | no | `partition` or `row`. **Leave it out** and the server picks the layout from the key's measured cardinality and records what it chose. A declared `partition` is narrowed to `row`, and recorded as narrowed, wherever one folder per value would disclose those values through the object path. |
+
+**An identity is one of exactly two forms, and the set is closed:**
+
+| Form | Written as | Matched against |
+|---|---|---|
+| A person | an email address | the viewer's own signed-in email, case-insensitively |
+| A Dashies team | `team:<team name>` | the teams that viewer belongs to, case-insensitively |
+
+Both are matched as whole strings, there is no wildcard, and a viewer's value set is the UNION over
+every grant that names them. **An empty union is not an error**: that viewer gets a designed page
+saying they have no access to this dashboard's data, rather than an empty dashboard or an error.
+
+**A second designed page covers the state where the dashboard's own record says it filters and the
+page being served carries no filter for any dataset**, and unlike the one above EVERY viewer gets
+it: it says the dashboard is being set up to show each person their own rows, nothing is served
+rather than everything, and it is cleared by publishing the dashboard again. A refresh does not
+clear it, because a refresh does not rewrite that part of what is served. Its code is
+`entitlement_awaiting_publish`, and it is a viewer state rather than a publish refusal, so it has no
+row in the refusals table that closes this section.
+
+The dashboard-level `entitlement` carries one field, `admins`, which is `filtered` or `unfiltered`.
+**Absent means `filtered`**: row-level security applies to everyone including workspace admins, so
+forgetting to write it cannot widen what anybody sees. **`unfiltered` is accepted by the vocabulary
+and nothing honours it yet**, so an admin is filtered today whatever the dashboard declares. A
+dashboard-level block with no dataset-level block is refused; it opts out of a filter that does not
+exist.
+
+**A republish decides afresh whether the dashboard filters.** The block is read off the document
+being published, so a full `spec` republish that omits it silently stops the filtering, with no
+refusal. `spec_edits` cannot do that, because it leaves what it does not name alone.
+
+**Every key value in the extracted data must be granted to somebody or named in `hidden_values`.**
+A refresh that finds one that is neither STOPS: it publishes nothing, the dashboard keeps the
+numbers from its last successful refresh, and Dashies emails the dashboard's author and every admin
+of its workspace at once, naming the first few values plus a count of the rest, and how many rows
+they account for; the complete list is on the run detail. There is no
+override and no margin. Grant them or hide them, then refresh. A key whose values appear on their
+own is an argument for `grants.sql` over an inline `list`.
+
+**Cardinality is an advisory, never a refusal.** Pass `entitlement_key` to `validate_cube_sql` and
+it reports when that column already holds more distinct values than the threshold at which Dashies
+stops storing one folder per value and stores the rows sorted by the key instead. Both are correct;
+the second is slower for one viewer's query. The count it reports is a lower bound over the sample,
+and the real one is measured on the first refresh. **No number is written here**: the advisory
+names the threshold when it fires, and a second copy of a constant is a copy that goes stale.
+
+The refusals this block can raise, each returned with a `path` (`SKILL.md` Step 6). Where a path
+appears on more than one row, read the sentence as well as the path:
+
+| `path` | What it means |
+|---|---|
+| `/datasets/<name>/entitlement` | Row-level security is an Enterprise capability, and this space is not on it, or the dashboard is personal and has no workspace plan to hold it. |
+| `/datasets/<name>/entitlement` | The dataset declares another `mode`, or none. Write `mode: resolved`. |
+| `entitlement` | The same Enterprise refusal, where the only block is the dashboard-level one. It is checked first, so it is what a root-only block on a space without the capability reports. |
+| `entitlement` | A dashboard-level block with no dataset-level one. |
 
 ## Writing your own markup
 

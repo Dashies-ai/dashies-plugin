@@ -200,6 +200,36 @@ stop answering.
 **Credentials are entered through the web app form only.** They never pass through you or the
 MCP, so you cannot connect a warehouse for the user.
 
+### Row-level security: read the field, and raise it only when it says yes
+
+**`check_readiness` says whether a dashboard published in this space can show each viewer only
+their own rows, in `row_level_security`.** Branch on the tokens, never on the prose around them:
+
+| Field | Values |
+|---|---|
+| `available` | `true` or `false` |
+| `reason` | `enterprise` when it is available; `plan_not_enterprise` or `personal_space` when it is not |
+
+**When `available` is true, ask the creator ONCE per new dashboard whether viewers should see only
+their own rows, and default to no.** Keep it to one sentence, let a plain "no" be one word of
+theirs - most dashboards want everyone who can open them to see the same numbers - and **put it in
+a message you are already sending rather than spending a round trip on it**: where the table above
+already owes the connection question or the design question, this rides along in that same
+message. If they say yes, Step 4's "When each viewer should see only their own rows" is where the
+block is written. Ask on a NEW dashboard, not again on every edit. **The block persists only
+because the document still carries it**: an edit through `spec_edits` (Step 8) leaves it alone,
+while a republish that sends a whole `spec` without it removes the filter silently, with no refusal,
+because a spec that declares no entitlement is a perfectly valid spec. Carry it forward on every
+republish.
+
+**When `available` is false, NEVER RAISE THE SUBJECT, and never suggest a plan change to get it.**
+Not as an aside, not as a "you could", not in the summary at the end. **This half is the rule**:
+offering a capability the publish then refuses spends the author's whole pass and hands back a
+refusal instead of a dashboard, and the middle of somebody's dashboard is not the place to sell
+them a plan. The refusal exists for a publish that arrives there anyway; it is not how an author is
+meant to find out. If the USER raises it themselves, answer plainly that it is not available in this
+space and carry on with the dashboard - that is them asking rather than you offering.
+
 ### Ready is not the same as usable, and the difference is the engine
 
 **A dashboard that reads a warehouse needs an engine Dashies can hold data for, and today that is
@@ -371,6 +401,11 @@ different questions, and nothing on the published page tells them apart for a re
 - **Bucket dates in the business's own timezone.**
 - **Aggregate away anything sensitive.** Every viewer of the dashboard sees everything the
   dashboard carries, so a value nobody should see must not be in the statement's output at all.
+  **Row-level security does not change that sentence, and reading it as an escape hatch is the
+  mistake to avoid**: it filters rows by ONE declared column, so a sensitive COLUMN still reaches
+  every viewer who is granted any row at all. Coarsen the grain for the audience first, and treat a
+  per-viewer filter as being about which rows a person is entitled to rather than about hiding a
+  field.
 - **Relative time windows, anchored to the DATA'S own latest complete period.** "The last 18
   months" is right, and what it is relative TO decides whether the dashboard survives. Anchor the
   window to the newest complete period the source holds - the shape is
@@ -438,6 +473,116 @@ a person will actually look at. What costs is the number of cells, which is rows
 so a wide table of few rows and a narrow table of many rows cost the same, and "keep it under N
 rows" is the guidance that gets this wrong. If a table is over the budget the server says so and
 says what to change; you do not need to compute it.
+
+### When each viewer should see only their own rows
+
+**Write this block only when the user asked for it** (Step 1) and only where `check_readiness`
+answered `available: true`: it needs a workspace dashboard on an Enterprise plan, reading a
+warehouse. It is the only thing in this document that makes what a viewer receives depend on WHO
+they are rather than on what the page asks for. The rows are filtered where the data is queried,
+per viewer, for every tile and for every number a page you wrote asks for, so two people open the
+same URL and see different numbers. A page you wrote needs no special handling: `dashies.data`
+hands your script the viewer's own rows and never anybody else's.
+
+Declare it on the DATASET whose rows it filters:
+
+```yaml
+datasets:
+  sales:
+    mode: resolved
+    sql: |
+      select region, ordered_on, revenue from ...
+    dimensions: { region: {}, ordered_on: { type: date } }
+    measures: { revenue: { agg: sum } }
+    entitlement:
+      key: region
+      grants:
+        list:
+          - { identity: "ana@example.com", values: ["EMEA"] }
+          - { identity: "team:Sales", values: ["EMEA", "APAC"] }
+```
+
+- **`key`** is an output column of that dataset's own `sql`, and its value is what decides who may
+  see a row. Two datasets on one dashboard may be entitled on different columns.
+- **`grants` is exactly one of `list` or `sql`.** `list` is the inline form above. `grants.sql` is a
+  second read-only `SELECT`, run on the same connection as the dataset's own statement, one row per
+  pair. Reach for `sql` when the mapping already lives in the warehouse and moves without you, and
+  for `list` when it is small and stable. **It returns EXACTLY TWO COLUMNS, identity first and key
+  value second, read by POSITION and never by name** (engines disagree about identifier casing, so
+  the name would not be reliable). A third column is refused. **Two columns in the wrong ORDER are
+  not refused**, because both are strings: the dashboard then has every viewer unmapped and every
+  key value uncovered, and the first thing you see is a stopped refresh rather than a publish
+  error.
+- **An identity is one of exactly two forms.** An email address, matched against the viewer's own
+  signed-in email; or `team:<team name>`, matched against the Dashies teams that viewer belongs to.
+  Both are matched whole and case-insensitively, there is no third form and no wildcard, and a
+  viewer's values are the UNION over every grant that names them.
+- **`hidden_values`** is an optional list of key values deliberately hidden from everyone, the
+  author included. It may contain `null`, which is how you say that rows carrying no key value are
+  meant to be invisible rather than forgotten. **Write the rest as strings**: a number is accepted
+  at publish and then stops the next refresh.
+- **`grain`** is `partition` or `row`, and the honest default is to LEAVE IT OUT. Left out, the
+  server picks the layout from what the key's cardinality measured on the previous refresh, and
+  records what it chose so the choice is readable rather than inferred; declaring one replaces that
+  measurement with your guess. There is no reading before the first refresh, so a new dashboard
+  starts on the sorted layout and moves once one exists. **And a declaration is not always
+  honoured**, which is the last reason to leave it out: where laying the data out one folder per
+  value would disclose those values through the object path, the server narrows `partition` to `row`
+  and records that it narrowed rather than that you chose.
+- **`mode: resolved` is required on an entitled dataset**, and it is the one place this skill asks
+  you to write a `mode` at all. A filter applied inside the page would be theatre, because the page
+  would still hold every row; `resolved` is the mode whose rows stay with Dashies and are queried
+  per viewer. A dataset that carries the block and declares no mode is refused, naming the value to
+  write.
+
+**The dashboard-level block carries one field, and its default is the decision:**
+
+```yaml
+entitlement:
+  admins: filtered
+```
+
+`filtered` is what an absent block means, so forgetting to write it cannot widen what anybody sees:
+row-level security applies to workspace admins as well. **`unfiltered` IS ACCEPTED AND IS NOT
+HONOURED YET**, so an admin on a dashboard that declares it is filtered like everybody else today,
+and sees the no-access page if they hold no grants of their own. Write it to record the intent if
+you like; do not tell a user it exempts anybody. A dashboard-level block with no dataset-level one
+is refused, because it opts out of a filter that does not exist.
+
+**Every key value in the data has to be granted to somebody or hidden, and the refresh enforces
+that.** A refresh that finds a value no grant covers and `hidden_values` does not name STOPS: it
+publishes nothing, the dashboard keeps the numbers from its last successful refresh, and Dashies
+emails the dashboard's author and every admin of its workspace at once, naming the first few values
+it found plus a count of the rest, and how many rows they account for. The run detail carries the
+complete list, so read that rather than granting only what the email names. **There is no override
+and no margin.** The fix is to grant those values to somebody or to name them in `hidden_values`,
+then refresh. So a key whose values
+appear on their own - a new region, a new account - wants `grants.sql` reading the same warehouse
+rather than an inline list somebody has to remember to edit.
+
+**A viewer nobody granted anything gets a designed page saying so**, rather than an empty dashboard
+or an error, so an unmapped viewer needs nothing from you either.
+
+**And where the dashboard's own record says it filters while the page being served carries no filter
+for any dataset, EVERY viewer gets a different designed page**, saying the dashboard is being set up
+to show each person their own rows: nothing is served rather than everything, and what clears it is
+publishing the dashboard again rather than refreshing it, because a refresh does not rewrite that
+part of what is served.
+
+**A REPUBLISH THAT DROPS THE BLOCK DROPS THE FILTER, SILENTLY.** Whether a dashboard filters is read
+off the document you publish, so a full `spec` republish that omits the block leaves the dashboard
+serving every row to every viewer, and nothing refuses it: a spec with no entitlement is valid.
+`spec_edits` (Step 8) is the editing path that cannot do this to you, because it leaves everything
+it does not name untouched.
+
+**On cardinality, let the server tell you.** Pass `entitlement_key: "<the column>"` to
+`validate_cube_sql` and it reports when that column already holds more distinct values than the
+measured threshold at which Dashies stops storing one folder per value and stores the rows sorted
+by the key instead, and says nothing at all when it does not. Both layouts are correct; the second
+is slower for one viewer's query. It is an advisory, it refuses nothing, and its count is a lower bound over the sample rather than the real
+cardinality, which is measured on the first refresh. **Do not carry a number for this**: the
+advisory names the threshold when it fires, and a figure written down here would be a second copy
+of a constant that moves.
 
 ### When you write the markup yourself
 
@@ -823,15 +968,18 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
 ### If a dataset is refused
 
 **Read the refusal's `path` first. It names the thing to change and it never needs
-interpreting - but it does not always name the CAUSE.** One path, `/datasets/<name>/mode`,
-carries two refusals whose remedies are opposites, so on that one path read the sentence as
-well and take the row it matches. Every other path in the table has exactly one row.
+interpreting - but it does not always name the CAUSE.** **Where a path appears on more than one row
+below, those rows want different things done**, so on such a path read the sentence as well and take
+the row it matches rather than the first one you land on. A path on one row only needs no such
+reading. (This sentence named ONE such path and counted every other at exactly one row until
+row-level security added more, which is why it is a rule now rather than a count.)
 
 **The table covers the paths this workflow produces, not every path the server can emit**, so a
 path that is not here is not a contradiction. Datasets written the way this skill describes carry
-no `mode` and no `data` key, and the server picks the mode; a spec that does pin those keys can be
-refused at a path with no row. **Believe the refusal either way** - it names its own remedy, and
-the row is only a shortcut for reading it.
+no `data` key and no `mode` - **except an entitled one, which declares `mode: resolved` and is the
+one dataset this document asks you to pin a mode on** - and otherwise the server picks it; a spec
+that does pin those keys can be refused at a path with no row. **Believe the refusal either way** -
+it names its own remedy, and the row is only a shortcut for reading it.
 
 | `path` | What is wrong | Whose move |
 |---|---|---|
@@ -839,7 +987,25 @@ the row is only a shortcut for reading it.
 | `/datasets/<name>/mode`, saying the filter states cannot be worked out ahead of time | The SHAPE of the question. Dashies cannot work out every state its filters can be in ahead of time. | Yours. Bound what it groups by to the values people actually filter by, or shorten the period the dashboard covers, then publish again. |
 | `/datasets/<name>/measures` | Some of this dataset's NUMBERS cannot be worked out the way this dashboard would need them to be. | Yours, but narrowing does nothing. Ask for those numbers a different way, or drop them. |
 | `/datasets/<name>/sql` | The STATEMENT has already worked some of its numbers out across records. | Yours. Ask for the plain values and let Dashies combine them. |
+| `/datasets/<name>/entitlement`, saying row-level security is an Enterprise capability | The SPACE. The workspace is not on Enterprise, or the dashboard is personal and so has no workspace plan to hold it. | **The user's**, and you should not have met it: `check_readiness`'s `row_level_security` answers this before a line of the block is written (Step 1). Relay it, do not sell a plan, and republish without the block if they want the dashboard anyway. |
+| `/datasets/<name>/entitlement`, saying the dataset must declare `mode: resolved` | The DATASET's mode. An entitlement is enforced over the dataset's own rows on the server, and this dataset declares another mode or none. | Yours. Add `mode: resolved` to that dataset, or remove its `entitlement` block. |
+| `entitlement`, saying row-level security is an Enterprise capability | The SPACE. It is the Enterprise refusal again, raised where the only block is the dashboard-level one, and it is checked BEFORE the dashboard-level-without-a-dataset row. | **The user's**, and the same remedy as the Enterprise row above: relay it, do not sell a plan, and republish without the block if they want the dashboard anyway. |
+| `entitlement`, saying the dashboard-level block has no dataset-level one | It opts out of a filter that does not exist. | Yours. Declare the entitlement on the dataset whose rows it should filter, or remove the dashboard-level block. |
 | `/source/connection` | The CONNECTION cannot be used for a dashboard of this kind. | **The user's.** Relay it. |
+
+**Some named refusals are not paths in this table at all, which is why they are listed here rather
+than as rows.** `uncovered_keys` is a REFRESH outcome, not a publish refusal:
+a key value nobody was granted stops the next refresh and emails the author and the workspace
+admins (Step 4). `viewer_unmapped` and `entitlement_awaiting_publish` are VIEWER
+states rather than authoring ones: the first is the designed page a viewer with no grants sees, and
+there is nothing for you to fix; the second is the page EVERY viewer sees while a declared filter
+has not reached what is served, and the move is to publish the dashboard again (Step 4).
+`expr_not_plain_expression`
+refuses a measure written as a SQL expression carrying a subquery, a relation reference, a table
+function or a semicolon, on any dashboard where some dataset declares an entitlement; **a spec
+cannot reach it**, because the spec's measures are the agg and ratio forms in
+`references/spec.md` and none of them takes an expression. It is the older hand-written refresh
+settings that can.
 
 **`/source/connection` is the one to recognise, because it is the one where trying harder makes
 things worse.** No rewrite of the SQL clears it, at any value: the refusal is not about the
@@ -849,9 +1015,9 @@ are to connect a warehouse Dashies can hold data for, or to try the same shape o
 and both are the user's call.
 
 **Read the path rather than the wording.** Two refusals can describe similar-sounding problems and
-want opposite responses, and a paraphrase never separates them. Only the shared path above needs
-the sentence read as well. A refusal that names particular measures is not asking you to narrow
-anything, however much it sounds like the shape row.
+want opposite responses, and a paraphrase never separates them. Only a path carrying more than one
+row above needs the sentence read as well. A refusal that names particular measures is not asking
+you to narrow anything, however much it sounds like the shape row.
 
 **A count refusal is the one you should never have met**, because the number is knowable before a
 line of SQL exists - see "How many datasets a dashboard can hold" under Step 1. Meeting it here
@@ -1101,9 +1267,14 @@ never a spec edit - do not change `slug` to rename.
   the runtime hands it, never from a call of its own.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
-- **Everything the dashboard carries is visible to everyone who can open it.** Viewers are its
-  owner, or the workspace's members - never the public. But the data is not filtered per viewer,
-  so a value nobody should see must not be in the statement's output at all.
+- **Everything the dashboard carries is visible to everyone who can open it, unless it declares
+  row-level security.** Viewers are its owner, or the workspace's members - never the public. By
+  default the data is not filtered per viewer, so a value nobody should see must not be in the
+  statement's output at all. A workspace dashboard on an Enterprise plan can declare an
+  `entitlement` block and have its rows filtered per viewer (Step 4) - **ask about that only when
+  `check_readiness` says it is available, and never raise it when it is not** (Step 1). Even then
+  the filter is over one declared column, so it decides which ROWS a person gets and never hides a
+  COLUMN from somebody entitled to any row.
 - **The SQL runs forever.** Relative time windows anchored to the data's own latest complete
   period, never to the wall clock on a source that stops moving, and a grain that stays sane as
   the data grows.
@@ -1133,7 +1304,7 @@ Load the one you need for the step you are on; do not front-load them.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
-| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Row-level security**, **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 | `references/charts.md` | Copy-paste inline-SVG chart recipes for a page you write: a shared stylesheet and helpers, then a KPI card with a delta, horizontal and vertical bars, a line over time, a stacked bar and a compact table, each drawn from what `dashies.data` hands you | Step 4, when you write the markup |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,

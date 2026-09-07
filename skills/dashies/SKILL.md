@@ -999,6 +999,17 @@ not failures at all**, and the rest are:
 - **`denied` is ours, not theirs.** The route refused the capability the verification minted.
   That is a Dashies defect, so say so rather than sending the user hunting in their SQL.
 
+**A report saying the dashboard "has a lot of data" is not a failure and needs no change from
+you.** It is the one state where every plan answers and the numbers are still a refresh behind,
+so the verdict line reads clean and the sentence beside it is the whole story. `verify_dashboard`
+and `get_refresh_status` both carry it, in the same words: the dashboard has a lot of data, more
+than was ready for it; its numbers are as of the date they name, which is the last refresh that
+landed; and a coming refresh will carry the new data. Dashies has been told. **So change
+nothing** - do not rewrite the statement, do not drop a dataset, and do not reduce the dataset.
+None of that is what the sentence asks for, and a narrower statement would publish a smaller
+dashboard for no reason. Relay the sentence and its date, say the page is showing the numbers
+from that date, and poll `get_refresh_status` later rather than editing anything.
+
 **It proves the page can be READ, not that the numbers are RIGHT.** The cross-check in Step 3 is
 a different obligation and this does not replace it.
 

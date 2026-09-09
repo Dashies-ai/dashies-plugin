@@ -942,7 +942,7 @@ appears on more than one row, read the sentence as well as the path:
 
 | `path` | What it means |
 |---|---|
-| `/datasets/<name>/entitlement` | Row-level security is an Enterprise capability, and this space is not on it, or the dashboard is personal and has no workspace plan to hold it. |
+| `/datasets/<name>/entitlement` | Row-level security is an Enterprise capability and this workspace is not on the Enterprise plan. |
 | `/datasets/<name>/entitlement` | The dataset declares another `mode`, or none. Write `mode: resolved`. |
 | `entitlement` | The same Enterprise refusal, where the only block is the dashboard-level one. It is checked first, so it is what a root-only block on a space without the capability reports. |
 | `entitlement` | A dashboard-level block with no dataset-level one. |

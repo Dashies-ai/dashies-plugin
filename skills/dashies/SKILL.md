@@ -180,6 +180,12 @@ already exists on measures, datasets and the dashboard. It round-trips verbatim 
 connections in this space, whether each is usable right now, how much is readable behind it, the
 dashboards that already exist, and a single next step.
 
+**If it REFUSES instead of answering, the connection is not authorized for a workspace**, and
+that is the one failure here that is not about a warehouse. **The refusal here is ONE sentence
+covering both grant states**, and it says to re-authorize the connection and choose a workspace.
+Which state the connection is actually in, and therefore whether the cheaper fix exists, is what
+"Publishing into a workspace" in Step 6 tells apart.
+
 **`next_step.action` is the answer; everything else is the evidence behind it.**
 
 | `action` | What to do |
@@ -208,7 +214,7 @@ their own rows, in `row_level_security`.** Branch on the tokens, never on the pr
 | Field | Values |
 |---|---|
 | `available` | `true` or `false` |
-| `reason` | `enterprise` when it is available; `plan_not_enterprise` or `personal_space` when it is not |
+| `reason` | `enterprise` when it is available; `plan_not_enterprise` when it is not |
 
 **When `available` is true, ask the creator ONCE per new dashboard whether viewers should see only
 their own rows, and default to no.** Keep it to one sentence, let a plain "no" be one word of
@@ -232,10 +238,14 @@ space and carry on with the dashboard - that is them asking rather than you offe
 
 ### Ready is not the same as usable, and the difference is the engine
 
-**A dashboard that reads a warehouse needs an engine Dashies can hold data for, and today that is
-Snowflake or BigQuery.** A Postgres, Redshift, Databricks or SQL Server connection can be verified,
-readable and perfectly ready, and still not back a dashboard: the publish is refused at
-`/source/connection`, and no rewrite of the SQL changes it at any value.
+**A dashboard that reads a warehouse needs an engine Dashies can hold data for, and WHICH ENGINES
+THOSE ARE IS READ OUT OF THE DATABASE AS EACH PUBLISH IS JUDGED** rather than written down here.
+**Read on 2026-09-09 it was BigQuery, Databricks, Postgres and Snowflake**, with Redshift and SQL
+Server outside it. That is a reading taken on a date, not a promise: the set widens without a word
+here changing, and it has widened since somebody last wrote one down here. A connection on an
+engine outside the set can be verified, readable and perfectly ready, and still not back a
+dashboard: the publish is refused at `/source/connection`, and no rewrite of the SQL changes it at
+any value.
 
 **So read the engine before you write a line of SQL.** `check_readiness` and `list_connections`
 both report it. Finding out at publish costs the entire authoring pass, and it is the one refusal
@@ -248,8 +258,10 @@ that way stays good for the day that engine can back a dashboard. **What is refu
 a dashboard, not working with the warehouse.** Say that, rather than telling somebody their
 warehouse is unsupported and stopping.
 
-**Believe the refusal over this page.** The sources it names are read out of the database as the
-refusal is built rather than written into it, so the set can widen without a word here changing.
+**Believe the refusal over the date above.** The sources it names are read out of the database as
+the refusal is built rather than written into it, so the refusal is what is true NOW where the
+reading above is what was true on the day somebody took it. It names them in the same order and by
+the same names, so a set that has moved shows up as a refusal naming an engine this page does not.
 
 ### How many datasets a dashboard can hold, said before the SQL
 
@@ -937,8 +949,8 @@ bucketed by month gains nothing from hourly refreshes. `daily` is a sensible def
 To set exact timing, call **`set_refresh_schedule`** after publishing: `frequency` plus an
 optional every-N interval (`every_n`) and an `hour` / `dow` / `dom` / `timezone` anchor - `daily`
 with `hour: 9` and `timezone: "America/New_York"` for 09:00 ET. Per-cadence interval caps apply
-and the tool states them. It works on personal and workspace dashboards alike, and the user can
-change all of it themselves on the **Schedules** page.
+and the tool states them. It works on every workspace dashboard, and the user can change all of
+it themselves on the **Schedules** page.
 
 ---
 
@@ -1011,7 +1023,7 @@ it names its own remedy, and the row is only a shortcut for reading it.
 | `/datasets/<name>/mode`, saying the filter states cannot be worked out ahead of time | The SHAPE of the question. Dashies cannot work out every state its filters can be in ahead of time. | Yours. Bound what it groups by to the values people actually filter by, or shorten the period the dashboard covers, then publish again. |
 | `/datasets/<name>/measures` | Some of this dataset's NUMBERS cannot be worked out the way this dashboard would need them to be. | Yours, but narrowing does nothing. Ask for those numbers a different way, or drop them. |
 | `/datasets/<name>/sql` | The STATEMENT has already worked some of its numbers out across records. | Yours. Ask for the plain values and let Dashies combine them. |
-| `/datasets/<name>/entitlement`, saying row-level security is an Enterprise capability | The SPACE. The workspace is not on Enterprise, or the dashboard is personal and so has no workspace plan to hold it. | **The user's**, and you should not have met it: `check_readiness`'s `row_level_security` answers this before a line of the block is written (Step 1). Relay it, do not sell a plan, and republish without the block if they want the dashboard anyway. |
+| `/datasets/<name>/entitlement`, saying row-level security is an Enterprise capability | The SPACE. The workspace is not on the Enterprise plan. | **The user's**, and you should not have met it: `check_readiness`'s `row_level_security` answers this before a line of the block is written (Step 1). Relay it, do not sell a plan, and republish without the block if they want the dashboard anyway. |
 | `/datasets/<name>/entitlement`, saying the dataset must declare `mode: resolved` | The DATASET's mode. An entitlement is enforced over the dataset's own rows on the server, and this dataset declares another mode or none. | Yours. Add `mode: resolved` to that dataset, or remove its `entitlement` block. |
 | `entitlement`, saying row-level security is an Enterprise capability | The SPACE. It is the Enterprise refusal again, raised where the only block is the dashboard-level one, and it is checked BEFORE the dashboard-level-without-a-dataset row. | **The user's**, and the same remedy as the Enterprise row above: relay it, do not sell a plan, and republish without the block if they want the dashboard anyway. |
 | `entitlement`, saying the dashboard-level block has no dataset-level one | It opts out of a filter that does not exist. | Yours. Declare the entitlement on the dataset whose rows it should filter, or remove the dashboard-level block. |
@@ -1053,11 +1065,23 @@ means the design was not checked against it.
 ### Publishing into a workspace
 
 Scope comes from the grant your MCP connection was authorized with, plus an optional `workspace`
-argument. Personal grant with no `workspace` gives a personal dashboard at
-`https://<handle>.dashies.ai/<slug>`; `workspace: "<slug>"` or a workspace-locked grant gives a
-team dashboard at `https://<workspace-slug>.dashies.ai/<slug>`, which any member may republish.
-Both are access-gated and there is nothing to choose. **Do not pass a `visibility` argument** -
-there is no such thing and any value is refused.
+argument. **Every dashboard lives in a workspace** and serves at
+`https://<workspace-slug>.dashies.ai/<slug>`, which any member may republish. It is access-gated
+and there is nothing to choose. **Do not pass a `visibility` argument** - there is no such thing
+and any value is refused.
+
+**A connection that names no workspace is refused by every dashboard tool, and by
+`check_readiness`, and the refusal names the fix. There are two of them, and they differ.**
+
+- **A grant locked to the account rather than to a workspace cannot publish anywhere.** Passing
+  `workspace` is a hard error on it. Its refusal says to re-authorize the connection and choose
+  the workspace it should use, and that is the only thing that works.
+- **A grant minted before workspaces were chosen at authorization time CAN publish, by naming
+  one.** Its refusal says to pass `workspace` with a workspace slug the user belongs to, and
+  doing that resolves and publishes. Re-authorizing also works and is the more expensive fix.
+
+**Relay the sentence you got rather than the one you remember**, because the cheap fix exists
+for one of these and not for the other. Neither has a space outside a workspace to fall back to.
 
 **The connection must belong to the SAME space, and on a spec publish getting that wrong does NOT
 stop the publish - it ships a dashboard that can never refresh.** Everything upstream succeeds:
@@ -1087,12 +1111,11 @@ publishing:
 1. Say what is happening, in one plain sentence. **Do not give a duration** - say what has to
    happen, not how long it takes.
 2. **Ask for it rather than waiting**, where you can: `trigger_refresh` runs it now instead of at
-   the next scheduled time. It works on personal and workspace dashboards; a workspace dashboard
-   needs the same seat as republishing it, and a view-only member is refused. **If a refresh is
-   already in flight, or one finished within the last minute, it says so and starts nothing** -
-   and on a dashboard whose data is kept with Dashies the publish itself starts one, workspace
-   and personal alike, so that answer right after a publish is the normal case. It is not a
-   failure and not a reason to call again: the run it points you to is the one to poll.
+   the next scheduled time. It needs the same seat as republishing the dashboard, and a view-only
+   member is refused. **If a refresh is already in flight, or one finished within the last
+   minute, it says so and starts nothing** - and on a dashboard whose data is kept with Dashies
+   the publish itself starts one, so that answer right after a publish is the normal case. It is
+   not a failure and not a reason to call again: the run it points you to is the one to poll.
    **The publish receipt already told you whether you are starting a run or joining one.** It
    carries a `First data:` line: `extracting now` (that run is going, and it is the one to poll),
    `loaded N rows` (it ran to completion during the publish, so there is no first-refresh wait),
@@ -1276,11 +1299,12 @@ never a spec edit - do not change `slug` to rename.
   Offer the sample data and the link - the Dashies sample data connection when `check_readiness`
   names it, else the built-in `self` sample - and say it is sample data; do not publish
   something that pretends to refresh.
-- **A dashboard on a warehouse needs Snowflake or BigQuery.** Postgres, Redshift, Databricks and
-  SQL Server are refused at publish, at `/source/connection`, and no rewrite of the SQL clears it.
-  Read the engine before writing any SQL. Reading a schema, exploring it and validating a
-  statement work on every engine, so say what is refused rather than calling their warehouse
-  unsupported.
+- **A dashboard on a warehouse needs an engine Dashies can hold data for, and the publish refusal
+  names that set as it is built rather than as it was written down.** Read on 2026-09-09 it was
+  BigQuery, Databricks, Postgres and Snowflake; Redshift and SQL Server were refused at publish, at
+  `/source/connection`, and no rewrite of the SQL clears it. Read the engine before writing any
+  SQL. Reading a schema, exploring it and validating a statement work on every engine, so say what
+  is refused rather than calling their warehouse unsupported.
 - **You write the spec; the server writes the dashboard.** A structural fault is a pointed
   publish error naming the exact field, not a rendering surprise. Dry-run first, fix the pointed
   errors, then publish the hash.

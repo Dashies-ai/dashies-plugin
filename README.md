@@ -133,7 +133,7 @@ flowchart LR
 - **Safe renames.** The old slug 301-redirects to the new one, so links you already shared keep working.
 - **Access-gated by default.** A dashboard opens for the members of its workspace; anyone signed out is sent to sign in. Nothing is public.
 - **Sandboxed rendering.** Published dashboards run under a strict sandbox CSP, isolated from the rest of the origin.
-- **Warehouse connections.** Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks and Microsoft SQL Server, connected in the web app so credentials never pass through your AI. A refreshing dashboard publishes against Snowflake or BigQuery today; the other engines can be connected, explored and validated, but not published against.
+- **Warehouse connections.** Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks and Microsoft SQL Server, connected in the web app so credentials never pass through your AI. Which of them a refreshing dashboard can publish against is read out of the database as the publish is judged, so the publish refusal names the current set and this sentence names a reading: on 2026-09-09 it was BigQuery, Databricks, Postgres and Snowflake. Redshift and SQL Server can be connected, explored and validated, but not published against.
 
 ## The MCP tools
 

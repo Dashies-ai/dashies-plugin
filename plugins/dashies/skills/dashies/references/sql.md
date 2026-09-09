@@ -236,8 +236,12 @@ its own dataset that recomputes it under filters.
 both report. Author against `validate_cube_sql` for that connection rather than from memory.
 
 **NOT EVERY ENGINE HERE CAN BACK A DASHBOARD, AND THIS SECTION STILL COVERS ALL OF THEM ON
-PURPOSE.** Only Snowflake and BigQuery can hold a warehouse dashboard's data today; Postgres,
-Redshift, Databricks and SQL Server are refused at publish, at `/source/connection`. **What still
+PURPOSE.** Which engines can hold a warehouse dashboard's data is read out of the database as each
+publish is judged, so it is not a list this page can keep in step: **read on 2026-09-09 it was
+BigQuery, Databricks, Postgres and Snowflake**, with Redshift and SQL Server refused at publish, at
+`/source/connection`. Take the publish refusal over the date: it is built from the live set. The
+Redshift, Databricks and SQL Server headings below repeat where their own engine stood at that same
+reading, so those three and this note go stale together rather than one at a time. **What still
 works on every engine is `introspect_schema`, `explore_data` and `validate_cube_sql`** - the gate
 is on publishing a dashboard, not on using the warehouse. So this guidance is exactly what you
 need to read one of those schemas, explore it and check a statement, and a statement you get right
@@ -315,8 +319,8 @@ A nested column selected WHOLE arrives as JSON, which is usable neither as somet
 
 ### Redshift
 
-**Cannot back a dashboard today - see the note at the head of this section.** Reading the
-schema, exploring it and validating a statement all still work.
+**Could not back a dashboard when this was last read, on 2026-09-09 - see the note at the head of
+this section.** Reading the schema, exploring it and validating a statement all still work.
 
 A PostgreSQL dialect, so the PostgreSQL column applies almost verbatim. Use
 `to_char(ts, 'YYYY-MM-DD')` or `date_trunc('month', ts)::date` for a text or date field. The
@@ -324,16 +328,31 @@ alias caveat above is the one thing that differs materially.
 
 ### Databricks
 
-**Cannot back a dashboard today - see the note at the head of this section.** Reading the
-schema, exploring it and validating a statement all still work.
+**CAN back a dashboard, read on 2026-09-09 - see the note at the head of this section.** Everything
+below is dialect guidance that was already true for reading, exploring and validating; what changed
+is that a Databricks connection now also holds a dashboard's data.
 
 **Databricks SQL** (Spark SQL), a distinct dialect and not a PostgreSQL one. Table references are
-backtick-quoted and three-level `` `catalog`.`schema`.`table` `` - the built-in `samples` catalog
-(`samples.nyctaxi.trips`, `samples.tpch.*`) is handy for a demo with no seed table. It PRESERVES
-an unquoted alias. Bucket with `date_trunc('MONTH', ts)` or `date_format(ts, 'yyyy-MM')`; a
-wall-clock relative window is `current_timestamp() - interval 12 months`; a conditional count is
+backtick-quoted and three-level `` `catalog`.`schema`.`table` ``, and the catalog has to be one
+this connection can actually read - `introspect_schema` is what says which - the built-in `samples`
+catalog (`samples.nyctaxi.trips`, `samples.tpch.*`) is handy for a demo with no seed table. It
+PRESERVES an unquoted alias. Bucket with `date_trunc('MONTH', ts)` or `date_format(ts, 'yyyy-MM')`;
+a wall-clock relative window is `current_timestamp() - interval 12 months`; a conditional count is
 `count_if(c)`. A `TIMESTAMP` arrives as an ISO-8601 UTC string, so bucket or format it in SQL
 rather than parsing the text; big integers keep full precision as strings.
+
+**Some column types are refused AT PUBLISH rather than at refresh, and the refusal names the
+column.** `INTERVAL`, `VARIANT`, `USER_DEFINED_TYPE`, `NULL` (which Databricks itself spells `VOID`,
+so the refusal prints both spellings when they differ), and a nested `ARRAY`, `MAP` or `STRUCT`
+cannot be carried into a published dashboard at all. **Cast the column to a scalar - a number, a
+string, a date or a timestamp - in your own SQL, or drop it from the projection.** Addressing into a
+nested column is the move the section above describes, and it changes the grain, so collapse back
+afterwards. **`INT`, `SMALLINT`, `TINYINT` and `FLOAT` are all carried and need no cast.**
+
+**A Databricks refresh is a FULL RECOMPUTE.** Nothing incremental runs on this engine: every
+scheduled refresh re-reads the whole window the statement asks for. So bound that window and anchor
+it to the data's own latest complete period, exactly as "Relative windows, anchored to the data"
+above says.
 
 The statement must be a single read-only `SELECT`, and here the read-only guard is the only gate
 - Databricks itself runs DML happily. The warehouse cold-starts a few seconds after an auto-stop,
@@ -341,8 +360,8 @@ so a small serverless warehouse with a short auto-stop keeps scheduled refreshes
 
 ### Microsoft SQL Server
 
-**Cannot back a dashboard today - see the note at the head of this section.** Reading the
-schema, exploring it and validating a statement all still work.
+**Could not back a dashboard when this was last read, on 2026-09-09 - see the note at the head of
+this section.** Reading the schema, exploring it and validating a statement all still work.
 
 **T-SQL**, not a PostgreSQL dialect. Table references are `[bracket]`-quoted (`[dbo].[orders]`).
 It PRESERVES an output alias as written, measured on a case-insensitive collation - collation

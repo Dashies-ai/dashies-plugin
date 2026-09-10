@@ -240,8 +240,9 @@ PURPOSE.** Which engines can hold a warehouse dashboard's data is read out of th
 publish is judged, so it is not a list this page can keep in step: **read on 2026-09-09 it was
 BigQuery, Databricks, Postgres and Snowflake**, with Redshift and SQL Server refused at publish, at
 `/source/connection`. Take the publish refusal over the date: it is built from the live set. The
-Redshift, Databricks and SQL Server headings below repeat where their own engine stood at that same
-reading, so those three and this note go stale together rather than one at a time. **What still
+PostgreSQL, Redshift, Databricks and SQL Server headings below repeat where their own engine stood
+at that same reading, so those headings and this note go stale together rather than one at a time.
+**What still
 works on every engine is `introspect_schema`, `explore_data` and `validate_cube_sql`** - the gate
 is on publishing a dashboard, not on using the warehouse. So this guidance is exactly what you
 need to read one of those schemas, explore it and check a statement, and a statement you get right
@@ -316,6 +317,102 @@ A nested column selected WHOLE arrives as JSON, which is usable neither as somet
   those keep MICROseconds while `TIMESTAMP` is rounded to milliseconds, so on the rare occasion
   sub-millisecond precision matters, select the column as `DATETIME` or as a string.
 - **`introspect_schema` reports no row estimate**, so count it yourself as described above.
+
+### PostgreSQL
+
+**CAN back a dashboard, read on 2026-09-09 - see the note at the head of this section.** Everything
+below was already true for reading, exploring and validating; what changed is that a Postgres
+connection now also holds a dashboard's data.
+
+The PostgreSQL column of the table above is the dialect, and the `AT TIME ZONE` operand trap under
+"Time" is the one that catches most statements. The rest of this section is about the CONNECTION
+rather than the statement, because on this engine that is where the surprises are. Tell the user
+the parts that ask something of them: the replica, the timeout, the certificate, the allow-list.
+
+**Each dataset is read as one snapshot.** The read runs inside a single `REPEATABLE READ`
+transaction, and the type check that runs first shares it, so one dataset is one consistent picture
+of the database rather than a set of reads taken at different moments. Datasets are read one at a
+time, each in its own transaction, so that is a guarantee about a dataset and not across the
+dashboard. Nothing is asked of you for it.
+
+**A refresh that fails leaves the numbers alone.** New data is written and checked before anything
+is published, so a failed refresh leaves the previous numbers serving. The dashboard shows older
+figures rather than broken ones, and the run detail says what failed.
+
+**Point us at a read replica if that database also serves the product.** A scheduled refresh reads
+a whole dataset in one command, which is a heavier and more predictable load than an interactive
+query, so a replica is the right target where one exists. Two things come with it, and both are
+worth saying out loud. A replica is behind its primary by however far it lags, so the dashboard is
+reading a slightly older world. And a replica cancels a query that holds up replay for longer than
+its own standby delay, which ends the read partway. Measured on 2026-09-08 across four providers,
+that delay was 30 seconds on Neon, Supabase and RDS, and 14 seconds on Aurora. Raising
+`max_standby_streaming_delay`, or turning on `hot_standby_feedback`, is the database-side fix, and
+a cancelled read is named as a replica conflict rather than reported as a lost connection.
+
+**A `statement_timeout` on the role we connect as bounds the whole read.** The read is one command,
+so the timeout applies to the entire stream rather than to a step inside it, and a short one stops
+a long dataset partway. Our own session raises the bound inside its transaction, which is enough
+where the role's limit can be raised that way and is not where it is enforced above the role.
+Measured on 2026-09-08: Supabase's `postgres` role carried two minutes and the other three
+providers carried none. A refresh stopped this way reports that the warehouse cancelled the
+query, and it does not claim whose ceiling fired, because on these paths the ceiling is often
+ours. So read the role's own setting before concluding the statement is too slow.
+
+**A pooled connection string works, and the direct one is still what to ask for.** Measured on
+2026-09-08 against Supabase's session and transaction poolers and Neon's pooled endpoint: each
+carried the whole read, and every setting the extract applies inside its transaction was read back
+as set. Neither is refused. The direct string remains the recommendation, because that reading was
+taken on an idle endpoint and a pooler under load has more reason to move a connection than an idle
+one does.
+
+**Certificate verification is on by default, and turning it off has a stated cost.** The connection
+form is where that choice is made and it says what it costs: the connection is still encrypted, but
+Dashies will not check that the server it reaches is the one named in Host, so an attacker able to
+redirect the connection could read the credentials and the data. It exists ONLY for a database whose
+certificate is not signed by a public authority, such as a self-signed or internal-CA certificate,
+and it is meant to be turned back on once the provider offers a publicly signed one. Measured on
+2026-09-08 across four providers, only Neon's certificate chained to a public root. That is a
+reading about those providers, not a recommendation to turn verification off.
+
+**A database that accepts connections only from an allow-list of addresses cannot be reached yet.**
+The address we connect from is not fixed, so there is nothing stable to give their network
+administrator. Say that plainly rather than having somebody widen their firewall: the answer is a
+database we can reach, and publishing a stable set of addresses is a thing we do not do today.
+
+**Cloud SQL, Azure Database for PostgreSQL Flexible Server and Heroku are reasoned rather than
+measured**, so say
+which you are doing if you tell somebody what to expect. Cloud SQL's public address is an
+allow-list and its server certificate authority is per instance, so it is reachable only by opening
+it to all addresses with verification turned off, and Google's own answer to that is its Auth
+Proxy, which is a separate thing Dashies does not run. Azure verifies normally against public roots
+and its firewall is an allow-list. Heroku's standard tier connects only with verification turned
+off. None of the three was measured, and any of them may behave differently for a reason the
+reasoning did not name.
+
+**Two publish refusals are specific to this engine, and each names its own repair.**
+
+A `numeric` column with no declared precision and scale is refused, because there is no exact
+column to write it into:
+
+```
+the cube projects column "amount" (numeric), which cannot be carried into a published dashboard at all. A decimal with no declared precision and no declared scale is arbitrary-precision, so there is no exact column to write it into: it would be carried as a 64-bit float and lose digits that no later step can recover. It is refused here rather than after the dashboard is live. Declare the precision and the scale your data needs, in your own SQL - "amount"::numeric(18,2), or whatever width the values actually take - so the numbers are carried exactly and the choice of width is yours and visible rather than ours and silent.
+```
+
+Cast it in your own SQL to the width the values actually take. A decimal that DECLARES a precision
+above 38 is refused too, through the same reader, and that sentence names 38 as the ceiling and
+asks you to narrow the column deliberately rather than lose the digits silently.
+
+**A refresh on this engine reads the whole statement every run.** A dataset that declares an
+incremental descriptor is refused rather than accepted and quietly ignored:
+
+```
+dataset "orders" declares an incremental descriptor, and a refresh of a postgres connection reads the whole statement every run in this version: nothing resolves the window, so no partition is selected by it. It is refused here rather than accepted and silently ignored, because a schedule built on a descriptor that buys nothing costs the full read for ever with nobody told. Remove the incremental key to publish. A later slice adds incremental refresh for this engine and will honour the descriptor then.
+```
+
+So bound the window and anchor it to the data's own latest complete period, exactly as "Relative
+windows, anchored to the data" above says.
+
+The statement must be a single read-only `SELECT`, as on every engine.
 
 ### Redshift
 

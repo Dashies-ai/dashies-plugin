@@ -165,6 +165,11 @@ sensitive column is therefore still a statement-shaping problem rather than a gr
 **One read-only `SELECT` (or `WITH ... SELECT`) per dataset.** No DDL, no writes, no temp tables,
 no multiple statements.
 
+**The `WITH ... SELECT` half is engine-general and SQL Server is the exception.** There a statement
+whose first token is `WITH` is refused at publish, because Dashies bounds it by wrapping it as a
+derived table and T-SQL does not allow a common table expression inside one. Inline each one as a
+derived table instead; the "Microsoft SQL Server" heading below carries the refusal and the rewrite.
+
 **And no `;` ANYWHERE INSIDE the statement, comments and string literals included.** The executor
 strips one TRAILING semicolon and then scans the rest of the statement for the raw character, so
 it does not know a comment from code: `-- partial; see below` and `where region = 'a;b'` are both
@@ -237,8 +242,8 @@ both report. Author against `validate_cube_sql` for that connection rather than 
 
 **NOT EVERY ENGINE HERE CAN BACK A DASHBOARD, AND THIS SECTION STILL COVERS ALL OF THEM ON
 PURPOSE.** Which engines can hold a warehouse dashboard's data is read out of the database as each
-publish is judged, so it is not a list this page can keep in step: **read on 2026-09-09 it was
-BigQuery, Databricks, Postgres and Snowflake**, with Redshift and SQL Server refused at publish, at
+publish is judged, so it is not a list this page can keep in step: **read on 2026-09-11 it was
+BigQuery, Databricks, Postgres, SQL Server and Snowflake**, with Redshift refused at publish, at
 `/source/connection`. Take the publish refusal over the date: it is built from the live set. The
 PostgreSQL, Redshift, Databricks and SQL Server headings below repeat where their own engine stood
 at that same reading, so those headings and this note go stale together rather than one at a time.
@@ -320,7 +325,7 @@ A nested column selected WHOLE arrives as JSON, which is usable neither as somet
 
 ### PostgreSQL
 
-**CAN back a dashboard, read on 2026-09-09 - see the note at the head of this section.** Everything
+**CAN back a dashboard, read on 2026-09-11 - see the note at the head of this section.** Everything
 below was already true for reading, exploring and validating; what changed is that a Postgres
 connection now also holds a dashboard's data.
 
@@ -416,7 +421,7 @@ The statement must be a single read-only `SELECT`, as on every engine.
 
 ### Redshift
 
-**Could not back a dashboard when this was last read, on 2026-09-09 - see the note at the head of
+**Could not back a dashboard when this was last read, on 2026-09-11 - see the note at the head of
 this section.** Reading the schema, exploring it and validating a statement all still work.
 
 A PostgreSQL dialect, so the PostgreSQL column applies almost verbatim. Use
@@ -425,7 +430,7 @@ alias caveat above is the one thing that differs materially.
 
 ### Databricks
 
-**CAN back a dashboard, read on 2026-09-09 - see the note at the head of this section.** Everything
+**CAN back a dashboard, read on 2026-09-11 - see the note at the head of this section.** Everything
 below is dialect guidance that was already true for reading, exploring and validating; what changed
 is that a Databricks connection now also holds a dashboard's data.
 
@@ -457,37 +462,194 @@ so a small serverless warehouse with a short auto-stop keeps scheduled refreshes
 
 ### Microsoft SQL Server
 
-**Could not back a dashboard when this was last read, on 2026-09-09 - see the note at the head of
-this section.** Reading the schema, exploring it and validating a statement all still work.
+**CAN back a dashboard, read on 2026-09-11 - see the note at the head of this section.** Everything
+below is dialect guidance that was already true for reading, exploring and validating; what changed
+is that a SQL Server connection now also holds a dashboard's data, and **three of the type traps
+this page used to carry are gone with it**, listed under "What the older advice got right about a
+path that is no longer the one your dashboard takes".
 
 **T-SQL**, not a PostgreSQL dialect. Table references are `[bracket]`-quoted (`[dbo].[orders]`).
 It PRESERVES an output alias as written, measured on a case-insensitive collation - collation
 governs whether two names may coexist, not whether one gets rewritten.
 
-Type traps, all of which produce a failed read rather than a wrong number:
-
-- **Cast `GROUPING()` flags and any `tinyint` to a wider int.** Both are read as a 1-byte value
-  Dashies cannot carry, and a `tinyint` above 127 fails outright. Write
-  `cast(<tinyint column> as int)`.
-- **Timezones need the DOUBLE `AT TIME ZONE`, cast back to `datetime2`.** `datetimeoffset` is
-  unsupported and `AT TIME ZONE` returns one, so:
-  `cast(ts at time zone 'UTC' at time zone 'Pacific Standard Time' as datetime2) as [ts_local]`.
-  **SQL Server uses WINDOWS zone names** (`Pacific Standard Time`), not IANA
-  (`America/Los_Angeles`) - though a Linux-hosted server may accept IANA. Check
-  `select name from sys.time_zone_info` for what THIS server takes.
-- **Precision.** `decimal` / `numeric` / `money` are read through a float hop of about 15 to 16
-  significant digits, so cast money to integer cents if you need exactness; `datetime` and
-  `datetime2` truncate to whole seconds, so bucket or format in SQL rather than relying on
-  sub-second precision.
-
 Bucket with `cast(ts as date)` or `datefromparts(year(ts), month(ts), 1)`; a wall-clock relative
 window is `dateadd(month, -12, sysutcdatetime())`.
 
-The statement must be a single read-only `SELECT`, and here the guard is defense in depth only,
-because T-SQL statement terminators are optional. **The real gate is that the connection must use
-a read-only login** - the connect test refuses a login with any write or admin privilege - so the
-user connects a `dash_ro`-style login, never an admin. Only their allowlisted schemas, plus the
-`sys` and `INFORMATION_SCHEMA` catalogs, are readable.
+#### Two statement shapes you can write are refused here
+
+**Dashies bounds your statement by wrapping it as a derived table**, and T-SQL does not allow a
+common table expression or an `ORDER BY` inside one. Every other engine's wrap is a `limit`
+clause, which holds either shape fine; these two are T-SQL's. They are refused AT PUBLISH -
+**and `validate_cube_sql` refuses NEITHER of them**, deliberately: it does not put that wrap around
+your statement, so it validates a CTE-leading statement happily and the dry run is the first place
+you can meet the refusal. Get these right before you write the statement.
+
+- **Do not lead with `WITH`.** Refused, naming the dataset, with the exit beneath it:
+
+  ```
+  dataset `orders` starts with a WITH clause, and on SQL Server a dataset that keeps its rows outside the page cannot. Dashies bounds the statement by wrapping it as a derived table (`select top (n) * from (<your SQL>) as _dashies_seed_probe`), and T-SQL does not allow a common table expression inside one.
+
+  inline each common table expression as a derived table in the FROM clause - `with r as (<body>) select ... from r` becomes `select ... from (<body>) as r` - and publish again. The restriction is on the wrap Dashies puts around your statement to bound it, not on the statement itself, so the query is unchanged apart from where the subquery is written.
+  ```
+
+  A leading `;WITH` is the same shape and is refused too: the detector skips a leading semicolon,
+  and both comment forms, before it reads the first real token.
+
+- **Do not end in `ORDER BY ... OFFSET ... FETCH`.** Refused:
+
+  ```
+  dataset `orders` ends in an ORDER BY carrying OFFSET or FETCH, and on SQL Server a dataset that keeps its rows outside the page cannot. Dashies bounds the statement by wrapping it as a derived table, T-SQL does not allow an ORDER BY inside one, and removing yours would move the window Dashies samples off the window the dashboard shows - so it is refused rather than rewritten.
+  ```
+
+  Its exit is to move the paging inside your own `FROM` clause: wrap the ordered, paged query as a
+  derived table yourself and select from it. A plain trailing `ORDER BY` with no paging is fine -
+  Dashies strips it, and a dataset's order is the dashboard's to decide anyway.
+
+#### Four column types are REFUSED at publish, and the refusal names the accessor
+
+`sql_variant`, `geography`, `geometry` and `hierarchyid` cannot be carried into a published
+dashboard at all, and neither can a CLR user-defined type. The refusal names the column:
+
+```
+dataset `orders` projects column `shape` (geography), which Dashies cannot carry into a published dashboard at all. SQL Server hands that type back as bytes with no column type a dashboard can read, so it is refused here rather than after the dashboard is live.
+
+select [shape].STAsText() in the cube instead, or drop the column from the projection, so the conversion is yours and is visible rather than ours and silent.
+```
+
+The accessor in that second sentence is chosen per type:
+
+| Type | Select instead |
+|---|---|
+| `sql_variant` | `CAST(<column> AS <a concrete type>)` |
+| `geography`, `geometry` | `<column>.STAsText()` |
+| `hierarchyid` | `<column>.ToString()` |
+| anything else it does not recognise | `CAST(<column> AS <a type this pipeline carries>)` |
+
+One more is refused for a different reason: a `decimal` or `numeric` whose precision OR scale the
+server does not report, because a width cannot be chosen for it. Both halves are checked, and an
+absent scale is not the same as a scale of zero: `decimal(38,0)` is a legitimate reading.
+
+#### LETTER CASE: SQL Server and Dashies group text differently, and neither answer is wrong
+
+**This is the one thing on this page that changes a NUMBER rather than failing a read**, and it is
+a choice to make deliberately rather than a defect to avoid.
+
+Every SQL Server measured defaults to the collation `SQL_Latin1_General_CP1_CI_AS`, under which
+`acme` and `ACME` are THE SAME VALUE. Dashies compares text by its bytes, under which they are TWO.
+So one source column gives two different answers depending on WHO does the grouping, and the
+difference is a row count rather than an ordering:
+
+| Where the grouping happens | `acme` and `ACME` |
+|---|---|
+| your own `GROUP BY`, run by SQL Server | ONE group |
+| your own `GROUP BY` with a binary collation forced on the key | TWO groups |
+| the records come back and Dashies groups them | TWO groups |
+
+**Measured end to end on 2026-09-11 (PR 7's measurement), with its control**: two values differing
+by more than their case give two groups on both sides of the split, in SQL Server and in Dashies
+alike, so what the table shows is about letter case and about nothing else.
+
+**SO MOVING AN EXISTING CUBE ONTO THIS ENGINE CAN CHANGE A COUNT, WITH NOTHING RAISING.** A
+statement that does its own `GROUP BY` on a text key and one that returns the records for Dashies
+to group answer differently over the SAME source - one group against two - and neither is an
+error. If the user is porting a dashboard whose numbers they already know, say this before they
+compare the two and conclude something is broken.
+
+**The merge is IRREVERSIBLE and silent, which is why it is worth a decision.** It happens inside
+the customer's server, before Dashies sees anything, so once two values have become one row nothing
+downstream can recover them: the refresh succeeds, the dashboard is built without complaint, the row
+count is simply smaller than the number of distinct values in their source, and **nothing anywhere
+raises**. And two statements asking the same question over the same source can report different
+counts, with nothing on the page saying which one a reader is looking at.
+
+**So pick the semantics and write it into the statement.** `SKILL.md` Step 3 has you return the
+records on a warehouse, so Dashies does the grouping and its byte comparison is what you get unless
+you say otherwise.
+
+- **To keep case apart where SQL SERVER does the grouping**, put the collation on the key - Dashies
+  does not add it for you:
+
+  ```sql
+  select region collate Latin1_General_100_BIN2 as [region], sum(amount) as [revenue]
+  from dbo.orders
+  group by region collate Latin1_General_100_BIN2
+  ```
+
+  It changes no schema and stores nothing differently, and it can cost an index seek on a large
+  keyed column, so write it where the distinction matters rather than everywhere.
+
+- **To fold case together where DASHIES does the grouping**, normalise the key in the statement,
+  which is one function on the projected column:
+
+  ```sql
+  select upper(region) as [region], amount from dbo.orders
+  ```
+
+  `lower()` does the same job; pick whichever the user should read on the page, because what you
+  project is what they see.
+
+The same split applies to an `ORDER BY` or a `TOP` you rely on: SQL Server's default ordering is not
+by bytes and Dashies' is, so the two disagree on a text key unless you force the collation.
+
+#### Full refresh only
+
+**A refresh on this engine reads the whole statement every run.** A dataset that declares an
+incremental descriptor is refused rather than accepted and quietly ignored:
+
+```
+dataset "orders" declares an incremental descriptor, and a refresh of a mssql connection reads the whole statement every run in this version: nothing resolves the window, so no partition is selected by it. It is refused here rather than accepted and silently ignored, because a schedule built on a descriptor that buys nothing costs the full read for ever with nobody told. Remove the incremental key to publish. A later slice adds incremental refresh for this engine and will honour the descriptor then.
+```
+
+That sentence names the engine by its connection key rather than by the label the roster uses, so
+"a mssql connection" is what an author actually reads and is not a typo of ours.
+
+So bound the window and anchor it to the data's own latest complete period, exactly as "Relative
+windows, anchored to the data" above says.
+
+#### Time and time zones
+
+- **SQL Server takes WINDOWS zone names** (`Pacific Standard Time`), never IANA
+  (`America/Los_Angeles`), **and that holds on a Linux-hosted server too** - an IANA name is
+  rejected there with "The time zone parameter ... provided to AT TIME ZONE clause is invalid."
+  Check `select name from sys.time_zone_info` for what THIS server takes. Where the dashboard can
+  bucket it instead, prefer returning the UTC instant over converting in T-SQL.
+- **`datetimeoffset` keeps its instant and loses its offset.** If the originating offset matters,
+  select it as a column of its own: `datepart(tzoffset, ts) as [ts_offset_minutes]`.
+- **A local wall-clock bucket still takes the double `AT TIME ZONE`:**
+  `cast(ts at time zone 'UTC' at time zone 'Pacific Standard Time' as datetime2) as [ts_local]`.
+- **`datetime` and `smalldatetime` carry the SERVER's own granularity**, `datetime` to increments
+  of about 3.33 ms, baked into the stored value before Dashies reads it. That is the source's
+  precision rather than anything the pipeline did.
+
+#### What the older advice got right about a path that is no longer the one your dashboard takes
+
+Until 2026-09-11 a SQL Server dashboard could not hold its data with Dashies at all, and this page
+carried three casts to work around what that path lost. **All three are now unnecessary**, and
+writing them costs precision rather than buying it:
+
+- **`decimal`, `numeric`, `money` and `smallmoney` are exact.** Your server converts them to text
+  inside a projection Dashies writes around your statement, so a `decimal(38,10)` arrives with all
+  its digits. **Do not cast money to integer cents.**
+- **`tinyint` is carried as a 64-bit integer**, 255 included, so it needs no widening cast.
+- **`datetime2` keeps its sub-second digits.** A `datetime2(7)` loses only its SEVENTH fractional
+  digit, and that loss is where the dashboard stores the value rather than how it was read; at
+  scale 6 and below it is exact.
+
+What has NOT changed is the security boundary. The statement must be a single read-only
+`SELECT`, and here the guard is defense in depth only, because T-SQL statement terminators are
+optional. **The real gate is that the connection must use a read-only login** - the connect test
+refuses a login with any write or admin privilege, and every refresh re-checks it before reading
+anything - so the user connects a `dash_ro`-style login, never an admin. A publish whose login
+stopped being read-only is refused, naming the dataset, with the exit beneath it:
+
+```
+dataset `orders` could not be seeded: the login this connection uses is not read-only, and Dashies refuses to read a SQL Server database through a login that can write to it.
+
+connect the SQL Server source again with a read-only login, then publish again.
+```
+
+The fix is the user's rather than yours. Only their allowlisted schemas, plus the `sys` and
+`INFORMATION_SCHEMA` catalogs, are readable.
 
 ---
 

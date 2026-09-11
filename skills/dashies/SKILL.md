@@ -957,7 +957,7 @@ it themselves on the **Schedules** page.
 ## Step 6 - Dry run, then publish the hash
 
 Publish with the spec on `publish_dashboard`'s `spec` argument. The `path` slug is the target; a
-`spec.slug`, if present, must equal it. Do **not** pass `body` or `content_type` with a spec.
+`spec.slug`, if present, must equal it. **`body` and `content_type` are NOT AVAILABLE** - publishing raw HTML bytes is refused, on this tool and on the app's own publish route, so a spec is the only way to publish a dashboard. The arguments stay in the tool schema because the path may return in a future version. Dashboards already published are unaffected: they keep serving and keep refreshing, and reading, listing, deleting and restoring them are unchanged.
 
 **The dry run is mandatory. Sending the document twice is not.**
 

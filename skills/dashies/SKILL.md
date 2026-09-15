@@ -856,10 +856,12 @@ for free; a `look` body writes it, and the publish report warns when it is missi
 dashboard, or when a body that calls `dashies.data` has none.
 
 **Before its first refresh a warehouse dashboard is `pending` on every dataset, and the publish
-report says so twice**: the `Datasets:` sentence says its data stays with Dashies, and a `warning:`
-says the dataset "publishes with NO data". Neither decides whether your page can work; they tell you
-it publishes empty, which is Step 7's wait. Say that to the user, trigger the refresh, and stay
-until `status` turns `ready`.
+report tells you in two places**: the `Datasets:` sentence says its data stays with Dashies, and the
+warnings carry one routine note per dataset, the only warning about that wait, saying it "publishes with NO
+data" and how your markup reads its rows. Neither decides whether your page can work; they tell you
+it publishes empty, which is Step 7's wait. A republish whose `First data:` line says `unchanged` has
+no such wait, and its report prints no such note. Otherwise say it to the user, follow Step 7, and
+stay until `status` turns `ready`.
 
 The example that handles all of this, the mount contract and the field tables are in
 **`references/spec.md`** under **Writing your own markup**.
@@ -965,11 +967,11 @@ Publish with the spec on `publish_dashboard`'s `spec` argument. The `path` slug 
 **The dry run is mandatory. Sending the document twice is not.**
 
 ```
-# 1. Dry run - build + check + run every dataset once, nothing written. Returns a spec_hash.
+# 1. Dry run - build + check + run every dataset once, nothing written. Returns a spec_hash and a report_id.
 publish_dashboard({ path: "<slug>", spec: "<the YAML spec>", dry_run: true })
 
 # 2a. Clean -> publish THAT document by hash. No spec argument.
-publish_dashboard({ path: "<slug>", spec_hash: "<the hash the dry run returned>" })
+publish_dashboard({ path: "<slug>", spec_hash: "<the hash the dry run returned>", report_id: "<the report id it returned>" })
 
 # 2b. Errors -> send the corrections, not the document (Step 8's spec_edits).
 ```
@@ -979,7 +981,9 @@ real publish names the hash instead of carrying a second copy of the YAML. It is
 checked and run exactly as if you had sent it inline: **what you drop is transmission, never
 checking.** `spec`, `spec_hash` and `spec_edits` are mutually exclusive - pass exactly one. If
 the hash has lapsed the publish is refused naming that, and you re-send the document; it is a
-miss, never a wrong publish.
+miss, never a wrong publish. **Pass back the `report_id` the dry run returned beside its
+`spec_hash`: the publish then counts the warnings that dry run printed or counted instead of
+printing them again, and without it every warning prints.**
 
 **Re-sending a whole spec to change one line is the single most common waste on this path.** A
 45-tile spec is around 28,500 characters; a session doing two dry runs plus four corrections used
@@ -997,10 +1001,17 @@ to put roughly 171,000 characters on the wire, and about 29,600 by hash and edit
   tile actually SHOWS the differing one, the report says so with four facts per dataset. This is
   information, not a verdict - a month-to-date figure beside a year-to-date one legitimately
   disagrees - so read the scope fact and decide. It caught a real playtest error that put
-  $596,348,393 on a card against a real $36,384,217. The second, a dataset warning that it
+  $596,348,393 on a card against a real $36,384,217. The second, a routine note per dataset that it
   **"publishes with NO data"**, is the same first-refresh wait stated as a warning: the tiles the
   server drew read "Updating", and a script you wrote is handed `status: "pending"` until the
-  refresh lands.
+  refresh lands. It is one line per dataset, and a publish whose `First data:` line says the rows are
+  already served prints none, counting the notes it left out instead.
+- **`Since the dry run of ...`** - on a publish that passed a dry run's `spec_hash` and `report_id`,
+  the count of unchanged warnings and checks that dry run printed or counted, and when the oldest of
+  them was last printed in full. They are not printed again. What prints below that line is new, or
+  was last printed in full more than about an hour ago, so read it as closely as the first report.
+  The line is absent and every warning prints when the id came from another document or an earlier
+  dry run, is more than about an hour old, or the dashboard's stored spec is now a different document.
 - **`obligations`** - the Step-3 cross-check, prompted.
 - Then share the returned `url`.
 
@@ -1122,6 +1133,12 @@ publishing:
    **The publish receipt already told you whether you are starting a run or joining one.** It
    carries a `First data:` line: `extracting now` (that run is going, and it is the one to poll),
    `loaded N rows` (it ran to completion during the publish, so there is no first-refresh wait),
+   `unchanged` (the rows already served were extracted under exactly the data definition this
+   republish carries, so no extract was started and none is needed: the numbers on the page are as
+   of the last successful refresh, the time the line prints is that refresh's `last_successful_run`,
+   `get_refresh_status` read `up_to_date` when the publish checked, there is nothing to poll for,
+   the report prints no note about waiting for data, and `trigger_refresh` is how to pull fresher
+   rows if the user wants them),
    `no new extract was started` (a run for this dashboard was already in flight or had just
    finished moments ago), or `not started yet` (nothing was started; `get_refresh_status` shows
    the schedule and current state, and **the reason is deliberately not disclosed to you**, so do
@@ -1131,7 +1148,9 @@ publishing:
    the sentence under the phase says since when; a refresh you asked for shows there the moment it
    is accepted. The signal that the numbers are live is `last_successful_run` moving to a later
    value than the one you read before asking, with `phase` at `up_to_date`; that is the one
-   comparand correct on a first publish and on a republish alike. **Read the sentence under the
+   comparand correct on a first publish and on a republish alike, except after a publish whose
+   receipt said `unchanged`: that one started nothing, so nothing it started will move the field
+   and there is nothing to wait for. **Read the sentence under the
    phase, not only the word.** An `up_to_date` whose sentence says the last refresh "ran an OLDER
    version" is describing the run from before your republish, and the run line marks it
    `SUPERSEDED`: ask for another refresh and keep polling until the newest run is current. An
@@ -1282,9 +1301,11 @@ with `spec_edits`, and worth passing on a full `spec` too.
 Every edit re-runs and re-checks everything, so an edit that would break a binding is a pointed
 error, not a broken live dashboard.
 
-**Verify after a republish, not only after a first publish.** A republish re-extracts, and a
-dataset whose shape changed answers nothing until that lands - `verify_dashboard` is what tells
-you it has.
+**Verify after a republish, not only after a first publish.** A republish that changes the data
+definition re-extracts, and a dataset whose shape changed answers nothing until that lands -
+`verify_dashboard` is what tells you it has. A republish whose receipt says `First data: unchanged`
+started no extract, because the rows already served were extracted under exactly its data
+definition, so verifying it has no extraction to wait for.
 
 **A dashboard with no stored spec** - published before specs existed - has nothing for
 `get_dashboard_spec` to read. Call **`derive_dashboard_spec({ slug })}`** first: a read-only aid

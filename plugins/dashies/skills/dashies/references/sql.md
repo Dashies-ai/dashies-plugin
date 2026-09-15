@@ -107,7 +107,14 @@ a single `AT TIME ZONE` is reported as ambiguous, and a dataset declaring a time
 never names is reported as bucketing in some other zone. Use the double form, or
 `CONVERT_TIMEZONE` / `FROM_UTC_TIMESTAMP` / BigQuery's third argument, and the warning goes away.
 
-**A column that is already a `DATE` needs no conversion.**
+**A column that is already a `DATE` needs no conversion**, and a publish does not warn about one:
+it asks the warehouse for the type of every value a bucket reads, and stays quiet when each is a
+`DATE` taken from a `DATE` column, including one reached through an aggregate or a CTE, as in the
+anchored window below. It keeps the warning wherever it cannot establish that, such as a bucket over
+a date cast from a timestamp, or a warehouse it cannot ask. `validate_cube_sql` does not ask, so it
+still warns on a bucket that names no zone. **A day bucket written as a cast of a timestamp,
+`date(ts)` or `cast(ts as date)`, is not checked at all**, so convert the timestamp to the business
+zone before you cast it.
 
 ### Relative windows, anchored to the data
 
@@ -323,6 +330,19 @@ A nested column selected WHOLE arrives as JSON, which is usable neither as somet
   sub-millisecond precision matters, select the column as `DATETIME` or as a string.
 - **`introspect_schema` reports no row estimate**, so count it yourself as described above.
 
+**A refresh on this engine reads the whole statement every run.** A dataset that declares an
+incremental descriptor is refused rather than accepted and quietly ignored:
+
+```
+dataset "orders" declares an incremental descriptor, and a refresh of a bigquery connection reads the whole statement every run in this version: nothing resolves the window, so no partition is selected by it. It is refused here rather than accepted and silently ignored, because a schedule built on a descriptor that buys nothing costs the full read for ever with nobody told. Remove the incremental key to publish. A later slice adds incremental refresh for this engine and will honour the descriptor then.
+```
+
+So bound the window and anchor it to the data's own latest complete period, exactly as "Relative
+windows, anchored to the data" above says. **This refusal is newer than the rest of this section:**
+BigQuery used to accept a descriptor and warn about it, so a dashboard published before the refusal
+landed is refreshing in full with no signal. Re-read its spec rather than assuming the descriptor
+did anything.
+
 ### PostgreSQL
 
 **CAN back a dashboard, read on 2026-09-11 - see the note at the head of this section.** Everything
@@ -455,6 +475,17 @@ afterwards. **`INT`, `SMALLINT`, `TINYINT` and `FLOAT` are all carried and need 
 scheduled refresh re-reads the whole window the statement asks for. So bound that window and anchor
 it to the data's own latest complete period, exactly as "Relative windows, anchored to the data"
 above says.
+
+**So a dataset that declares an incremental descriptor is refused rather than accepted and quietly
+ignored:**
+
+```
+dataset "orders" declares an incremental descriptor, and a refresh of a databricks connection reads the whole statement every run in this version: nothing resolves the window, so no partition is selected by it. It is refused here rather than accepted and silently ignored, because a schedule built on a descriptor that buys nothing costs the full read for ever with nobody told. Remove the incremental key to publish. A later slice adds incremental refresh for this engine and will honour the descriptor then.
+```
+
+**This refusal is newer than the paragraph above it:** Databricks used to accept a descriptor and
+warn about it, so a dashboard published before the refusal landed is refreshing in full with no
+signal. Re-read its spec rather than assuming the descriptor did anything.
 
 The statement must be a single read-only `SELECT`, and here the read-only guard is the only gate
 - Databricks itself runs DML happily. The warehouse cold-starts a few seconds after an auto-stop,

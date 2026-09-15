@@ -961,9 +961,10 @@ these, and the two rules that govern all three. This section is the mechanics.**
 for them.** Two calls, on every connection, for a `custom` tile and a `look` body alike:
 `dashies.data` subscribes, and `dashies.filter` sets a page filter. The shape and the example are
 under **The shape your script is handed** below, and the two calls' full surface under **Filters
-and a coarser grain**. The publish report's `Datasets:` sentence and its "publishes with NO data"
-warning say whether a dataset publishes empty and fills in after the first refresh - which your
-script sees as `status: "pending"` - and they no longer decide whether your page can work.
+and a coarser grain**. The publish report's `Datasets:` sentence and its one-per-dataset
+"publishes with NO data" note say whether a dataset publishes empty and fills in after a refresh -
+which your script sees as `status: "pending"` - and they no longer decide whether your page can work.
+A republish whose `First data:` line says `unchanged` has no such wait and prints no such note.
 
 ### `theme` - your own CSS over the managed page
 
@@ -1556,7 +1557,13 @@ describe a tile that publishes clean and then refuses to draw.
 | `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
 | `col_extra` | the query outputs a column nothing declared reads, so it reaches every viewer and is read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship real data is an ERROR, not this warning) |
 | `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced. On a `look` spec this rule cannot see your renderer, so where it fires there it is noise; see "House rules" again before acting on one |
-| `publishes with NO data`, and its always-present partner `publishes pending` | the dataset's rows are kept OUTSIDE the page, so it publishes empty and its tiles read "Updating". They fire as a PAIR, so match either | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the tiles in. **If you wrote the markup, your script is handed `status: "pending"` for exactly this wait** - see "Writing your own markup" - so draw "no data yet" and stay until the refresh lands (`SKILL.md` Step 7) |
+| `publishes with NO data` | the dataset's rows are kept OUTSIDE the page, so it publishes empty and its tiles read "Updating". The report says so ONCE per dataset, on one routine note that also says how a page you wrote reads the rows; the JSON part keeps the separate warnings that note stands for, `publishes pending` among them | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the tiles in. **If you wrote the markup, your script is handed `status: "pending"` for exactly this wait** - see "Writing your own markup" - so draw "no data yet" and stay until the refresh lands (`SKILL.md` Step 7). A publish whose `First data:` line says the rows are already served prints no such note, and counts the notes it left out |
+
+**A line opening `Since the dry run of` is a count, not a warning.** A publish that passes a dry run's
+`spec_hash` and the `report_id` that same dry run returned counts, on that line, the warnings and
+obligations that dry run printed in full or itself counted, instead of printing them again. What prints under it is new,
+or was last printed in full more than about an hour ago; the JSON part still lists every one. `SKILL.md`
+Step 6 says when it applies.
 
 The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,
 `stack_percent_mixed_sign`) are warnings rather than errors ON PURPOSE: they are judged against

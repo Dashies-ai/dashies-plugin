@@ -303,10 +303,24 @@ sample dashboard is not the thing being sold.
 **The Dashies sample data connection** is the first way. It is a read-only Snowflake warehouse
 Dashies provides, holding synthetic data, listed in every space with `shared_sample: true` and
 labelled "Dashies sample data". Treat it as the warehouse it is: `introspect_schema` shows its
-tables, the statement takes the warehouse shape (Step 3), the publish keeps the data with Dashies
-and answers when a viewer opens the page, and it refreshes on a schedule - on every plan. When the
-user has no connection of their own and it is ready, `check_readiness` answers `start_authoring`
-naming it. Three things are owed the moment you use it: say that the numbers are sample data and
+tables and the statement takes the warehouse shape (Step 3). When the user has no connection of
+their own and it is ready, `check_readiness` answers `start_authoring` naming it.
+
+**WHERE ITS NUMBERS LIVE DEPENDS ON THE WORKSPACE'S PLAN, so do not promise either behaviour
+before you publish.** On a trial or a paid plan the publish keeps the data with Dashies, answers
+when a viewer opens the page, and refreshes on a schedule. On a FREE plan the numbers are built
+into the page itself, and **neither way of updating them is available**: a cadence is refused,
+and so is refreshing on demand, both wanting a paid plan. So a free workspace's sample dashboard
+moves only when it is REPUBLISHED, and offering either a schedule or a manual refresh there
+promises something the tool will refuse.
+
+**YOU CANNOT TELL FREE FROM TRIAL OR PAID BEFORE YOU PUBLISH.** `check_readiness` carries one
+plan-shaped field, `row_level_security`, and it only separates enterprise from everything else,
+so it cannot answer this. The publish decides, and asking for held data on a free plan is
+refused with a sentence naming the trial and the paid plans. So say what the user is getting
+once the publish has told you, rather than before it.
+
+Three things are owed the moment you use this connection: say that the numbers are sample data and
 not theirs; offer connecting their own warehouse in the same message; and make the dashboard say
 it is sample data on its own face - a title or a line of copy, because the page carries no stamp
 for this one. Never try to edit, test or delete the connection: it is shared and read-only, and
@@ -954,8 +968,15 @@ bucketed by month gains nothing from hourly refreshes. `daily` is a sensible def
 To set exact timing, call **`set_refresh_schedule`** after publishing: `frequency` plus an
 optional every-N interval (`every_n`) and an `hour` / `dow` / `dom` / `timezone` anchor - `daily`
 with `hour: 9` and `timezone: "America/New_York"` for 09:00 ET. Per-cadence interval caps apply
-and the tool states them. It works on every workspace dashboard, and the user can change all of
-it themselves on the **Schedules** page.
+and the tool states them. The user can change all of it themselves on the **Schedules** page.
+
+**IT DOES NOT WORK ON EVERY WORKSPACE DASHBOARD: A NON-MANUAL CADENCE NEEDS A TRIAL OR A PAID
+PLAN.** On a free workspace `manual` is the only frequency that lands and anything else is
+refused. Two things about that refusal are worth knowing. Its own words are that a paid plan is
+required, while a workspace still in its TRIAL is entitled too, so do not read it as excluding a
+trial. And `trigger_refresh` is gated the same way, so on a free workspace neither a cadence nor
+an on-demand refresh is available, and such a dashboard's numbers move only when it is
+republished.
 
 ---
 

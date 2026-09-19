@@ -240,8 +240,8 @@ space and carry on with the dashboard - that is them asking rather than you offe
 
 **A dashboard that reads a warehouse needs an engine Dashies can hold data for, and WHICH ENGINES
 THOSE ARE IS READ OUT OF THE DATABASE AS EACH PUBLISH IS JUDGED** rather than written down here.
-**Read on 2026-09-11 it was BigQuery, Databricks, Postgres, SQL Server and Snowflake**, with
-Redshift outside it. That is a reading taken on a date, not a promise: the set widens without a word
+**Read on 2026-09-18 it was BigQuery, Databricks, Oracle Database, Postgres, SQL Server and
+Snowflake**, with Redshift outside it. That is a reading taken on a date, not a promise: the set widens without a word
 here changing, and it has widened since somebody last wrote one down here. A connection on an
 engine outside the set can be verified, readable and perfectly ready, and still not back a
 dashboard: the publish is refused at `/source/connection`, and no rewrite of the SQL changes it at
@@ -1345,8 +1345,8 @@ never a spec edit - do not change `slug` to rename.
   names it, else the built-in `self` sample - and say it is sample data; do not publish
   something that pretends to refresh.
 - **A dashboard on a warehouse needs an engine Dashies can hold data for, and the publish refusal
-  names that set as it is built rather than as it was written down.** Read on 2026-09-11 it was
-  BigQuery, Databricks, Postgres, SQL Server and Snowflake; Redshift was refused at publish, at
+  names that set as it is built rather than as it was written down.** Read on 2026-09-18 it was
+  BigQuery, Databricks, Oracle Database, Postgres, SQL Server and Snowflake; Redshift was refused at publish, at
   `/source/connection`, and no rewrite of the SQL clears it. Read the engine before writing any
   SQL. Reading a schema, exploring it and validating a statement work on every engine, so say what
   is refused rather than calling their warehouse unsupported.

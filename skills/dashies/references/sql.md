@@ -249,11 +249,12 @@ both report. Author against `validate_cube_sql` for that connection rather than 
 
 **NOT EVERY ENGINE HERE CAN BACK A DASHBOARD, AND THIS SECTION STILL COVERS ALL OF THEM ON
 PURPOSE.** Which engines can hold a warehouse dashboard's data is read out of the database as each
-publish is judged, so it is not a list this page can keep in step: **read on 2026-09-11 it was
-BigQuery, Databricks, Postgres, SQL Server and Snowflake**, with Redshift refused at publish, at
-`/source/connection`. Take the publish refusal over the date: it is built from the live set. The
-PostgreSQL, Redshift, Databricks and SQL Server headings below repeat where their own engine stood
-at that same reading, so those headings and this note go stale together rather than one at a time.
+publish is judged, so it is not a list this page can keep in step: **read on 2026-09-18 it was
+BigQuery, Databricks, Oracle Database, Postgres, SQL Server and Snowflake**, with Redshift refused
+at publish, at `/source/connection`. Take the publish refusal over the date: it is built from the
+live set. The PostgreSQL, Redshift, Databricks, SQL Server and Oracle Database headings below
+repeat where their own engine stood at that same reading, so those headings and this note go stale
+together rather than one at a time.
 **What still
 works on every engine is `introspect_schema`, `explore_data` and `validate_cube_sql`** - the gate
 is on publishing a dashboard, not on using the warehouse. So this guidance is exactly what you
@@ -272,16 +273,25 @@ tell the user.
 
 ### Alias letter-case, on every engine
 
-Engines disagree about what an *unquoted* output alias comes back as: **Snowflake** folds it
-UPPER (`as orders` -> `ORDERS`), **Postgres** and **Redshift** fold it lower, and **BigQuery**,
-**Databricks** and **SQL Server** preserve it exactly as written.
+Engines disagree about what an *unquoted* output alias comes back as: **Snowflake** and **Oracle
+Database** fold it UPPER (`as orders` -> `ORDERS`), **Postgres** and **Redshift** fold it lower,
+and **BigQuery**, **Databricks** and **SQL Server** preserve it exactly as written.
 
-**A case-only difference between the alias and the declared key is handled for you.** Publish and
-refresh both fold a result column back onto the declared key when the two match apart from
-letter case. So `sum(amount) as revenue` against a measure declared `revenue` is correct
-whatever `check_readiness` reports as this connection's engine, including one added after this
-page was written. Do not quote an alias to defend its case, and do not keep a set of UPPERCASE
+**A case-only difference between the alias and the declared key is handled for you, on every engine
+EXCEPT Oracle Database.** Publish folds a result column back onto the declared key when the two
+match apart from letter case. So `sum(amount) as revenue` against a measure declared `revenue` is
+correct whatever `check_readiness` reports as this connection's engine, including one added after
+this page was written. Do not quote an alias to defend its case, and do not keep a set of UPPERCASE
 keys to please Snowflake.
+
+**ON ORACLE DATABASE THAT FOLD HOLDS AT PUBLISH AND NOT AT REFRESH, SO QUOTE EVERY ALIAS IN LOWER
+CASE THERE.** Write `sum(amount) as "revenue"`. This is the one engine where the sentence above
+would cost you a working dashboard rather than a little tidiness: an unquoted alias **validates,
+dry-runs and publishes cleanly**, the dashboard goes live at a real URL, and then the FIRST refresh
+fails and every refresh after it, so the numbers never appear. Measured on an Autonomous Database,
+one spec run three times with nothing changed but the quoting: unquoted failed, quoted lower case
+succeeded, unquoted failed again. The run's error names no column and no letter case, so nothing in
+the symptom points at the alias. See #3337, and the connect guide's "Quote every output alias".
 
 **What is NOT forgiven is two output columns differing only by case landing on one declared key**
 (`revenue` and `REVENUE` in one `SELECT`). That is refused loudly, naming both, at publish and at
@@ -681,6 +691,50 @@ connect the SQL Server source again with a read-only login, then publish again.
 
 The fix is the user's rather than yours. Only their allowlisted schemas, plus the `sys` and
 `INFORMATION_SCHEMA` catalogs, are readable.
+
+### Oracle Database
+
+**An Oracle Database dashboard keeps its data with Dashies**, so a dataset here is the record grain
+rather than a pre-aggregated summary, exactly as on the other served engines.
+
+**Oracle SQL.** Table references are schema-qualified, and an Oracle schema IS a user name, so
+`from sales.orders` reads the `SALES` user's `ORDERS` table.
+
+**QUOTE EVERY OUTPUT ALIAS IN LOWER CASE. This is the one thing on this page that silently costs a
+dashboard.** `select sum(amount) as "revenue"`, never `as revenue`. "Alias letter-case, on every
+engine" above carries the measurement and the reason; the short version is that an unquoted alias
+publishes cleanly and then fails every refresh, with an error that names nothing about aliases.
+
+```sql
+select to_char(trunc(ordered_at, 'MM'), 'YYYY-MM') as "month",
+       sum(amount)                                  as "revenue"
+from sales.orders
+where ordered_at >= add_months((select max(ordered_at) from sales.orders), -12)
+group by to_char(trunc(ordered_at, 'MM'), 'YYYY-MM')
+order by 1
+```
+
+**Bucket a date with `to_char` rather than returning the `DATE` itself.** The authoring channel and
+the refresh render an Oracle `DATE` differently - `2026-01-01 00:00:00` while you are authoring,
+`2026-01-01` in the data the refresh lands - so a dimension over a bare `DATE` carries one spelling
+in the sample you checked and another in what is served. Bucketing in SQL removes the divergence and
+is the right shape for a date dimension anyway. See #3335.
+
+**`''` IS `NULL`, and that is Oracle's own rule rather than anything Dashies does.** A row inserted
+as `''` and a row inserted as `null` are indistinguishable afterwards, `length` returns null for
+both, and `where v = ''` matches nothing. Write `where v is null`. If you are porting a dashboard
+from Postgres, where the two are distinct, expect one group where you had two.
+
+**A first refresh can be refused on the ORDER of your projection**, reporting that the cube's shape
+moved when nothing moved. See #3334. While that is open, the workaround is to give every projected
+column a name of the SAME LENGTH and project them in alphabetical order.
+
+**A refresh is a FULL RECOMPUTE.** Nothing incremental runs on this engine, so bound the window in
+your own SQL and anchor it to the data's own latest complete period - `add_months` against a
+`select max(...)` subquery, as above, never `sysdate`.
+
+**The connection must use a read-only database user**, and the connect probe refuses one that can
+write. That is the security boundary here, as it is on SQL Server.
 
 ---
 

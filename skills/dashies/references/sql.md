@@ -277,21 +277,29 @@ Engines disagree about what an *unquoted* output alias comes back as: **Snowflak
 Database** fold it UPPER (`as orders` -> `ORDERS`), **Postgres** and **Redshift** fold it lower,
 and **BigQuery**, **Databricks** and **SQL Server** preserve it exactly as written.
 
-**A case-only difference between the alias and the declared key is handled for you, on every engine
-EXCEPT Oracle Database.** Publish folds a result column back onto the declared key when the two
-match apart from letter case. So `sum(amount) as revenue` against a measure declared `revenue` is
-correct whatever `check_readiness` reports as this connection's engine, including one added after
-this page was written. Do not quote an alias to defend its case, and do not keep a set of UPPERCASE
-keys to please Snowflake.
+**AT PUBLISH, a case-only difference between the alias and the declared key is handled for you on
+every engine.** Publish folds a result column back onto the declared key when the two match apart
+from letter case, so `sum(amount) as revenue` against a measure declared `revenue` publishes
+correctly whatever `check_readiness` reports as this connection's engine, including one added after
+this page was written. Do not keep a set of UPPERCASE keys to please Snowflake.
 
-**ON ORACLE DATABASE THAT FOLD HOLDS AT PUBLISH AND NOT AT REFRESH, SO QUOTE EVERY ALIAS IN LOWER
-CASE THERE.** Write `sum(amount) as "revenue"`. This is the one engine where the sentence above
-would cost you a working dashboard rather than a little tidiness: an unquoted alias **validates,
-dry-runs and publishes cleanly**, the dashboard goes live at a real URL, and then the FIRST refresh
-fails and every refresh after it, so the numbers never appear. Measured on an Autonomous Database,
-one spec run three times with nothing changed but the quoting: unquoted failed, quoted lower case
-succeeded, unquoted failed again. The run's error names no column and no letter case, so nothing in
-the symptom points at the alias. See #3337, and the connect guide's "Quote every output alias".
+**AT REFRESH THE RULE IS NARROWER, AND THE SAFE HABIT IS ONE LINE: WRITE THE ALIAS IN THE SAME CASE
+AS THE DECLARED KEY.** On a folding engine that costs nothing, because the fold decides the answer
+either way. On an engine that PRESERVES the alias verbatim it is the whole rule, because the refresh
+compares the name it describes against the name the manifest carries. Oracle Database resolves its
+own fold back at refresh; **SQL Server compares exactly**, so a DELIBERATELY mixed-case alias there -
+`sum(amount) as Revenue` against a declared key `revenue` - publishes clean and then never
+refreshes. The exposure is narrow, since writing `as revenue` is what you would do anyway, but it is
+real: see #3340.
+
+**THIS SENTENCE CARRIED AN ORACLE DATABASE EXCEPTION AND THE EXCEPTION IS RETIRED, WHICH IS WORTH
+KNOWING IF YOU WROTE A CUBE AGAINST IT.** On that engine the fold used to hold at publish and not at
+refresh, so an unquoted alias validated, dry-ran and published cleanly, went live at a real URL, and
+then failed its first refresh and every refresh after it with an error naming no column and no
+letter case. A dashboard published before the September 2026 extractor generation and still showing
+no numbers is that, and republishing it clears it. Quoting an alias in lower case is still a
+reasonable habit on any engine that folds, because it makes the statement say what the dashboard
+will call the column; it is no longer load-bearing.
 
 **What is NOT forgiven is two output columns differing only by case landing on one declared key**
 (`revenue` and `REVENUE` in one `SELECT`). That is refused loudly, naming both, at publish and at
@@ -700,34 +708,58 @@ rather than a pre-aggregated summary, exactly as on the other served engines.
 **Oracle SQL.** Table references are schema-qualified, and an Oracle schema IS a user name, so
 `from sales.orders` reads the `SALES` user's `ORDERS` table.
 
-**QUOTE EVERY OUTPUT ALIAS IN LOWER CASE. This is the one thing on this page that silently costs a
-dashboard.** `select sum(amount) as "revenue"`, never `as revenue`. "Alias letter-case, on every
-engine" above carries the measurement and the reason; the short version is that an unquoted alias
-publishes cleanly and then fails every refresh, with an error that names nothing about aliases.
+**Output aliases fold UPPER here and that is handled for you at publish AND at refresh**, which is
+this engine's own resolution rather than something every engine does: `select sum(amount) as revenue`
+and `as "revenue"` both land under a declared key `revenue`. "Alias letter-case, on every engine"
+above carries the rule for the engines that PRESERVE an alias instead, and the history here, which
+matters only if you have a dashboard published before the September 2026 extractor generation that
+has never updated.
 
 ```sql
 select to_char(trunc(ordered_at, 'MM'), 'YYYY-MM') as "month",
-       sum(amount)                                  as "revenue"
+       cast(sum(amount) as number(18,4))           as "revenue"
 from sales.orders
 where ordered_at >= add_months((select max(ordered_at) from sales.orders), -12)
 group by to_char(trunc(ordered_at, 'MM'), 'YYYY-MM')
 order by 1
 ```
 
-**Bucket a date with `to_char` rather than returning the `DATE` itself.** The authoring channel and
-the refresh render an Oracle `DATE` differently - `2026-01-01 00:00:00` while you are authoring,
-`2026-01-01` in the data the refresh lands - so a dimension over a bare `DATE` carries one spelling
-in the sample you checked and another in what is served. Bucketing in SQL removes the divergence and
-is the right shape for a date dimension anyway. See #3335.
+**CAST ANYTHING YOU AGGREGATE TO A SIZED NUMBER: `cast(sum(amount) as number(18,4))`.** This is the
+one Oracle Database rule that will otherwise cost you a publish. **What decides it is whether the
+column carries a DECLARED precision by the time Dashies describes it**, and there are three ordinary
+ways to have none. `sum`, `avg`, `min`, `max` and `count(*)` all describe as `NUMBER` with NO
+precision and NO scale - Oracle reporting the type of an expression, not anything about the column
+underneath. **A column DECLARED plain `number` describes exactly the same way, so this is NOT only
+about what you compute**: `select amt as "amt" from t` over an `amt number` column hits it with no
+aggregate in the statement at all. And a `number(5,-2)` joins them, its negative scale storing
+multiples of a hundred that no non-negative-scale decimal holds.
+
+Dashies carries all three as exact text so the digits survive without passing through a float, and a
+measure cannot aggregate text - so a measure declaring `sum`, `avg`, `min`, `max`, a percentile or
+a standard deviation is refused with `measure ... needs a numeric column, but ... is VARCHAR`.
+**`agg: count` is the exception and is never refused**, because it counts rows and reads no column;
+`agg: sum` over a pre-computed `count(*)` column is an ordinary aggregate and does want the cast. A
+column declared `number(12,2)` keeps its precision and needs nothing. Both numbers have to be there:
+`cast(... as number)` with no precision is the same unsized type.
+
+**Bucket a date with `to_char` rather than returning the `DATE` itself.** That is the right shape
+for a date dimension on any engine, because a dashboard groups by a bucket rather than by an
+instant. An Oracle `DATE` carries a time of day, so Dashies carries it as a TIMESTAMP rather than
+truncating it, and the sample you author against and the data the refresh lands agree; this used to
+be a real divergence between the two readers and is no longer one.
 
 **`''` IS `NULL`, and that is Oracle's own rule rather than anything Dashies does.** A row inserted
 as `''` and a row inserted as `null` are indistinguishable afterwards, `length` returns null for
 both, and `where v = ''` matches nothing. Write `where v is null`. If you are porting a dashboard
 from Postgres, where the two are distinct, expect one group where you had two.
 
-**A first refresh can be refused on the ORDER of your projection**, reporting that the cube's shape
-moved when nothing moved. See #3334. While that is open, the workaround is to give every projected
-column a name of the SAME LENGTH and project them in alphabetical order.
+**Project your columns in whatever order the statement wants.** A first refresh used to be refused
+on the ORDER of the projection, reporting that the cube's shape had moved when nothing had moved,
+and the advice here was to give every projected column a name of the SAME LENGTH and project them
+in alphabetical order. That no longer happens, and the workaround is withdrawn rather than left
+standing. A shape refusal on a LATER refresh still means what it says: the cube describes different
+columns, or the same columns in a different order, from the ones the dashboard was published
+against, and republishing clears it.
 
 **A refresh is a FULL RECOMPUTE.** Nothing incremental runs on this engine, so bound the window in
 your own SQL and anchor it to the data's own latest complete period - `add_months` against a

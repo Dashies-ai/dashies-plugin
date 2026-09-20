@@ -466,6 +466,25 @@ never reads as months stale. A customer with no orders yet is possible and is no
 join accordingly. Everything in Step 3 still applies: it is a real dataset and the same
 correctness cross-check is owed on it.
 
+**What `introspect_schema` DOES return on `self` is the other surface behind that one connection
+value, and it is not the sample.** It answers with one table, `dashies_usage_metrics`, the
+built-in metrics view: its grain is `day`, one row per UTC date a dashboard was created on, and
+every other column is a count of those dashboards. Each column arrives carrying its own role and
+description, so the tool explains itself and this page does not restate it. **The relation name
+comes back BARE, and bare is the name to write** - the view sits in `public` and the executor that
+runs your SQL pins its search path there, so `from dashies_usage_metrics` resolves exactly as
+returned. The schema-qualification this section insists on is what `dashies_sample.orders` and
+`dashies_sample.customers` need; the metrics view does not.
+
+**The two surfaces are reached by different tools and neither answer mentions the other**, which is
+how an author is offered one and then shown the other: the sample arrives in `check_readiness`'s
+offer and never appears in `introspect_schema`'s answer, and the metrics view never appears in that
+offer. **And the metrics view is a poor subject for a user's dashboard**, which is why it is worth
+naming rather than leaving to be discovered: it counts dashboards across the whole Dashies platform
+with no owner predicate, so a dashboard built on it shows Dashies' numbers to somebody who came to
+see their own. Read it when the user has asked for Dashies' own platform metrics; otherwise build
+on the two sample tables and treat what `introspect_schema` returned as the thing to look past.
+
 ---
 
 ## Step 2 - Look at the schema

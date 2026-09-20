@@ -85,6 +85,21 @@ of those two, never both and never neither.
 | `connection` | `"self"` or a connection UUID | The built-in connection, or a connection id from `check_readiness` / `list_connections`. Required, with no default. |
 | `schedule` | `manual` / `hourly` / `daily` / `weekly` / `monthly` | The coarse cadence (Step 5). Refine the timing afterwards with `set_refresh_schedule`. |
 | `timezone` | string (1-64 chars) | Optional business zone for date bucketing; use an IANA zone name (e.g. `America/New_York`). The schema checks length only, not that the value is a real zone. |
+| `upload` | UUID | Which uploaded CSV or Excel file this dashboard reads. **Required when `connection` is the workspace's uploaded-file source, and refused on any other connection**, `self` included. No default; the newest upload is never assumed. See below. |
+
+**`source.upload`, and why it is written by hand.** A dashboard built from a spreadsheet names the
+workspace's uploaded-file source in `connection` and ONE upload in `upload`. Both halves of that
+rule are refused at `/source/upload` and both name the fix: a file source carrying no `upload`, and
+an `upload` beside a warehouse connection or beside `connection: self`. **Nothing resolves an absent
+`upload` to the newest one**, because then republishing an unchanged document would change the
+numbers on the page with nothing in the document saying so.
+
+**New data is a new upload plus a republish**, so `upload` is the field that moves. The previous
+upload is left as it was and a dashboard still naming it keeps reading it. **`schedule: manual` is
+the honest default on this source**: a refresh re-runs the same SQL over the same file, so it only
+changes the numbers if that SQL is time-relative. A cadence is accepted with an advisory saying so
+rather than refused. `SKILL.md`, "A spreadsheet instead of a warehouse", carries the upload loop and
+the rule about not casting around a declared type.
 
 ## datasets
 

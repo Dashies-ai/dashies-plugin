@@ -16,6 +16,10 @@ with it, and why a count is the number most likely to be got wrong.
 grain you meant, read it as the sample-connection instruction.** On a warehouse the same move
 hands Dashies a summary to summarize, and nothing refuses it.
 
+**AN UPLOADED CSV OR EXCEL FILE TAKES THE WAREHOUSE SHAPE**, because its numbers are kept with
+Dashies in the same way. What differs is the dialect and the tables you read: see
+`### Uploaded files`.
+
 **This is stated once, here, rather than beside each instruction.** Four rounds of qualifying
 individual passages each found more of them, which is the evidence that per-site fencing does not
 converge on a file whose default assumption is the thing being qualified.
@@ -255,8 +259,14 @@ at publish, at `/source/connection`. Take the publish refusal over the date: it 
 live set. The PostgreSQL, Redshift, Databricks, SQL Server and Oracle Database headings below
 repeat where their own engine stood at that same reading, so those headings and this note go stale
 together rather than one at a time.
-**What still
-works on every engine is `introspect_schema`, `explore_data` and `validate_cube_sql`** - the gate
+
+**On 2026-09-20 an uploaded CSV or Excel file joined that same set**, so a refusal enumerating it
+names a member the reading above does not. `SKILL.md`'s "Ready is not the same as usable, and the
+difference is the engine" carries the delta and what it means; `### Uploaded files` below is the
+section for writing its SQL.
+
+**What still works on every engine is `introspect_schema`, `explore_data` and
+`validate_cube_sql`** - the gate
 is on publishing a dashboard, not on using the warehouse. So this guidance is exactly what you
 need to read one of those schemas, explore it and check a statement, and a statement you get right
 today is still right on the day that engine can back a dashboard. Step 1 of the skill has what to
@@ -767,6 +777,71 @@ your own SQL and anchor it to the data's own latest complete period - `add_month
 
 **The connection must use a read-only database user**, and the connect probe refuses one that can
 write. That is the security boundary here, as it is on SQL Server.
+
+### Uploaded files
+
+**An uploaded file's dashboard keeps its data with Dashies**, so a dataset here is the record grain
+rather than a pre-aggregated summary, exactly as on the warehouse engines above. `SKILL.md`'s
+"A spreadsheet instead of a warehouse" carries the upload loop; this is the SQL.
+
+**This is its own dialect and it is not any of the ones in the table above.**
+`validate_cube_sql` is the authority, as it is everywhere else on this page, and here it is a
+stronger one than usual: the check and every later refresh run the same way, so a spelling that
+validates is a spelling that refreshes. **That is a claim about the DIALECT and not about the whole
+run** - a refresh also checks the statement against the columns the dashboard declares. The rest of this section is the part `validate_cube_sql` cannot tell you before you have
+written something.
+
+**YOU READ TABLES, NOT FILES.** The conversion wrote one table per CSV and one per non-empty
+visible sheet of a workbook, and `introspect_schema` lists them under the names your SQL uses. Those
+names are lowercased and reduced to `[a-z0-9_]` and then deduplicated, so a name may differ from the
+filename or the sheet label: take it from the listing rather than from what the user called the
+file. Reference it unqualified, `from orders`. **Do not try to open the file yourself** - no
+`read_parquet`, no `read_csv`, no path, no URL and no file name - there is nothing for one to name,
+and the statement is refused rather than answered.
+
+**Column names are kept VERBATIM from the header row**, so quote anything that is not already a
+bare lowercase identifier and alias it to the key grammar the spec needs
+(`^[a-z][a-z0-9_]{0,63}$`):
+
+```sql
+select "Order Date"    as ordered_on,
+       "Revenue (USD)" as revenue,
+       region
+from orders
+```
+
+**One read-only `SELECT` or `WITH ... SELECT`, and no trailing semicolon.** The statement is wrapped
+before it runs, so a trailing `;` is refused by name rather than coming back as a syntax error, and
+so are several statements. `insert`, `update`, `delete`, `merge` and `into` are refused too, but the
+check reads the statement with its comments, string literals and quoted identifiers removed first -
+so one of those words inside a comment or a string is invisible to it, and a COLUMN with one of
+those names is fine in double quotes. **A FROM-first query is refused and has a named rewrite**: the
+statement has to begin `select` or `with`, so write `select ... from t` rather than `from t select
+...`.
+
+**The types in the listing are DECLARED, not sampled, and a text column is text on purpose.** The
+conversion reads every value in the file and writes one type down: `BIGINT`, `DECIMAL(p,s)`,
+`DOUBLE`, `BOOLEAN`, `DATE`, `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`, or `VARCHAR` with the reason
+beside it. **Casting a text column back to a number or a date is the one mistake this section exists
+to stop**: leading zeros, an ambiguous day-and-month order, a thousands separator and a currency
+symbol each leave a column as text with a finding, and the remedy is a re-convert with an override,
+never a cast (`SKILL.md`, "The catalog says what the data IS, so do not cast around it"). A cast
+that drops leading zeros does not fail. It ships.
+
+**On time, the file usually has no zone to convert.** A timestamp column is declared `TIMESTAMP`,
+with no zone, unless its values carry an explicit offset, in which case it is declared
+`TIMESTAMP WITH TIME ZONE`. So the `### Time` guidance above applies to the second case and the
+first one is already the business's own local time, whatever that was when the file was written.
+Say which you have rather than converting a naive timestamp as if it were UTC.
+
+**For a median inside a CTE the spelling is `median(x)` or `quantile_cont(x, 0.5)`**, not the
+`within group` form the dialect table above shows for the engines that have one. It is the one
+divergence from that table worth writing down; for anything else, check rather than assume. A
+measure you DECLARE in the spec needs none of this: the server works it out.
+
+**The correctness cross-check in "Validate proves it RUNS" still applies.** A spreadsheet is not
+small by definition, and a fan-out join between two sheets double-counts exactly as it does on a
+warehouse.
 
 ---
 

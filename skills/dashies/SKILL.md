@@ -190,7 +190,7 @@ Which state the connection is actually in, and therefore whether the cheaper fix
 
 | `action` | What to do |
 |---|---|
-| `connect_a_warehouse` | There are no connections of the user's own, and no READY Dashies sample data connection (below) - a ready one is named under `start_authoring` instead, and one that is present but not ready is listed and not offered. Send them to the link in `next_step.url`, and offer the built-in sample (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. |
+| `connect_a_warehouse` | There are no connections of the user's own, and no READY Dashies sample data connection (below) - a ready one is named under `start_authoring` instead, and one that is present but not ready is listed and not offered. Send them to the link in `next_step.url`, and offer the built-in sample (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. **The answer's own text names a THIRD option beside those two, here and on the try-sample branch alike**: if the user has the numbers in a CSV or Excel file rather than in a warehouse, offer uploading the file in that same message - see "A spreadsheet instead of a warehouse". |
 | `fix_a_connection` | A credential is not working and nothing else is ready. **Say so before authoring anything**, name the error, send them to the app. |
 | `finish_setup_in_the_app` | A connection exists but was never tested. They finish setting it up, then call again. |
 | `choose_data_in_the_app` | A connection is verified and exposes nothing readable. They choose what to expose and check the login can read it. Both are app settings; **no query works around either**. |
@@ -247,6 +247,13 @@ engine outside the set can be verified, readable and perfectly ready, and still 
 dashboard: the publish is refused at `/source/connection`, and no rewrite of the SQL changes it at
 any value.
 
+**AND IT HAS WIDENED AGAIN SINCE, WHICH IS WORTH NAMING BECAUSE THE NEW MEMBER IS NOT A
+WAREHOUSE.** The 2026-09-18 reading is kept as it was taken; the delta is that on 2026-09-20 an
+uploaded CSV or Excel file joined the same set, so a refusal that enumerates it now also says
+**Uploaded file**. That is not an engine anybody connects - it is the file source under "The user
+with no warehouse", and it is the one member of that list you reach by uploading rather than by
+connecting.
+
 **So read the engine before you write a line of SQL.** `check_readiness` and `list_connections`
 both report it. Finding out at publish costs the entire authoring pass, and it is the one refusal
 you can predict without asking the server.
@@ -294,6 +301,114 @@ so before you write SQL** and split the report across more than one dashboard.
 refusal quotes it, and a third copy here would go stale against both.
 
 ### The user with no warehouse
+
+**Ask what they actually have before you reach for sample data.** A user with no warehouse very
+often has the numbers in a spreadsheet, and that is their OWN data rather than a demo: upload the
+file and the dashboard is real from the first publish. Sample data is the answer when there is no
+file either.
+
+#### A spreadsheet instead of a warehouse
+
+**Dashies takes a CSV or an `.xlsx` as a data source.** The file is converted once, and from then
+on its numbers are kept with Dashies and answered when a viewer opens the page, exactly as a
+warehouse dashboard's are. So Steps 3 to 8 hold as written and what is particular to this path is
+small: the three authoring tools take an `upload`, `manual` is the honest schedule, and the SQL is
+its own dialect, which `references/sql.md` has a section for.
+
+**Three things decide whether this path is open at all, and two of them are not yours to fix:**
+
+- **It needs a paid plan or a trial, and a creator seat.** `create_file_upload` says so if not. Do
+  not promise it before you have called it, and do not suggest a plan change.
+- **It needs a shell.** The bytes go from the user's disk through a `curl` command YOU run, so a
+  client with no shell cannot upload at all. Say that plainly rather than trying it and failing.
+- **There is no upload page in the web app**, so do not send the user looking for one. The
+  workspace's uploaded-file source is reported by `check_readiness` and `list_connections` and is
+  deliberately absent from the app's Data sources page.
+
+**The loop:**
+
+1. **`create_file_upload({ filename, bytes })`.** `filename` names the table a CSV becomes, so it
+   is not merely a label. Pass `bytes` (`wc -c < <path>`) and a file over the limit is refused
+   before anything is sent. The answer carries an upload id, a one-time URL and the exact `curl`
+   line. A workspace's FIRST upload also creates its uploaded-file source, which spends one of that
+   workspace's data connection slots.
+2. **Run that `curl` line exactly as printed**, in your own shell, replacing `<path>` with the path
+   to the file. Do not rewrite it: `-T` is what makes curl send the `content-length` the route
+   requires, and the ticket rides in a header rather than in the URL. And **never read the file into
+   the conversation** - the whole point is that the bytes go from disk to Dashies without passing
+   through you. The ticket works once and expires shortly; the response says when.
+3. **`get_file_upload({ upload, wait_seconds })`** until the status is `ready` or `failed`. It
+   holds the call open the way `get_refresh_status` does, so call it again with `wait_seconds`
+   rather than sleeping between polls. It reports the SHA-256 of the bytes Dashies stored, which
+   `shasum -a 256` on their file should match. **On `failed`, read the SENTENCE beside the failure
+   token rather than the token alone** - where it names an override, converting the same bytes again
+   is the remedy (below) and re-uploading is not; where it tells you to create a new upload, that is
+   the remedy. Either way, do not go round the loop blind. **The thing to disbelieve here is the
+   tool's own DESCRIPTION, not its answer**: `get_file_upload` describes a failed upload as final,
+   which is narrower than what the server does, so follow the failure's sentence - which that same
+   tool hands you - rather than the description around it (tracked by `#3393`). It is worth saying
+   out loud because the rest of this page tells you to prefer what the server says.
+4. **Author against it.** `introspect_schema`, `explore_data` and `validate_cube_sql` each take an
+   `upload` argument beside `connection`. `introspect_schema` renders the catalog: the tables the
+   file became, and each column with its declared type and the reason for it. **That listing has a
+   budget and says out loud when it did not fit**, naming `tables` as the fix; narrow it the way you
+   would on a warehouse rather than writing SQL against a prefix. Nothing it does show is a sample.
+5. **Publish exactly as you would from a warehouse**, with `source.connection` set to the file
+   source's id and `source.upload` set to the upload id.
+
+**`source.upload` IS THE BINDING AND IT IS EXPLICIT ON PURPOSE.** Dashies never picks the newest
+upload for you, because then republishing an unchanged spec would change the numbers on the page
+with nothing in the document saying so. A file source with no `source.upload` is refused at
+`/source/upload`, and a `source.upload` on a warehouse connection is refused at the same path; both
+name the fix. The same rule holds one layer up on the three authoring tools, where `upload` is
+REQUIRED on the file source and REFUSED on any other connection - and omitting it is refused with
+the newest ready upload NAMED for you to pass back. **Naming it is not defaulting to it**: you
+still write it.
+
+**`schedule: manual` is the honest default here.** A refresh re-runs your SQL over the SAME file,
+so it only changes the numbers if that SQL is time-relative - a moving window, `current_date`. A
+cadence is accepted rather than refused, with an advisory saying exactly that, because a trailing
+window over a file of daily rows genuinely does move at midnight.
+
+**New numbers are a NEW UPLOAD plus a republish.** Nothing replaces a file in place: upload the new
+file, change `source.upload`, republish. The previous upload is left exactly as it was and a
+dashboard still naming it keeps reading it, which is what makes a republish onto a new file
+impossible to mistake for the same one.
+
+#### The catalog says what the data IS, so do not cast around it
+
+**The conversion reads EVERY value in the file and writes the type down once.** That is not the
+sampled inference most tools do, and the difference decides how you write SQL: the types
+`introspect_schema` shows are what the data is, not a guess to defend against. A column kept as
+text carries the reason beside it, and that reason is the thing to read.
+
+**The two that cost a dashboard if you work around them:**
+
+- **A column of padded integers stays text, and a numeric type on it is REFUSED.** A ZIP code or an
+  account number written `0042` is text because a declared integer type returns `42` with no error
+  anywhere, so `cast(zip as integer)` in your SQL ships a dashboard with the leading zeros silently
+  gone. Leave it as text.
+- **A date whose day-and-month order is ambiguous stays text**, with no format assumed: `03/04/2026`
+  in a column where no value settles which number is the day. **The remedy is a `dateformat`
+  override on a re-convert, not SQL.** Parsing it yourself is guessing where the conversion
+  deliberately declined to.
+
+**Correct a type by CONVERTING AGAIN, never by casting around it**, and the same call is what a
+failed conversion's own sentence points at when it names an override - an encoding it could not
+read, a header row it refused.
+`create_file_upload({ reconvert_of, overrides })` reads the same stored bytes with your overrides -
+`types`, `dateformat`, `timestampformat`, `nullstr`, `thousands`, `delim`, `quote`, `header`,
+`skip`, `names`, `sheets`, `range`, `encoding` - and returns a NEW upload id to poll. Nothing is
+uploaded, so that answer carries no url and no `curl`, and **the original upload is untouched**, so
+a dashboard reading it keeps reading it. **Overrides are required on a re-convert**, because the
+same bytes read the same way produce the same catalog. Each one is checked against the file itself
+as the NEW conversion reads it, so an override the data does not support fails that conversion and
+names your value rather than quietly dropping something. **It is NOT checked against what the first
+conversion concluded**, which is why a re-convert can disagree with the catalog you were reading
+when you chose the override. The original bytes are kept only while that upload is, so a re-convert
+of something long since drained is refused saying so and the answer is to upload the file again.
+
+#### Sample data, when there is no file either
 
 **Dashies provides sample data two ways, and `check_readiness` says which one applies. Offer it
 once, and say plainly that it is sample data.** Put the offer and the link to
@@ -366,6 +481,10 @@ unattended, forever, with nobody watching.
 **THE SHAPE OF THE STATEMENT DEPENDS ON WHICH CONNECTION IT READS.** The rest of this step
 applies either way, and the depth is in `references/sql.md`, whose own opening carries the same
 split. Read the engine first (Step 1).
+
+**AN UPLOADED FILE TAKES THE WAREHOUSE SHAPE**, because its numbers are kept with Dashies exactly
+as a warehouse dashboard's are. What differs is the dialect and the tables you read, which are the
+ones the conversion made: `references/sql.md` has a section for it.
 
 ### Reading a warehouse: return the records and let Dashies work the numbers out
 
@@ -965,6 +1084,10 @@ Match it to how fast the underlying data actually moves and the grain you chose 
 bucketed by month gains nothing from hourly refreshes. `daily` is a sensible default;
 `manual` means it refreshes only when someone asks.
 
+**On an uploaded file `manual` is the honest default instead**, because a refresh there re-runs
+your SQL over the same file. A cadence is accepted with an advisory rather than refused - see "A
+spreadsheet instead of a warehouse".
+
 To set exact timing, call **`set_refresh_schedule`** after publishing: `frequency` plus an
 optional every-N interval (`every_n`) and an `hour` / `dow` / `dom` / `timezone` anchor - `daily`
 with `hour: 9` and `timezone: "America/New_York"` for 09:00 ET. Per-cadence interval caps apply
@@ -1341,15 +1464,22 @@ never a spec edit - do not change `slug` to rename.
 ## Guardrails recap
 
 - **A dashboard needs a connection to stay current.** No connection means nothing to re-run.
-  Offer the sample data and the link - the Dashies sample data connection when `check_readiness`
-  names it, else the built-in `self` sample - and say it is sample data; do not publish
-  something that pretends to refresh.
+  **Ask whether the numbers are in a CSV or Excel file before you reach for sample data**: an
+  uploaded file is the user's own data rather than a demo, and it is served, checked and versioned
+  like a warehouse dashboard. **What does NOT carry over is how it stays current**: a refresh
+  re-runs the same SQL over the same file, so new numbers are a new upload plus a republish and no
+  schedule picks one up. It needs a paid plan or a trial and a shell you can run `curl` in (Step 1,
+  "A spreadsheet instead of a warehouse"). Otherwise offer the sample data and the link - the Dashies
+  sample data connection when `check_readiness` names it, else the built-in `self` sample - and say
+  it is sample data; do not publish something that pretends to refresh.
 - **A dashboard on a warehouse needs an engine Dashies can hold data for, and the publish refusal
   names that set as it is built rather than as it was written down.** Read on 2026-09-18 it was
   BigQuery, Databricks, Oracle Database, Postgres, SQL Server and Snowflake; Redshift was refused at publish, at
-  `/source/connection`, and no rewrite of the SQL clears it. Read the engine before writing any
-  SQL. Reading a schema, exploring it and validating a statement work on every engine, so say what
-  is refused rather than calling their warehouse unsupported.
+  `/source/connection`, and no rewrite of the SQL clears it. **An uploaded file joined that same set
+  on 2026-09-20 and a refusal naming it says `Uploaded file`** - Step 1 carries the delta and what
+  it means. Read the engine before writing any SQL. Reading a schema, exploring it and validating
+  a statement work on every engine, so say what is refused rather than calling their warehouse
+  unsupported.
 - **You write the spec; the server writes the dashboard.** A structural fault is a pointed
   publish error naming the exact field, not a rendering surprise. Dry-run first, fix the pointed
   errors, then publish the hash.
@@ -1405,7 +1535,7 @@ Load the one you need for the step you are on; do not front-load them.
 
 | Reference | Covers | Load for |
 |---|---|---|
-| `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects | Steps 2-3 |
+| `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects, and the one an uploaded file uses | Steps 2-3 |
 | `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Row-level security**, **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
 | `references/charts.md` | Copy-paste inline-SVG chart recipes for a page you write: a shared stylesheet and helpers, then a KPI card with a delta, horizontal and vertical bars, a line over time, a stacked bar and a compact table, each drawn from what `dashies.data` hands you | Step 4, when you write the markup |
 

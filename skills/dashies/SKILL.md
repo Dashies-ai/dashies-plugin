@@ -343,11 +343,17 @@ its own dialect, which `references/sql.md` has a section for.
    `shasum -a 256` on their file should match. **On `failed`, read the SENTENCE beside the failure
    token rather than the token alone** - where it names an override, converting the same bytes again
    is the remedy (below) and re-uploading is not; where it tells you to create a new upload, that is
-   the remedy. Either way, do not go round the loop blind. **The thing to disbelieve here is the
-   tool's own DESCRIPTION, not its answer**: `get_file_upload` describes a failed upload as final,
-   which is narrower than what the server does, so follow the failure's sentence - which that same
-   tool hands you - rather than the description around it (tracked by `#3393`). It is worth saying
-   out loud because the rest of this page tells you to prefer what the server says.
+   the remedy. Either way, do not go round the loop blind. **And read WHAT that sentence asks for,
+   sentence by sentence rather than by token**: an `unsupported_encoding` or `header_refused`
+   sentence names an override to SEND (`encoding`, `names`), while an `override_refused` sentence is
+   the conversion refusing a value you already sent - and it may still name a DIFFERENT override to
+   ADD, the way "add the sheets override naming one" does while refusing `names`. So read it for
+   what to change or add, never as licence to re-send the value it refused. Nothing catches that for
+   you - the check on `overrides` reads the key set and the JSON kind, never a value against the
+   file, so a refused value is accepted again and then refused again. **`failed`
+   describes the CONVERSION, not the file**: failing does not itself discard the bytes Dashies
+   received, which is what lets an override be spent on those same bytes rather than on a fresh copy
+   of a file the user has already sent, and on a large file that second transfer changes nothing.
 4. **Author against it.** `introspect_schema`, `explore_data` and `validate_cube_sql` each take an
    `upload` argument beside `connection`. `introspect_schema` renders the catalog: the tables the
    file became, and each column with its declared type and the reason for it. **That listing has a

@@ -427,10 +427,12 @@ and it is meant to be turned back on once the provider offers a publicly signed 
 2026-09-08 across four providers, only Neon's certificate chained to a public root. That is a
 reading about those providers, not a recommendation to turn verification off.
 
-**A database that accepts connections only from an allow-list of addresses cannot be reached yet.**
-The address we connect from is not fixed, so there is nothing stable to give their network
+**A PostgreSQL database that accepts connections only from an allow-list of addresses cannot be
+reached yet.** Adding the data source, and the reads you make while building a dashboard, do not
+come from a fixed address, so for this engine there is nothing stable to give their network
 administrator. Say that plainly rather than having somebody widen their firewall: the answer is a
-database we can reach, and publishing a stable set of addresses is a thing we do not do today.
+database we can reach. SQL Server and Oracle Database are different, and their own sections say
+what to allow.
 
 **Cloud SQL, Azure Database for PostgreSQL Flexible Server and Heroku are reasoned rather than
 measured**, so say
@@ -526,6 +528,13 @@ below is dialect guidance that was already true for reading, exploring and valid
 is that a SQL Server connection now also holds a dashboard's data, and **three of the type traps
 this page used to carry are gone with it**, listed under "What the older advice got right about a
 path that is no longer the one your dashboard takes".
+
+**A SQL Server that accepts connections only from known addresses works.** Every connection Dashies
+makes to it, from the connection test to every refresh, comes from two fixed addresses for the
+region the workspace runs in, one IPv4 and one IPv6. If a firewall is what stops Dashies, tell the
+user to allow both on port 1433: they are listed at https://docs.dashies.ai/reference/ip-addresses
+and in Settings, on the workspace's General page. An Azure SQL firewall rule takes the IPv4 one.
+Do not suggest opening the port to every address.
 
 **T-SQL**, not a PostgreSQL dialect. Table references are `[bracket]`-quoted (`[dbo].[orders]`).
 It PRESERVES an output alias as written, measured on a case-insensitive collation - collation
@@ -777,6 +786,12 @@ your own SQL and anchor it to the data's own latest complete period - `add_month
 
 **The connection must use a read-only database user**, and the connect probe refuses one that can
 write. That is the security boundary here, as it is on SQL Server.
+
+**An Oracle Database that accepts connections only from known addresses works**, as SQL Server's
+does: every connection comes from the two fixed addresses for the workspace's region, listed at
+https://docs.dashies.ai/reference/ip-addresses and in Settings, on the workspace's General page.
+The user allows both on the listener port, and on Autonomous Database adds them to the access
+control list, the IPv4 address at least.
 
 ### Uploaded files
 

@@ -131,7 +131,7 @@ flowchart LR
 - **Scheduled refresh.** Hourly, daily, weekly or monthly, with an every-N multiplier and a timezone anchor. Or refresh on demand.
 - **Version history.** Every republish snapshots the previous body. Twenty autosaves are kept, plus up to thirty named versions, and you can roll back to any of them.
 - **Safe renames.** The old slug 301-redirects to the new one, so links you already shared keep working.
-- **Access-gated by default.** A dashboard opens for the members of its workspace; anyone signed out is sent to sign in. Nothing is public.
+- **Access-gated, always.** A dashboard opens only for the members of its workspace; anyone signed out is sent to sign in. There is no public dashboard.
 - **Sandboxed rendering.** Published dashboards run under a strict sandbox CSP, isolated from the rest of the origin.
 - **Warehouse connections.** Postgres, BigQuery, Snowflake, Amazon Redshift, Databricks, Microsoft SQL Server and Oracle Database, connected in the web app so credentials never pass through your AI. Which of them a refreshing dashboard can publish against is read out of the database as the publish is judged, so the publish refusal names the current set and this sentence names a reading: on 2026-09-18 it was BigQuery, Databricks, Oracle Database, Postgres, SQL Server and Snowflake. Redshift can be connected, explored and validated, but not published against.
 
@@ -146,7 +146,7 @@ flowchart LR
 
 | Tool | What it does |
 |---|---|
-| `publish_dashboard` | Publish a self-contained file (HTML, JSON, CSV or an image, up to ~5 MB), or a YAML spec the server compiles, validates and seeds for you. Returns the stable URL. |
+| `publish_dashboard` | Publish a dashboard from a YAML spec the server compiles, validates and seeds for you; `dry_run` checks the same spec without publishing anything. Returns the stable URL. |
 | `update_dashboard` | Change the name, tags or chart kind, or rename the slug. The old slug 301-redirects. |
 | `get_dashboard` | Read back a published file. |
 | `delete_dashboard` | Retire a dashboard. The URL stops resolving and the bytes are removed. |

@@ -427,21 +427,30 @@ and it is meant to be turned back on once the provider offers a publicly signed 
 2026-09-08 across four providers, only Neon's certificate chained to a public root. That is a
 reading about those providers, not a recommendation to turn verification off.
 
-**A PostgreSQL database that accepts connections only from an allow-list of addresses cannot be
-reached yet.** Adding the data source, and the reads you make while building a dashboard, do not
-come from a fixed address, so for this engine there is nothing stable to give their network
-administrator. Say that plainly rather than having somebody widen their firewall: the answer is a
-database we can reach. SQL Server and Oracle Database are different, and their own sections say
-what to allow.
+**A PostgreSQL database that accepts connections only from an allow-list of addresses works when
+it is added that way.** On the connect form, whoever adds the data source ticks **This database
+only accepts connections from known IP addresses**, and the form shows the two addresses for their
+workspace. From then on every connection Dashies makes to that database, from the test and the
+reads you make while building a dashboard to every refresh, comes from those two addresses, which
+are also on the workspace's General settings page and on the public IP addresses page. That pair is
+what to give their network administrator: allow both, on the database's port. Checks on such a
+data source take longer, because each one starts from those addresses. A PostgreSQL data source
+added WITHOUT the setting does not connect from a fixed address, so the setting is the answer
+rather than a wider firewall rule. When a check on a flagged data source answers that the database
+refused Dashies' address, nothing about the SQL was judged: relay the addresses to allow and do
+not rewrite the statement. SQL Server and Oracle Database always connect from the same pair, and
+their own sections say what to allow.
 
 **Cloud SQL, Azure Database for PostgreSQL Flexible Server and Heroku are reasoned rather than
 measured**, so say
 which you are doing if you tell somebody what to expect. Cloud SQL's public address is an
-allow-list and its server certificate authority is per instance, so it is reachable only by opening
-it to all addresses with verification turned off, and Google's own answer to that is its Auth
-Proxy, which is a separate thing Dashies does not run. Azure verifies normally against public roots
-and its firewall is an allow-list. Heroku's standard tier connects only with verification turned
-off. None of the three was measured, and any of them may behave differently for a reason the
+allow-list and its server certificate authority is per instance, so it is reachable only with
+verification turned off and with its authorized networks admitting Dashies: add it as only
+accepting known addresses and authorize the workspace's two addresses, rather than opening it to
+all addresses. Google's own answer to the certificate half is its Auth Proxy, which is a separate
+thing Dashies does not run. Azure verifies normally against public roots and its firewall is an
+allow-list, so it takes the same setting. Heroku's standard tier connects only with verification
+turned off. None of the three was measured, and any of them may behave differently for a reason the
 reasoning did not name.
 
 **Two publish refusals are specific to this engine, and each names its own repair.**
@@ -534,7 +543,9 @@ makes to it, from the connection test to every refresh, comes from two fixed add
 region the workspace runs in, one IPv4 and one IPv6. If a firewall is what stops Dashies, tell the
 user to allow both on port 1433: they are listed at https://docs.dashies.ai/reference/ip-addresses
 and in Settings, on the workspace's General page. An Azure SQL firewall rule takes the IPv4 one.
-Do not suggest opening the port to every address.
+Do not suggest opening the port to every address. When a check answers that the database refused
+Dashies' address, nothing about the SQL was judged: relay the addresses and do not rewrite the
+statement.
 
 **T-SQL**, not a PostgreSQL dialect. Table references are `[bracket]`-quoted (`[dbo].[orders]`).
 It PRESERVES an output alias as written, measured on a case-insensitive collation - collation
@@ -791,7 +802,9 @@ write. That is the security boundary here, as it is on SQL Server.
 does: every connection comes from the two fixed addresses for the workspace's region, listed at
 https://docs.dashies.ai/reference/ip-addresses and in Settings, on the workspace's General page.
 The user allows both on the listener port, and on Autonomous Database adds them to the access
-control list, the IPv4 address at least.
+control list, the IPv4 address at least. When a check answers that the database or its listener
+refused Dashies' address, nothing about the SQL was judged: relay the addresses and do not rewrite
+the statement.
 
 ### Uploaded files
 

@@ -94,8 +94,10 @@ an `upload` beside a warehouse connection or beside `connection: self`. **Nothin
 `upload` to the newest one**, because then republishing an unchanged document would change the
 numbers on the page with nothing in the document saying so.
 
-**New data is a new upload plus a republish**, so `upload` is the field that moves. The previous
-upload is left as it was and a dashboard still naming it keeps reading it. **`schedule: manual` is
+**New data is a new upload plus a republish**, so `upload` is the field that moves - and
+`replace_file_upload` is what moves it, on every dashboard reading that file at once, after checking
+each of them against the new one. The previous upload is left as it was and a dashboard still naming
+it keeps reading it. **`schedule: manual` is
 the honest default on this source**: a refresh re-runs the same SQL over the same file, so it only
 changes the numbers if that SQL is time-relative. A cadence is accepted with an advisory saying so
 rather than refused. `SKILL.md`, "A spreadsheet instead of a warehouse", carries the upload loop and
@@ -938,9 +940,9 @@ removal nobody has established is a removal. `spec_edits` meets none of this, be
 it does not name alone.
 
 **Every key value in the extracted data must be granted to somebody or named in `hidden_values`.**
-A refresh that finds one that is neither STOPS: it publishes nothing, the dashboard keeps the
-numbers from its last successful refresh, and Dashies emails the dashboard's author and every admin
-of its workspace at once, naming the first few values plus a count of the rest, and how many rows
+A refresh that finds one that is neither HOLDS BACK the dataset it is in: it publishes nothing for
+that dataset, which keeps what it showed before, and Dashies emails the dashboard's author and every
+admin of its workspace at once, naming the first few values plus a count of the rest, and how many rows
 they account for; the complete list is on the run detail. There is no
 override and no margin. Grant them or hide them, then refresh. A key whose values appear on their
 own is an argument for `grants.sql` over an inline `list`.

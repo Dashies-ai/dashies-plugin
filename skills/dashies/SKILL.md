@@ -376,10 +376,47 @@ so it only changes the numbers if that SQL is time-relative - a moving window, `
 cadence is accepted rather than refused, with an advisory saying exactly that, because a trailing
 window over a file of daily rows genuinely does move at midnight.
 
-**New numbers are a NEW UPLOAD plus a republish.** Nothing replaces a file in place: upload the new
-file, change `source.upload`, republish. The previous upload is left exactly as it was and a
-dashboard still naming it keeps reading it, which is what makes a republish onto a new file
-impossible to mistake for the same one.
+**New numbers are a NEW UPLOAD plus `replace_file_upload`, and that is the whole monthly loop.**
+Nothing replaces a file in place. Upload the newer file exactly as above, wait for it to be ready,
+then call `replace_file_upload({ upload: <the id the dashboards read>, replacement: <the new id> })`.
+It points EVERY dashboard on that file at the new one, and each keeps its slug, its URL and its
+version history.
+
+**THE CADENCE COMES FROM THE SPEC, AND THAT IS TRUE OF EVERY REPUBLISH RATHER THAN OF THIS TOOL.**
+A frequency or an every-N interval armed with `set_refresh_schedule` or on the Schedules page is set
+back to what the document says; the hour, day and timezone anchor is kept. That matters here because
+`manual` is the honest default to write on a file source and `set_refresh_schedule` is where Step 5
+sends you for anything past a bare frequency word, so the two together are the normal shape. If the
+user armed a cadence that way, say so and re-arm it after replacing.
+
+**It checks before it changes anything, and the check is the publish itself.** Every dashboard on
+the file is run against the new upload first - its datasets, its tiles, the lot - and if any one of
+them cannot read it, the whole call is refused naming the dataset and the column and nothing is
+changed. A column the new file drops that no dataset reads is not a problem and does not refuse. So
+the answer to "will this month's file still work" is the tool's rather than yours to predict, and
+`dry_run: true` asks it without changing anything.
+
+**What it does is the edit you would have made by hand**: each dashboard is republished with one
+edit to its spec, `source.upload`, so the change is in the document and in the dashboard's history
+rather than underneath it, and each republish ASKS FOR the refresh that paints the new numbers.
+**Read the per-dashboard word rather than assuming a run started** - a dashboard already refreshing
+gets no second run, and a refusal starts nothing at all. Step 7's wait applies to each one that did.
+
+**The upload you replaced is left exactly as it was**, because each dashboard's previous version
+still names it, which is what keeps the way back to last month's numbers open.
+
+**A dashboard that merely MENTIONS the old upload is left alone rather than repointed**, and named
+in `mentions_only`. The ledger finds a referencing dashboard by searching the spec TEXT as well as
+the binding, so a comment or a `look` body carrying the id is enough to be listed; what decides is
+whether `source.upload` names it. If a dashboard you expected to move is in that list, its document
+binds a different file.
+
+**Where it cannot repoint a dashboard that really does read the file, it says which one and why.**
+For most reasons the remedy it prints is the by-hand one: `get_dashboard_spec`, change
+`source.upload`, publish the same slug (Step 8). For one it deliberately prescribes nothing - a
+dashboard whose refresh manifest reads this file while its spec names another is divergent, and
+which file it should read next is the user's call rather than yours. Two uploads on different file
+sources are refused separately, naming both.
 
 #### The catalog says what the data IS, so do not cast around it
 
@@ -729,9 +766,10 @@ A dashboard-level block with no dataset-level one is refused, because it opts ou
 does not exist.
 
 **Every key value in the data has to be granted to somebody or hidden, and the refresh enforces
-that.** A refresh that finds a value no grant covers and `hidden_values` does not name STOPS: it
-publishes nothing, the dashboard keeps the numbers from its last successful refresh, and Dashies
-emails the dashboard's author and every admin of its workspace at once, naming the first few values
+that.** A refresh that finds a value no grant covers and `hidden_values` does not name HOLDS BACK
+the dataset it is in: it publishes nothing for that dataset, which keeps what it showed before
+(other datasets of the same refresh can still update), and Dashies emails the dashboard's author
+and every admin of its workspace at once, naming the first few values
 it found plus a count of the rest, and how many rows they account for. The run detail carries the
 complete list, so read that rather than granting only what the email names. **There is no override
 and no margin.** The fix is to grant those values to somebody or to name them in `hidden_values`,
@@ -1492,8 +1530,10 @@ never a spec edit - do not change `slug` to rename.
   **Ask whether the numbers are in a CSV or Excel file before you reach for sample data**: an
   uploaded file is the user's own data rather than a demo, and it is served, checked and versioned
   like a warehouse dashboard. **What does NOT carry over is how it stays current**: a refresh
-  re-runs the same SQL over the same file, so new numbers are a new upload plus a republish and no
-  schedule picks one up. It needs a paid plan or a trial and a shell you can run `curl` in (Step 1,
+  re-runs the same SQL over the same file, so new numbers are a new upload plus `replace_file_upload`,
+  which checks every dashboard on that file against the new one and then repoints and republishes
+  each of them, keeping its slug, its URL and its history and taking its cadence from its spec;
+  no schedule picks one up. It needs a paid plan or a trial and a shell you can run `curl` in (Step 1,
   "A spreadsheet instead of a warehouse"). Otherwise offer the sample data and the link - the Dashies
   sample data connection when `check_readiness` names it, else the built-in `self` sample - and say
   it is sample data; do not publish something that pretends to refresh.
@@ -1568,4 +1608,5 @@ The tool calls named here - `check_readiness`, `list_connections`, `introspect_s
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /
 `spec_hash` / `spec_edits` / `base_spec_hash`, `get_dashboard_spec`, `derive_dashboard_spec`,
 `set_refresh_schedule`, `trigger_refresh`, `get_refresh_status`, `verify_dashboard`,
-`get_source_config`, `update_dashboard` - match the shipped MCP tools.
+`get_source_config`, `update_dashboard`, and on the uploaded-file path `create_file_upload`,
+`get_file_upload` and `replace_file_upload` - match the shipped MCP tools.

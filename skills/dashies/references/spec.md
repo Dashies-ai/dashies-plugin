@@ -248,8 +248,9 @@ way, so the refusal comes at publish rather than at validation.**
   security**), and `resolved` is one of the three modes named above. Otherwise the publish report
   says what the server chose for each dataset, and the refusal names it. **And a
   measure your own markup draws through a managed binding** rather than reading it yourself: a
-  `data-dash` binding is handed the raw value. A `data-group` binding, and a table binding that
-  names no columns, each draw every measure of their dataset, so either one is enough.
+  `data-dash` binding is handed the raw value. A table binding that names no columns draws every
+  measure of its dataset, and so does any binding carrying `data-group` without `data-columns`, so
+  either one is enough; a table that names columns draws the measures it names, grouped or not.
 
 **A worked line, because the rule "the browser draws, it never computes" is easy to over-read
 here.** A `percent` measure declared `scale: fraction` arrives as `0.42`; drawing it as `42%` is

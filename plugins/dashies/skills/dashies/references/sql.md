@@ -275,11 +275,18 @@ tell the user.
 | Need | PostgreSQL | GoogleSQL (BigQuery) | Snowflake |
 |---|---|---|---|
 | Table reference | `from orders` | backtick `` `project.dataset.table` `` | database-qualified `from DB.SCHEMA.ORDERS` |
-| Bucket a date (business zone) | `date_trunc('month', ts AT TIME ZONE 'America/Los_Angeles')::date` | `timestamp_trunc(ts, MONTH, 'America/Los_Angeles')` (zone is the 3rd argument) | `date_trunc('MONTH', convert_timezone('UTC','America/Los_Angeles', ts))` |
+| Bucket a date (business zone) | `date_trunc('month', ts AT TIME ZONE 'America/Los_Angeles')::date` | `date(timestamp_trunc(ts, MONTH, 'America/Los_Angeles'), 'America/Los_Angeles')` (the zone twice: `timestamp_trunc`'s 3rd argument sets the bucket, `date`'s 2nd sets the day) | `date_trunc('MONTH', convert_timezone('UTC','America/Los_Angeles', ts))::date` |
 | Relative window, anchored to the data (`d` a DATE column; see "Relative windows, anchored to the data") | `d >= (select max(d) from t) - interval '12 months'` | `d >= date_sub((select max(d) from t), interval 12 month)` | `d >= dateadd('month', -12, (select max(d) from t))` |
 | Relative window, wall clock (only when the source is genuinely live) | `now() - interval '12 months'` | `timestamp(date_sub(current_date('America/Los_Angeles'), interval 12 month))` | `dateadd('month', -12, current_timestamp())` |
 | Conditional count | `count(*) filter (where c)` | `countif(c)` | `count_if(c)` |
 | Exact median | `percentile_cont(0.5) within group (order by x)` | `array_agg(x ignore nulls order by x)[safe_offset(div(count(x), 2))]` - there is no aggregate percentile | `percentile_cont(0.5) within group (order by x)` (not verified) |
+
+**Each engine's bucket in that table returns a DATE, and that is load-bearing**: a `type: date` dimension
+over a timestamp is refused at publish (`date_dim_timestamp`), because the page keys it by its day.
+`date_trunc` and `timestamp_trunc` return timestamps, hence the cast. **On BigQuery the zone goes to
+`date` as well**: `timestamp_trunc(ts, MONTH, zone)` returns the INSTANT of local midnight, and a bare
+`date()` reads its day in UTC, which for any zone east of UTC is the day before (measured: August's
+bucket in `Europe/Berlin` reads `2024-07-31`).
 
 ### Alias letter-case, on every engine
 
@@ -497,7 +504,8 @@ is that a Databricks connection now also holds a dashboard's data.
 backtick-quoted and three-level `` `catalog`.`schema`.`table` ``, and the catalog has to be one
 this connection can actually read - `introspect_schema` is what says which - the built-in `samples`
 catalog (`samples.nyctaxi.trips`, `samples.tpch.*`) is handy for a demo with no seed table. It
-PRESERVES an unquoted alias. Bucket with `date_trunc('MONTH', ts)` or `date_format(ts, 'yyyy-MM')`;
+PRESERVES an unquoted alias. Bucket with `cast(date_trunc('MONTH', ts) as date)` or `date_format(ts, 'yyyy-MM')`
+(`date_trunc` alone returns a timestamp, which a `type: date` dimension refuses);
 a wall-clock relative window is `current_timestamp() - interval 12 months`; a conditional count is
 `count_if(c)`. A `TIMESTAMP` arrives as an ISO-8601 UTC string, so bucket or format it in SQL
 rather than parsing the text; big integers keep full precision as strings.

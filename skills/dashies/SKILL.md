@@ -1038,9 +1038,9 @@ site once the page has booted and changes nothing; a call that names several dim
 all of them or none.
 
 **When the grain you draw is too wide for one answer, the page reports `status: "error"` naming
-the refusal, with `error_kind: "refused"`, and the managed tiles on that dataset stop with it** -
-a request is answered or refused as a whole, so a mixed page fails closed rather than drawing some
-tiles beside an empty region of yours. **The remedy is yours: subscribe at the grain you actually
+the refusal, with `error_kind: "refused"`, on the subscriptions at that grain, and the managed tiles
+on that dataset stop with it** - your other subscriptions on the same dataset still receive their
+rows, so a page never waits on a question that was refused. **The remedy is yours: subscribe at the grain you actually
 draw with `by`, so the wide one is never requested; bound the dimensions that dataset declares,
 with `domains` or `buckets`; and if the page still reports that the grain is too wide, declare
 fewer of them.** `truncated` is a field a producer may set when `rows` is not the whole answer;

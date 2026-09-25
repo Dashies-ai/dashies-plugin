@@ -125,6 +125,25 @@ is an `[L2]` error). It describes the FILTER or AXIS role, not the SQL column ty
 the dimension is treated as `category`; set `type: date` for a date dimension so it buckets as
 one. An optional `label` (<=80 chars) sets the display name.
 
+**A `type: date` dimension must hold DAYS**: a DATE column, or text in `YYYY`, `YYYY-MM` or
+`YYYY-MM-DD` form. Two column shapes are REFUSED at publish, because the page keys a date dimension
+by its day and would draw them wrong. **A timestamp** (`date_dim_timestamp`) splits each day by
+time and filters a day down to its midnight rows, so cast it to a date in the SQL: `CAST(col AS
+DATE)`, `TRUNC(col)` on Oracle, and on BigQuery `DATE(col)`, or `DATE(col, '<zone>')` for a TIMESTAMP
+you truncated in a time zone, since a bare `DATE` reads its day in UTC. That includes `date_trunc('day', col)`,
+which returns a timestamp, so cast it too - and on an uploaded file, Postgres and Databricks
+`date_trunc` returns a timestamp even over a DATE column, so a month bucket needs the cast as well:
+`CAST(date_trunc('month', d) AS DATE)`. **A number** (`date_dim_numeric`), such as an integer
+year, reads as milliseconds since 1970 and shows as 1970-01-01, so drop `type: date` (it then groups
+and filters by its own value) or build a date in the SQL. The refusal names the cast for your
+engine. **A timestamp with times of day is refused under ANY declaration**
+(`timestamp_dim_has_time` when it is not a `date`): the page keys every timestamp dimension by its
+day, so for hours, format the timestamp as text in the SQL. **The publish can only refuse what it
+can see is a timestamp. On SQL Server, and on Snowflake for `TIMESTAMP_LTZ` and `TIMESTAMP_TZ`, a
+timestamp reaches it as text**, so only a `type: date` dimension over one is checked, and only by
+its values: one whose rows carry a time of day is still refused, and a category over one is not
+checked at all. Cast or format such a column in the SQL yourself before you use it as a dimension.
+
 **Declare the dimension's bound wherever you know it, and prefer to know it.** A `category`
 dimension declares `domains` - its value list, 1 to 200 unique entries, each a string, number or
 boolean. A `date` dimension declares `buckets` - the maximum bucket count, 1 to 1000. **On a
@@ -160,6 +179,18 @@ markup**.
   Optional `column` (the raw column the aggregate reads; defaults to the measure key),
   `percentile` (0 < p < 1, for `percentile_cont` / `percentile_disc`), `label` (<=80), `unit`,
   `intent`.
+
+  **`min` and `max` over a DATE or TIMESTAMP column - a "last order date" - are available where
+  Dashies keeps the dataset's data** (a warehouse connection or an uploaded file). A tile prints the
+  value as its day; your markup receives it as TEXT, a DATE as `YYYY-MM-DD` and a TIMESTAMP as its
+  ISO 8601 UTC instant, `YYYY-MM-DDTHH:MM:SS.sssZ` - and on Oracle Database a DATE arrives as that
+  instant, because Oracle's DATE carries a time. On the sample connection it is refused. **On SQL
+  Server it is refused too**: the publish there cannot read a column's type, so it cannot tell a date
+  from text. **On Snowflake a `TIMESTAMP_LTZ` or `TIMESTAMP_TZ` column is refused for the same
+  reason** until you cast it in the SQL, to a DATE or to
+  `TO_TIMESTAMP_NTZ(CONVERT_TIMEZONE('UTC', col))`. An aggregate that needs a number, such as `sum`
+  or `avg`, is refused over a date everywhere; `count` and `count_distinct` count dates as they count
+  anything else.
 
   **Declare the aggregate the number actually is.** Do not reach for `sum` because it seems
   safer - a median declared as a sum is a wrong number, and the server can prepare a median
@@ -1217,7 +1248,7 @@ Each dataset is an object carrying these ten fields and no others:
 | Key | Value |
 |---|---|
 | `status` | `"pending"`, `"loading"`, `"ready"` or `"error"` (below). |
-| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. |
+| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. |
 | `truncated` | `true` when `rows` is not the whole answer. |
 | `dimensions` | `[{ key, type? }]` - every DECLARED dimension, `type` present only when it is `date`. |
 | `measures` | `[{ key, agg, format?, scale? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale asks your markup to divide for display. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
@@ -1241,10 +1272,11 @@ Each dataset is an object carrying these ten fields and no others:
   default, and reading this state is how you draw one on your own numbers.
 - **`ready`** - draw `rows`.
 - **`error`** - draw `error`. One case to recognise: an answer refused because the grain you draw
-  is too wide, which arrives with `error_kind: "refused"`. The managed tiles on that dataset stop
-  with it, and the remedy is to subscribe at the grain you draw with `by` so the wide one is never
-  requested, to bound the dataset's dimensions, or to declare fewer of them: the width is what
-  was requested, never which columns you draw.
+  is too wide, which arrives with `error_kind: "refused"`. It is refused on the subscriptions at
+  that grain only: your other subscriptions on the same dataset still receive their rows, and the
+  managed tiles on that dataset stop. The remedy is to subscribe at the grain you draw with `by` so
+  the wide one is never requested, to bound the dataset's dimensions, or to declare fewer of them:
+  the width is what was requested, never which columns you draw.
 
 **Want a different grain? Ask for it with `by`.** `rows` are grouped by exactly what you asked for,
 by the same machinery that answers a managed chart; adding rows up in the page to reach a coarser

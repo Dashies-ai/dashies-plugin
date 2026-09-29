@@ -24,18 +24,29 @@ because each one is a rule of this path rather than a taste.
   wall. Text scales with it: `W` is the card width the 12px type is sized for, and 360 is
   about what a three-column grid gives a card on a desktop and what a phone gives one full
   width, so both read at roughly the size written. A wider card wants a wider `W`.
-- **Every number drawn is a delivered value.** The recipes lay out - a bar's length, a point's
-  position - and never work a figure out: no totals, no differences, no shares, no axis ticks
-  the page invented. A KPI's delta is a `ratio` you declare in the spec and read off the row.
-  That is `SKILL.md` rule 1, and it is why a stacked column carries no total label.
-- **Numbers are formatted from what the runtime hands over.** Each entry on `ds.measures`
-  carries a `format` (`currency`, `percent`, `integer`, `decimal`, `compact`, or none) and,
-  for a `cents` or `points` measure, a `scale` to apply. The `text()` helper reads those and
-  formats a Number through `Intl.NumberFormat` with the options a managed tile uses for a measure
-  that declares no `decimals`. A value the runtime could not hand over as a Number arrives as its
-  exact digits in a string and is drawn as it came, except that a declared `scale` shifts its
-  decimal point rather than dividing, which would round it. `null` draws as `-`. No `toFixed`, no
-  `toLocaleString`, nothing that throws on `null`.
+- **Every number drawn is a delivered value, in the order it was delivered.** The recipes lay out -
+  a bar's length, a point's position, a colour - and never work a figure out, or reorder or cut the
+  rows: no totals, no differences, no shares, no axis ticks the page invented, no sort, no top N, no
+  threshold on a row. A KPI's delta is a `ratio` you declare in the spec and read off the row. A
+  test on a number may colour something, as the KPI's delta takes its up or down colour, or hide it
+  through a class, and never chooses text, a row or an order: no word, sign, unit or other glyph is
+  written under an `if` on a number or picked by a ternary on one. A row is picked by a category
+  value, or by anything worked out from one alone (`r.plan === 'pro'`, `r.region.startsWith('E')`, a
+  date's month). To leave a value label off a bar too short to hold it, write the label every time
+  and hide it with the `is-hidden` class the stylesheet below carries, chosen by the bar's own size:
+  `'<text class="num' + (h < 14 ? ' is-hidden' : '') + '">'` in a string, or
+  `t.classList.toggle('is-hidden', h < 14)` on an element. Never draw the label inside an `if` on
+  the size, and never return early out of the row. That is `SKILL.md` rule 1, it is why a stacked
+  column carries no total label, and **publish refuses a script that crosses it**, naming what to
+  declare instead.
+- **Numbers are formatted by the runtime.** `dashies.format(value, measure)` hands a delivered
+  value back as the text to draw: the measure's `format` (`currency`, `percent`, `integer`,
+  `decimal`, `compact`, or none), its `scale` for a `cents` or `points` measure, its own currency
+  code and `decimals`, the way the runtime's own widgets draw it, and `-` for `null`. A value the
+  runtime could not hand over as a Number arrives as its exact digits in a string and is drawn as
+  those digits. `measure` is the entry on `ds.measures`, which the `measure()` helper below finds.
+  No `toFixed`, no `toLocaleString`, no division: each works a new number out of the one you were
+  handed, and publish refuses it.
 - **Every string from the data is escaped.** A dimension value is text somebody typed into a
   source system. `esc()` wraps every one before it reaches `innerHTML`, so a value carrying `<`
   is drawn, never parsed.
@@ -85,6 +96,8 @@ body { margin: 0; background: var(--ch-canvas); color: var(--ch-ink); font: 14px
 .ch text { font: 12px var(--ch-sans); fill: var(--ch-ink); }
 .ch text.muted { fill: var(--ch-muted); }
 .ch .num { font-family: var(--ch-mono); font-variant-numeric: tabular-nums; }
+/* A label a bar is too short to hold keeps its text and is hidden by this class, never left undrawn. */
+.ch .is-hidden { display: none; }
 .ch .bar, .ch .dot, .ch .s1 { fill: var(--ch-accent); }
 .ch .s2 { fill: var(--ch-s2); }  .ch .s3 { fill: var(--ch-s3); }  .ch .s4 { fill: var(--ch-s4); }  .ch .s5 { fill: var(--ch-s5); }
 /* `fill` paints an SVG shape and does nothing to an HTML element, so the legend chips take the
@@ -107,7 +120,7 @@ body { margin: 0; background: var(--ch-canvas); color: var(--ch-ink); font: 14px
 </style>
 ```
 
-The helpers. Every recipe below calls these and nothing else.
+The helpers. Every recipe below calls these and `dashies.format`, and nothing else.
 
 ```js
 // Every string from the data goes through this before it reaches innerHTML.
@@ -116,29 +129,10 @@ function esc(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
-// The entry on ds.measures for a key: its `format`, and its `scale` when one was handed over.
+// The entry on ds.measures for a key: what `dashies.format(value, measure)` formats a value with.
 function measure(ds, key) {
   for (var i = 0; i < ds.measures.length; i++) if (ds.measures[i].key === key) return ds.measures[i];
   return null;
-}
-var CURRENCY = 'USD';  // a measure entry carries no currency code, so name yours once.
-// A digit string divided by its scale, EXACTLY. A value arrives as a string because the runtime
-// could not hand it over as a Number, so `Number()` would round away the digits the string exists
-// to keep: shift the decimal point instead, which is what the runtime's own `decimalStr` does.
-//
-// IT TREATS `scale` AS A POWER OF TEN, counting its digits rather than dividing by it, which is
-// what makes the shift exact. That is safe because the only divisor the compiler ever emits is
-// 100, for `cents` and `points` (`resolveFormat`), and there is no way to declare another. Were a
-// non-power-of-ten ever emitted this would be wrong rather than imprecise - `shiftPoint('12345',
-// 50)` gives 1234.5 where the true value is 246.9 - so it is tied to that fact, not to a range
-// check that would read as though other values were expected.
-function shiftPoint(s, scale) {
-  var neg = s.charAt(0) === '-', d = neg ? s.slice(1) : s, dot = d.indexOf('.');
-  var whole = dot < 0 ? d : d.slice(0, dot), frac = dot < 0 ? '' : d.slice(dot + 1);
-  if (!/^[0-9]+$/.test(whole + frac)) return s;
-  var all = whole + frac, cut = whole.length - (String(scale).length - 1);
-  while (cut < 1) { all = '0' + all; cut++; }
-  return (neg ? '-' : '') + all.slice(0, cut) + '.' + all.slice(cut);
 }
 // A label trimmed to about `width` user units at roughly `per` units a character. The ellipsis
 // is THREE of the characters the budget allows, so the cut is at `max - 3`: taking `max - 1` and
@@ -170,29 +164,6 @@ function capLabels(root) {
       el.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     }
   }
-}
-// One delivered value -> the text to draw. null -> '-'. A value the runtime could not hand over
-// as a Number arrives as a digit string: it is drawn as it came, except that a declared `scale`
-// shifts its decimal point, because Number() would round away the digits the string exists to
-// keep. A Number is divided by that same scale (cents / points) and then formatted from the
-// measure's `format`, with the options a managed tile uses for a measure declaring no `decimals`.
-// Never throws: a throw inside the callback blanks the whole region.
-function text(v, m) {
-  if (v === null || v === undefined) return '-';
-  // THE SCALE HAS TO BE APPLIED ON THIS BRANCH TOO. A `cents` or `points` measure arrives
-  // undivided, and dropping the divisor here would draw 100x the true figure with nothing on the
-  // page saying so - the worst failure this product has, reached through the one path where a
-  // scaled measure is deliverable at all.
-  if (typeof v !== 'number') return m && m.scale ? shiftPoint(String(v), m.scale) : String(v);
-  if (m && m.scale) v = v / m.scale;
-  var f = m && m.format;
-  var o = f === 'percent' ? { style: 'percent', maximumFractionDigits: 1 }
-        : f === 'currency' ? { style: 'currency', currency: CURRENCY, maximumFractionDigits: 0 }
-        : f === 'integer' ? { maximumFractionDigits: 0 }
-        : f === 'compact' ? { notation: 'compact', maximumFractionDigits: 1 }
-        : f === 'decimal' ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-        : {};
-  try { return new Intl.NumberFormat(undefined, o).format(v); } catch (e) { return String(v); }
 }
 // A value as a LENGTH, for layout only. Never drawn as a number.
 function num(v) {
@@ -257,13 +228,17 @@ function draw(id, ds, render) {
   // document. Without this the margins are only as good as the per-character estimate above.
   capLabels(el);
 }
-// By month: the trend, and the KPI reads the latest month off the same rows.
+// By month: the trend, and the KPI reads the latest month off the same rows. A grain arrives in
+// value order, so the months arrive oldest first and the latest is the last row CARRYING a month:
+// a row whose month is null sorts after every dated one, so the last row outright can be the one
+// with no date at all. Keeping the dated rows is a null test, which is a pick a page may make.
 dashies.data(function (d) {
   var ds = d.sales;
   draw('trend', ds, function (rows) { return line(rows, 'month', 'revenue', measure(ds, 'revenue')); });
   draw('kpi', ds, function (rows) {
-    var latest = rows.slice().sort(function (a, b) { return day(a.month) < day(b.month) ? 1 : -1; })[0];
-    return kpi(ds, latest, 'revenue', 'change', 'prior_revenue', 'the month before');
+    var dated = rows.filter(function (r) { return r.month !== null && r.month !== undefined; });
+    return dated.length ? kpi(ds, dated[dated.length - 1], 'revenue', 'change', 'prior_revenue', 'the month before')
+      : '<p class="state">No dated rows.</p>';
   });
 }, { sales: { by: ['month'] } });
 dashies.data(function (d) {
@@ -278,9 +253,9 @@ dashies.data(function (d) {
 dashies.data(function (d) {
   draw('detail', d.sales, function (rows) {
     return table(d.sales, rows, [
-      { key: 'region', label: 'Region' }, { key: 'channel', label: 'Channel' },
-      { key: 'orders', label: 'Orders' }, { key: 'revenue', label: 'Revenue' },
-      { key: 'aov', label: 'Avg order' }, { key: 'discount_rate', label: 'Discount' },
+      { dim: 'region', label: 'Region' }, { dim: 'channel', label: 'Channel' },
+      { measure: 'orders', label: 'Orders' }, { measure: 'revenue', label: 'Revenue' },
+      { measure: 'aov', label: 'Avg order' }, { measure: 'discount_rate', label: 'Discount' },
     ]);
   });
 }, { sales: { by: ['region', 'channel'] } });
@@ -297,17 +272,22 @@ reads them off the row and never divides.
 ## 1. KPI card with a delta
 
 `row` is the row to read, `key` the hero measure, `deltaKey` the `ratio` you declared for the
-change, and `compareKey` the comparison value drawn beside it. The arrow's direction is the
-only thing decided here, by comparing the delivered delta with zero.
+change, and `compareKey` the comparison value drawn beside it. **The delta takes an up or down
+colour and draws no arrow.** Comparing the delta with zero may choose a class, which colours a
+value Dashies delivered; an arrow, a sign or a word is something a reader reads, and one a
+comparison chose is a figure nothing checked, so publish refuses it. The sign is Dashies' to deliver with the
+period change; until it does, a `metric` widget with `data-timeintel` draws the change with its
+own arrow.
 
 ```js
 function kpi(ds, row, key, deltaKey, compareKey, compareLabel) {
   var d = row[deltaKey];
-  var dir = d === null || d === undefined ? '' : num(d) > 0 ? 'up' : num(d) < 0 ? 'down' : '';
-  var arrow = dir === 'up' ? '&#8593; ' : dir === 'down' ? '&#8595; ' : '';
-  return '<div class="kpi"><div class="value">' + esc(text(row[key], measure(ds, key))) + '</div>' +
-    '<div class="delta"><span class="' + dir + '">' + arrow + esc(text(d, measure(ds, deltaKey))) + '</span>' +
-    ' vs ' + esc(text(row[compareKey], measure(ds, compareKey))) + ' ' + esc(compareLabel) + '</div></div>';
+  // A colour, never a glyph: a class may turn on a comparison with zero, and an arrow a reader
+  // reads may not. A null delta takes neither.
+  var tone = d === null || d === undefined ? '' : num(d) > 0 ? 'up' : num(d) < 0 ? 'down' : '';
+  return '<div class="kpi"><div class="value">' + esc(dashies.format(row[key], measure(ds, key))) + '</div>' +
+    '<div class="delta"><span class="' + tone + '">' + esc(dashies.format(d, measure(ds, deltaKey))) + '</span>' +
+    ' vs ' + esc(dashies.format(row[compareKey], measure(ds, compareKey))) + ' ' + esc(compareLabel) + '</div></div>';
 }
 ```
 
@@ -322,15 +302,17 @@ is trimmed with an ellipsis and carries its full text in a `<title>`, so the bar
 all-caps name advances about 7.7 units a character against the 6.2 the estimate assumes, so
 estimating alone cut the head off a label a second time. `capLabels` measures each one with
 `getComputedTextLength()` after it is in the document and compresses only what is over budget.
-Rows draw in the order they arrive; sort them first if you want a ranking. A negative value draws
-as an empty bar: signed data wants a zero line, which neither bar recipe draws.
+Rows draw in the order Dashies delivers them, by value unless the dimension declares `domains`.
+A page never sorts them, so a ranking by a measure is a table or chart widget's `data-sort`. A
+negative value draws as an empty bar: signed data wants a zero line, which neither bar recipe
+draws.
 
 ```js
 function hbar(rows, dim, key, m) {
   var W = 360, H = 28, PAD = 8, LCAP = 150, max = 0, i, out = '', labels = [], names = [], L = PAD, R = PAD;
   for (i = 0; i < rows.length; i++) {
     max = Math.max(max, num(rows[i][key]));
-    labels.push(text(rows[i][key], m));
+    labels.push(dashies.format(rows[i][key], m));
     names.push(label(rows[i][dim]));
     // BOTH MARGINS ARE SIZED, and the left one is why: it used to be a constant, so a name longer
     // than it ran off the left edge of the viewBox and was cut there, taking the HEAD of the label
@@ -373,7 +355,7 @@ function vbar(rows, dim, key, m) {
     // off the viewBox. The full text stays reachable in the <title>.
     var full = label(rows[i][dim]), name = fit(full, slot - 4, 6.2), budget = Math.max(1, slot - 4);
     out += '<rect class="bar" x="' + x + '" y="' + y + '" width="' + bw + '" height="' + h + '" rx="2"/>' +
-      '<text x="' + cx + '" y="' + (y - 6) + '" text-anchor="middle" class="num">' + esc(text(rows[i][key], m)) + '</text>' +
+      '<text x="' + cx + '" y="' + (y - 6) + '" text-anchor="middle" class="num">' + esc(dashies.format(rows[i][key], m)) + '</text>' +
       '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" class="muted" data-fit="' + budget + '">' + esc(name) +
       (name === full ? '' : '<title>' + esc(full) + '</title>') + '</text>';
   }
@@ -384,41 +366,40 @@ function vbar(rows, dim, key, m) {
 
 ## 4. Line over time
 
-`dim` is a `date` dimension. On a dashboard that reads a warehouse, and on an in-file dataset of
-records, the runtime delivers a date as its ISO day, `YYYY-MM-DD`, so sorting by that string is
-sorting by date. **On the sample connection a dimension can instead arrive as whatever the
-statement returned**, numbers staying numbers, which is why `day()` normalizes rather than
-trusting the type and why the sort below goes through it. The first and last days label the axis; the highest
-point and the last point carry their delivered values, which is every number the chart shows.
-The baseline is zero, so a flat quarter looks flat rather than stretched to fill the box.
+`dim` is a `date` dimension. Dashies delivers a grain in value order, so a date dimension's rows
+arrive oldest first and the line is drawn in the order it is handed: a page never sorts. On a
+dashboard that reads a warehouse, and on an in-file dataset of records, a date arrives as its ISO
+day, `YYYY-MM-DD`. **On the sample connection a dimension can instead arrive as whatever the
+statement returned**, numbers staying numbers, which is why `day()` normalizes the axis labels
+rather than trusting the type. The first and last days label the axis and the last point carries
+its delivered value, which is every number the chart shows. **The highest point is not
+labelled**: finding it means comparing the values, which publish refuses, so a chart widget with
+`data-sort` is the way to show the largest. The scale's top and bottom are a `Math.max` and a
+`Math.min`, which only scale the drawing. The baseline is zero, so a flat quarter looks flat
+rather than stretched to fill the box.
 
 ```js
 function line(rows, dim, key, m) {
-  var W = 360, H = 180, L = 8, R = 8, T = 22, B = 24, i;
-  var pts = rows.slice().sort(function (a, b) { return day(a[dim]) < day(b[dim]) ? -1 : day(a[dim]) > day(b[dim]) ? 1 : 0; });
-  var lo = Infinity, hi = -Infinity, top = 0;
-  for (i = 0; i < pts.length; i++) {
-    var v = num(pts[i][key]);
-    if (v > hi) { hi = v; top = i; }
-    if (v < lo) lo = v;
+  var W = 360, H = 180, L = 8, R = 8, T = 22, B = 24, i, n = rows.length;
+  if (!n) return '<p class="state">No rows.</p>';
+  var lo = 0, hi = 0;
+  for (i = 0; i < n; i++) {
+    hi = Math.max(hi, num(rows[i][key]));
+    lo = Math.min(lo, num(rows[i][key]));
   }
-  lo = Math.min(0, lo);
   if (!(hi > lo)) hi = lo + 1;
-  function sx(i) { return L + (pts.length > 1 ? i / (pts.length - 1) : 0.5) * (W - L - R); }
+  function sx(i) { return L + (n > 1 ? i / (n - 1) : 0.5) * (W - L - R); }
   function sy(v) { return T + (1 - (v - lo) / (hi - lo)) * (H - T - B); }
-  var d = '', last = pts.length - 1;
-  for (i = 0; i < pts.length; i++) d += (i ? ' L' : 'M') + sx(i).toFixed(1) + ' ' + sy(num(pts[i][key])).toFixed(1);
-  if (!pts.length) return '<p class="state">No rows.</p>';
-  var lx = sx(last), ly = sy(num(pts[last][key])), tx = sx(top), ty = sy(hi);
+  var d = '', last = n - 1;
+  for (i = 0; i < n; i++) d += (i ? ' L' : 'M') + sx(i).toFixed(1) + ' ' + sy(num(rows[i][key])).toFixed(1);
+  var lx = sx(last), ly = sy(num(rows[last][key]));
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img">' +
     '<line class="rule" x1="' + L + '" y1="' + (H - B) + '" x2="' + (W - R) + '" y2="' + (H - B) + '"/>' +
     '<path class="line" d="' + d + '"/>' +
-    '<circle class="dot" cx="' + tx + '" cy="' + ty + '" r="3"/>' +
-    '<text x="' + tx + '" y="' + (ty - 8) + '" text-anchor="' + (top > last / 2 ? 'end' : 'start') + '" class="num">' + esc(text(pts[top][key], m)) + '</text>' +
-    (top === last ? '' : '<circle class="dot" cx="' + lx + '" cy="' + ly + '" r="3"/>' +
-      '<text x="' + (lx - 6) + '" y="' + (ly < H / 2 ? ly + 16 : ly - 8) + '" text-anchor="end" class="num">' + esc(text(pts[last][key], m)) + '</text>') +
-    '<text x="' + L + '" y="' + (H - 6) + '" class="muted">' + esc(day(pts[0][dim])) + '</text>' +
-    '<text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" class="muted">' + esc(day(pts[last][dim])) + '</text>' +
+    '<circle class="dot" cx="' + lx + '" cy="' + ly + '" r="3"/>' +
+    '<text x="' + (lx - 6) + '" y="' + (ly < H / 2 ? ly + 16 : ly - 8) + '" text-anchor="end" class="num">' + esc(dashies.format(rows[last][key], m)) + '</text>' +
+    '<text x="' + L + '" y="' + (H - 6) + '" class="muted">' + esc(day(rows[0][dim])) + '</text>' +
+    '<text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" class="muted">' + esc(day(rows[last][dim])) + '</text>' +
     '</svg>';
 }
 ```
@@ -455,7 +436,7 @@ function stacked(rows, xKey, sKey, key, m) {
       var v = cell[JSON.stringify([xs[i], ss[s]])], h = max > 0 ? Math.max(0, num(v)) / max * (H - T - B) : 0;
       y -= h;
       out += '<rect class="s' + (s % 5 + 1) + '" x="' + (cx - bw / 2) + '" y="' + y + '" width="' + bw + '" height="' + h + '">' +
-        '<title>' + esc(ss[s] + ', ' + xs[i] + ': ' + text(v, m)) + '</title></rect>';
+        '<title>' + esc(ss[s] + ', ' + xs[i] + ': ' + dashies.format(v, m)) + '</title></rect>';
     }
     if (i === 0 || i === xs.length - 1 || xs.length <= 6) {
       var t = xs[i].length === 10 && xs[i].charAt(4) === '-' ? xs[i].slice(0, 7) : xs[i];
@@ -480,22 +461,27 @@ connection cheap.
 
 ## 6. Compact table
 
-`cols` is the columns to draw, in order. A column that names a measure is right-aligned and
-formatted through `text()`; any other column is a dimension, drawn as text. Hairline rules, a
-quiet uppercase header and tabular figures come from the stylesheet, so nothing here reads as a
-browser default.
+`cols` is the columns to draw, in order, each saying what it draws: `{ dim: 'region' }` is a
+dimension, drawn as text, and `{ measure: 'orders' }` a measure, right-aligned and formatted
+through `dashies.format`; `label` is its header. **The column names its kind** because publish
+tells a dimension from a measure by the name a cell is read through, and a key that is one on some
+columns and the other on the rest reads as neither: publish refuses a value drawn that way, since
+it could be a measure shown raw. Hairline rules, a quiet uppercase header and tabular figures come
+from the stylesheet, so nothing here reads as a browser default.
 
 ```js
 function table(ds, rows, cols) {
   var head = '', body = '', i, c;
   for (c = 0; c < cols.length; c++) {
-    head += '<th' + (measure(ds, cols[c].key) ? ' class="num"' : '') + '>' + esc(cols[c].label || cols[c].key) + '</th>';
+    head += '<th' + (cols[c].measure ? ' class="num"' : '') + '>' + esc(cols[c].label) + '</th>';
   }
   for (i = 0; i < rows.length; i++) {
     body += '<tr>';
     for (c = 0; c < cols.length; c++) {
-      var m = measure(ds, cols[c].key), v = rows[i][cols[c].key];
-      body += m ? '<td class="num">' + esc(text(v, m)) + '</td>' : '<td>' + esc(label(v)) + '</td>';
+      var col = cols[c];
+      body += col.measure
+        ? '<td class="num">' + esc(dashies.format(rows[i][col.measure], measure(ds, col.measure))) + '</td>'
+        : '<td>' + esc(label(rows[i][col.dim])) + '</td>';
     }
     body += '</tr>';
   }
@@ -513,15 +499,19 @@ fewer columns, or a card given the full row.
 ## What is deliberately not here
 
 - **Axis ticks the page works out.** A "nice" axis of 0, 25k, 50k is a set of numbers nothing
-  checked. The recipes label delivered values instead - the bar's own value, the highest and the
-  last point - which is more legible on a small chart anyway.
+  checked. The recipes label delivered values instead - the bar's own value and the line's last
+  point - which is more legible on a small chart anyway.
 - **A delta, a share or a total computed from the rows.** Declare a `ratio` for a change or a
   share, a measure for anything else, and `by` for a coarser grain; `SKILL.md` carries why under
   "Two rules, and both are about correctness rather than taste".
 - **A tooltip layer, animation, or a zoom.** Each is a fine addition to a page you own; none of
   them is what a first page needs, and every one is a place a number can be computed by accident.
-- **A currency code on the measure entry, and a declared `decimals`.** Neither reaches your
-  script: a measure entry carries `format` and `scale` and stops. That is why `text()` reads the
-  page-level `CURRENCY`, and it is why a `unit` declaring `decimals: 2` draws at each format's
-  default precision here while a managed tile of the same measure shows the two places. Set the
-  precision in `text()` if you need it, and format per column on a page mixing currencies.
+- **A sort, a top N, a threshold or a highest point worked out in the page.** Each chooses or
+  orders rows by comparing values, which publish refuses. Dashies delivers a grain in value order
+  (or in the member order a dimension's `domains` declares); a table or chart widget sorts and
+  cuts with `data-sort` and `data-limit`; a threshold on a measure belongs in the dataset's SQL.
+- **Text a number decides**: a word such as "High" or "Above target", a sign, a unit, any glyph,
+  whether a ternary picks it or it is written under an `if` on the number. A test on a number may
+  colour something, or hide it through a class; text a reader sees is a delivered value drawn
+  through `dashies.format`, or a dimension the dataset's SQL works out (a `CASE` that names the
+  band), drawn like any other label.

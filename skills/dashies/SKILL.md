@@ -891,13 +891,32 @@ without re-sending its markup. It must name the slug you are publishing to, and
 #### Two rules, and both are about correctness rather than taste
 
 **1. All calculation is server-side. The browser draws; it never computes.** Your JavaScript may
-render, lay out, sort what it was handed, and drive controls. It must not sum, average, divide or
-otherwise work out a number from the values it was given - not even to roll them up to a coarser
-grain, which you ask the runtime for instead (`by`, under "How your script gets its numbers").
-Every check this skill spends its length on - the aggregate that has to match its column, the
-fan-out cross-check, the disagreeing-totals warning - is applied to the SQL. A number worked out
-in the browser has been through none of them, and nothing will ever check it again. Declare it as
-a measure and let the statement compute it.
+render, lay out and drive controls; pick rows by a category value, or by anything worked out from
+category values alone (`r.plan === 'pro'`, a prefix, a length, a date's month, a date window such as
+`r.month >= '2026-01'`); colour, size or class something by comparing a number with a constant (a
+KPI's up or down colour); and test a value for null or for its type (`v == null`,
+`typeof v === 'number'`, `Number.isFinite(v)`; `if (v)` and `v || '-'` read a zero as missing). It
+must not sum, average, divide or otherwise work a number out of the values it was given, compare two
+of them, or show a measure other than through `dashies.format`. It must not show text a number
+chose - a word such as "High", a sign, a unit, any glyph at all - whether a ternary picks it or it
+is written under an `if` on the number, and it must not sort, cut, threshold or top-N the rows - not
+even to roll them up to a coarser grain, which you ask the runtime for instead (`by`, under "How
+your script gets its numbers"). A number hides or shows something only through a class, a style or
+geometry: to leave a value label off a bar too short to hold it, write the label's text every time
+and toggle a class by the bar's own size (`el.classList.toggle('is-hidden', h < 14)`, or the class
+written into the markup string, with `.is-hidden { display: none; }` in the page's stylesheet),
+never an `if` around the label and never an early return out of the row. The viewer's clock is not a
+constant: a value worked out from it and a delivered one ("3 years ago") is refused, so show the
+delivered date. Every check this skill spends its length on - the aggregate that has to match its
+column, the fan-out cross-check, the disagreeing-totals warning - is applied to the SQL. A number
+worked out in the browser has been through none of them, and nothing will ever check it again.
+Declare it as a measure and let the statement compute it. **Publish refuses a script that crosses
+this line**, naming what to declare instead: a measure or a `ratio` for a figure, `domains` for a
+member order, a table or chart widget's `data-sort` and `data-limit` for a top N, the dataset's SQL
+for a threshold, and a dimension the SQL works out (a `CASE`) for a word a number decides. Rows
+arrive in value order, or in the order a dimension's `domains` declares, with one exception on
+served data that the `rows` entry in `references/spec.md` names, so a page that draws them as handed
+needs no sort.
 
 **2. Your JavaScript never calls out to a server. Not ours, not the warehouse, not anyone's.**
 It draws what the runtime hands it, and every number on the page arrives through the spec's
@@ -1004,17 +1023,20 @@ array draws a confident zero. **Branch on `status`; never sum what arrives.** Ev
 was worked out for you, at the grain you asked for, which is rule 1 holding.
 
 **A measure arrives as a JavaScript number when a float64 holds it exactly, and otherwise as its
-exact digits in a string; `null` where the cell has no value.** So check for `null` first and
-draw `-`, then draw the value as text with `String(v)`, which is exact for both forms and never
-throws. `toLocaleString()` is not the recipe: it rounds a decimal for display and throws on
-`null`, and either one inside your callback costs the whole region. **What rule 1 forbids is
-working a number OUT** - combining two values, summing a column, taking a difference or a share -
-and it forbids that whatever the type. **Converting one already-final value's unit for display is
-a different act and is expected of you**: a measure declared `scale: cents` or `scale: points`
-arrives UNDIVIDED with that divisor beside it on `measures`, precisely so your markup divides
-where it draws. Do that, and nothing else: never `+ 1`, never a literal that changes what the
-number is. A value the runtime could not hand over as a Number arrives as a string of digits, so
-shift its decimal point rather than dividing; `Number()` it only if you accept the rounding.
+exact digits in a string; `null` where the cell has no value.** Draw it with
+`dashies.format(value, measure)`, where `measure` is the value's entry on `ds.measures`: the
+runtime applies the measure's `format`, its `scale` (a measure declared `scale: cents` or
+`scale: points` arrives UNDIVIDED, with the divisor beside it on `measures`), its own currency
+code and `decimals`, draws `-` for `null`, and draws a string of digits as those digits, so
+nothing rounds. **It is the only way a measure reaches the page's text**: `String(v)` would skip
+the measure's scale and format, so publish refuses a measure shown raw, in text or in an attribute
+a reader sees (`title`, `aria-label`, `alt`, `value`). Your own division, `toFixed()`,
+`toLocaleString()` and `Intl.NumberFormat` are refused at publish too: each works a new number out
+of the one you were handed. **What rule 1 forbids is working a number OUT, or deciding by one what
+a reader sees or which rows are drawn** - combining two values, summing a column, taking a
+difference or a share, comparing a value with another, or choosing a word or a row by a
+threshold - and it forbids that whatever the type. A comparison with a constant may still colour
+or size something, and a test for `null` is fine.
 
 **A `ratio` measure you declared arrives on each row under its own key, worked out by the runtime
 from its two operands**: a number, the float64 quotient of the two, when both operands are values
@@ -1555,11 +1577,13 @@ never a spec edit - do not change `slug` to rename.
   brand, "html" - design and write the page.** Managed tiles are the option without design, never
   the default, and "html" is an instruction rather than a question to ask back.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
-  render, lay out and drive controls. It must not work out a number from values it was handed -
-  declare a measure and let the statement compute it. A coarser grain is asked for with `by` and
-  a filter is set with `dashies.filter`; never roll up or filter in the browser, and never
-  duplicate records with sentinel values to precompute either. And it takes its numbers from what
-  the runtime hands it, never from a call of its own.
+  render, lay out and drive controls, pick rows by a category value, and colour something by a
+  test on a number. It must not work out a number from values it was handed, show text a number
+  chose, or sort, cut or threshold the rows - declare a measure and let the statement compute it;
+  publish refuses a script that does. A coarser grain is asked for with `by` and a filter is set
+  with `dashies.filter`; never roll up or filter by a number in the browser, and never duplicate
+  records with sentinel values to precompute either. And it takes its numbers from what the runtime
+  hands it, never from a call of its own.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
 - **Everything the dashboard carries is visible to everyone who can open it, unless it declares

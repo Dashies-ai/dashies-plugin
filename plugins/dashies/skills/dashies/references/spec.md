@@ -240,9 +240,10 @@ way, so the refusal comes at publish rather than at validation.**
   would render 100x. Divide in SQL and declare what the column then holds: an integer-cents
   column becomes `amount_cents / 100.0` and `scale: units`, a 0-to-100 percent becomes
   `pct / 100.0` and `scale: fraction`. The compiler steers you the same way.
-- **On a `look` page they are ACCEPTED, and your markup is handed the divisor.** On a `cube`,
+- **On a `look` page they are ACCEPTED, and the runtime applies the divisor.** On a `cube`,
   `rows` or `resolved` dataset, a measure you read through `dashies.data` arrives UNDIVIDED with
-  `scale: 100` beside its `format`, so you divide where you draw it. Two cases are still refused
+  `scale: 100` beside its `format`, and `dashies.format(value, measure)` divides and formats it
+  where you draw it; your own division is refused at publish. Two cases are still refused
   there. **A dataset in any OTHER mode**, because its data block carries no format and no
   divisor, so your callback would get the 100x value with nothing beside it saying so. You do
   not choose the mode and you do not have to work out which one you got, with one exception: a
@@ -256,15 +257,14 @@ way, so the refusal comes at publish rather than at validation.**
 
 **A worked line, because the rule "the browser draws, it never computes" is easy to over-read
 here.** A `percent` measure declared `scale: fraction` arrives as `0.42`; drawing it as `42%` is
-presentation and allowed - it is what the managed tile's own formatter does (`Intl.NumberFormat`
-with `style: 'percent'` multiplies by 100 on the way to the string), and dividing a `scale: 100`
-value where you draw it is the same step in the other direction. What the rule forbids is a
-number worked out of two values: `r.discount / r.revenue` is a `ratio` you declare, `r.a + r.b` a
-measure you declare, and a rollup is `by`. One caveat, about exactness rather than arithmetic: a
-value that arrived as its exact digits in a string is one the runtime could not hand over as a
-Number, so draw those digits as they came (and where such a value carries a `scale`, shift its
-decimal point rather than dividing, which would round it). `references/charts.md` carries a `text()` helper that does this from the
-`format` and `scale` on `ds.measures`.
+presentation, and it is Dashies' to do: `dashies.format(value, measure)` formats it the way the
+runtime's own widgets do, and divides a `scale: 100` value on the way. Your page does neither
+step itself, because publish cannot tell a unit conversion from a number worked out, and refuses
+both. What the rule is about is a number worked out of two values: `r.discount / r.revenue` is a
+`ratio` you declare, `r.a + r.b` a measure you declare, and a rollup is `by`. A value that arrived
+as its exact digits in a string is one the runtime could not hand over as a Number, and
+`dashies.format` draws those digits as they came, moving the decimal point for a declared
+`scale` rather than dividing, which would round it.
 
 **Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind` always
 reaches the tile (a `percent` measure renders as a percent, a `count` as an integer), but
@@ -1152,9 +1152,10 @@ a `look` body is refused unless it satisfies it:
 It is what calls the function you hand `dashies.data`, and what fills any `data-dash` binding;
 without it neither happens, on any connection. On a warehouse dashboard a `look` body without it
 gets a warning on the report whatever the body calls, because nothing else can put numbers on it;
-on the sample connection the warning comes only when the body calls `dashies.data`, since a page
-that reads the data block directly still works there. A body that carries `data-dash` bindings
-without it is refused on either, since those would ship frozen.
+on the sample connection the warning comes only when the body calls `dashies.data`. (A page that
+read the data block directly used to work there without it; publish now refuses a script that
+looks the data block up, under **Reading the data block directly** below.) A body that carries
+`data-dash` bindings without it is refused on either, since those would ship frozen.
 
 **Two ways to get numbers onto a page you wrote, and a body picks one:**
 
@@ -1263,7 +1264,7 @@ Each dataset is an object carrying these ten fields and no others:
 | `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. **Their order:** every grain arrives sorted over the dimensions in `grain` order - on each, the members a `domains` declaration lists come first, in your order, then every other value ascending (a number column by value, text character by character), then `null` - so draw the rows in the order they arrive. One exception: on a dataset whose rows are kept outside the page, a grain over a column whose type Dashies could not tell at publish (every value it sampled there was empty) arrives in the order Dashies answered it, ascending over its dimensions in alphabetical order and without your `domains` order. |
 | `truncated` | `true` when `rows` is not the whole answer. |
 | `dimensions` | `[{ key, label?, type?, domains? }]` - every DECLARED dimension: `label` where you set one, `type` present only when it is `date`, and `domains` exactly as you declared it on a category dimension that has one. |
-| `measures` | `[{ key, agg, format?, scale? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale asks your markup to divide for display. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
+| `measures` | `[{ key, agg, format?, scale?, currency?, decimals? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale?, currency?, decimals? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale divides for display, and `currency` and `decimals` where the unit declares them. An entry is what you hand `dashies.format(value, measure)`, which applies all four. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
 | `as_of` | When this dataset was last computed. |
 | `error` | `null` unless `status` is `"error"`, and then the reason, in words. |
 | `error_kind` | `null` unless `status` is `"error"`, and then `"refused"` - the service declined this question, so change the question - or `"failed"` - everything else, including the service accepting the question and breaking, where a narrower question fails the same way. |
@@ -1355,9 +1356,11 @@ dashies.data(function (datasets, page) {
 
   state.hidden = true;
   cut.hidden = !ds.truncated;
+  // The measure's entry, which carries its format; dashies.format draws a null as "-".
+  var orders = ds.measures.find(function (me) { return me.key === 'orders'; });
   ds.rows.forEach(function (row) {
     var tr = document.createElement('tr');
-    [row.month, row.orders == null ? '-' : String(row.orders)].forEach(function (text, i) {
+    [row.month, dashies.format(row.orders, orders)].forEach(function (text, i) {
       var td = document.createElement('td');
       if (i === 1) td.className = 'num';
       td.textContent = text;
@@ -1369,23 +1372,25 @@ dashies.data(function (datasets, page) {
 </script>
 ```
 
-Everything load-bearing in it, in order. **The data block comes first**, above the script that
-calls `dashies.data`; publish fills it in, so `{}` is all you write. **The marker is there**, so
-the function is called at all. **The month series is asked for with `by`**, so the runtime hands
-over one row per month and the page adds nothing up across regions. **The control sets the
-filter and reads it back from `page.filters`**, so a shared link opens on the view it names and
-the select agrees with it; its options are the dimension's declared `domains`, written into the
-markup, because a subscription at `by: ['region']` would itself be filtered once a region is
-chosen and the menu would collapse to that one value. **The label reads `ds.filters`**, so it can
-never claim a filter that did not reach the number. **Every branch other than `ready` writes a
-sentence to the page and draws nothing**, so a viewer never sees a number that is not the current
-answer. **Nothing is added up**: `orders` is drawn as it arrived, through `String()` after the
-`null` check that renders `-` rather than 0. A measure arrives as a number when a float64 holds
-it exactly and otherwise as its exact digits in a string, so `String()` is exact for both and a
-value like `"1234567890123456789"` is deliberate rather than a bug. `toLocaleString()` is not the
-recipe: it rounds a decimal for display and throws on `null`, and a throw inside the callback
-blanks the whole region. `Number()` it only if you accept the rounding, and never put a measure
-into arithmetic with a literal, which is rule 1 broken whatever its type.
+Everything load-bearing in it, in order. **The data block comes first**, above the script that calls
+`dashies.data`; publish fills it in, so `{}` is all you write. **The marker is there**, so the
+function is called at all. **The month series is asked for with `by`**, so the runtime hands over
+one row per month and the page adds nothing up across regions. **The control sets the filter and
+reads it back from `page.filters`**, so a shared link opens on the view it names and the select
+agrees with it; its options are the dimension's declared `domains`, written into the markup, because
+a subscription at `by: ['region']` would itself be filtered once a region is chosen and the menu
+would collapse to that one value. **The label reads `ds.filters`**, so it can never claim a filter
+that did not reach the number. **Every branch other than `ready` writes a sentence to the page and
+draws nothing**, so a viewer never sees a number that is not the current answer. **Nothing is added
+up**: `orders` is drawn as it arrived, through `dashies.format(row.orders, orders)`, with `orders`
+the `orders` entry on `ds.measures`, which applies the measure's format and renders `null` as `-`
+rather than 0. A measure arrives as a number when a float64 holds it exactly and otherwise as its
+exact digits in a string, and `dashies.format` draws those digits as they are, so a value like
+`"1234567890123456789"` is deliberate rather than a bug. `String()` and `toLocaleString()` are not
+the recipe, and publish refuses both: `String()` shows a measure without its format, scale or
+currency, and `toLocaleString()` rounds a decimal for display and throws on `null`, and a throw
+inside the callback blanks the whole region. Never put a measure into arithmetic with a literal,
+which is rule 1 broken whatever its type.
 
 ### Filters and a coarser grain
 
@@ -1476,114 +1481,15 @@ in two shapes, and both are paid at extraction as well as at view time.
 
 ### Reading the data block directly
 
-A page published before `dashies.data` existed reads `<script id="dashies-data">` itself, and that
-keeps working where the numbers travel inside the page. **A page using `dashies.data` never needs
-anything in this section, and a new page should not start here**: it works only on the sample
-connection, and the shape it reads is the page's own rather than the one above.
-
-The data block is JSON. What such a renderer needs from it:
-
-```jsonc
-{
-  "version": 4,
-  "updated_at": "2026-08-31T09:15:00Z",  // when the dashboard last refreshed
-  "datasets": {                          // keyed by name, in the order you declared them
-    "main": {
-      "mode": "...",                     // how Dashies keeps this data. Do NOT branch on it -
-                                         // read the report sentence, and the `__g_` test below
-      "as_of": "2026-08-31T09:15:00Z",   // when THIS dataset was last computed
-      "dimensions": [ { "key": "month", "type": "date" }, { "key": "region" } ],
-      "measures":   [ { "key": "revenue", "agg": "sum" } ],   // `format` rides here when declared
-      "cube": [ { "month": "2026-07", "region": "AMER", "revenue": 8100 } ],
-      "error": null                      // may also be ABSENT; treat both as "no error"
-    }
-  }
-}
-```
-
-- **`cube` is not the only place rows live, and which key carries them follows the report
-  sentence.** A dataset whose sentence talks about totals or about every filter state puts them
-  under `cube`, as above. A dataset whose sentence says **its underlying DETAIL travels inside the
-  page** puts them under `data` instead, as `{ "mode": "inline", "rows": [ ... ] }`, and carries no
-  `cube` key at all; a dataset whose sentence promises BOTH carries both. **Read for the key you
-  got rather than assuming `cube`** - `ds.cube || []` on a detail dataset is an empty array and an
-  empty page, with nothing anywhere saying why.
-- **Whichever key it is, it is a plain array of row objects whenever your page can read it at
-  all.** A packed column form exists, and it is emitted only where Dashies owns the renderer; a
-  spec carrying `look` or any `custom` tile switches the whole page back to this shape for exactly
-  that reason. You do not ask for it and you cannot lose it by accident.
-- **Ask for the rows POSITIVELY and let one branch answer all three cases**, rather than testing
-  for their absence. A dataset that keeps its rows outside the page carries a `data` block with no
-  `rows` array, and one whose rows are under `cube` carries **no `data` block at all** - so
-  `!ds.data.rows` throws a TypeError on the commonest shape of all, and a TypeError in your
-  `<script>` blanks the whole page rather than one tile. Write this instead:
-
-```js
-// under `cube`, or under `data.rows`, or not in the page at all
-var rows = Array.isArray(ds.cube) ? ds.cube
-         : (ds.data && Array.isArray(ds.data.rows)) ? ds.data.rows
-         : null;
-if (rows === null) {
-  // The rows are kept outside the page. There is nothing here to draw, and no
-  // later refresh puts them here. Say so on the page rather than rendering empty.
-}
-```
-
-  `null` is exactly the case the `warning:` line above catches, and it is the one dataset shape you
-  must not hand-write a renderer for.
-- **`type` appears on a dimension only when it is `date`.** A category dimension carries `key`,
-  plus `label` and `domains` where you set them, so testing for a `"category"` value finds nothing.
-  A dimension whose column type Dashies knows also carries `numeric`, `true` for a number column:
-  it is how Dashies orders rows, and nothing on your page needs to read it.
-- **Read `as_of` and `error` rather than assuming.** A dataset that failed its last refresh keeps
-  its last good rows and carries the reason; one whose `as_of` lags `updated_at` is showing older
-  numbers than the rest of the page. Say so on the page instead of drawing them as current.
-
-**THE ONE TRAP: a `cube` array is not always one grain.** Where the report says the answers were
-worked out for each state the filters can be in, the array holds one cell per grouping set, all
-mixed together, and each cell carries a `__g_<dim>` key per declared dimension: `0` means that
-dimension is LIVE in the cell, `1` means it was rolled up. The grand total has every flag `1`; the
-finest cells have every flag `0`. **Iterating such an array and adding it up double counts,
-badly.** Detect it rather than assuming, and select by the flags:
-
-```js
-var block = JSON.parse(document.getElementById('dashies-data').textContent);
-var ds = block.datasets.main;
-var cells = ds.cube || [];
-var mixedGrain = cells.length > 0 && Object.keys(cells[0]).some(function (k) {
-  return k.indexOf('__g_') === 0;
-});
-// Dashies' own predicate, ported exactly: LIVE for these three values and rolled up for
-// everything else, a missing flag included.
-function live(cell, dim) {
-  var g = cell['__g_' + dim];
-  return g === 0 || g === '0' || g === 0n;
-}
-// one row per month, totalled across regions: month live, region rolled up
-var byMonth = mixedGrain
-  ? cells.filter(function (c) { return live(c, 'month') && !live(c, 'region'); })
-  : cells;
-```
-
-**Two things in that snippet are load-bearing, and both are ported from Dashies' own reader rather
-than invented here:**
-
-- **Ask which dimensions are LIVE, and accept all three forms.** A warehouse may send the flag as
-  a number or as a string, so a strict `=== 0` matches NOTHING on the ones that send a string, and
-  the symptom is an empty page rather than an error. The `0n` arm is in Dashies' own reader for a
-  future path and cannot fire on this data; keep it anyway, so the predicate stays a copy rather
-  than a paraphrase. **It is a BigInt literal, so that line needs ES2020**, which every browser a
-  dashboard is opened in has had for years; drop the `0n` arm only if your own toolchain targets
-  older syntax, since a parse error in a `<script>` kills the whole element.
-- **Test for LIVE and negate, never for rolled-up directly.** Anything that is not one of those
-  three values, a MISSING flag included, counts as rolled up, so a rolled-up test written the
-  other way round would call a missing flag live.
-- **Never test the dimension's VALUE for null instead.** A rolled-up column is null AND a genuine
-  null dimension value is null, so a nullness test silently merges a real null group into the
-  rollup row. The flag is the only thing that tells them apart.
-
-Selecting cells is not the same as computing them: every value in `byMonth` was worked out by the
-statement, which is the rule "the browser draws, it never computes" holding.
+**Page script never reads `<script id="dashies-data">` itself, or any script element's text, and
+publish refuses a script that looks one up** (`page_script_escape`): the data block by its id,
+`document.scripts`, `getElementsByTagName('script')`, or a selector naming a script. Page script
+takes its numbers from `dashies.data(callback)` and nowhere else, because that is the one surface Dashies can check: publish reads what a script does with what
+`dashies.data` hands it (rule 1 in `SKILL.md`), and a script that parses the data block for itself
+reaches the same numbers around that reading. A page published before `dashies.data` existed keeps
+rendering as it is; republishing it, `look: { from }` included, means moving its script onto
+`dashies.data` first. On a warehouse dashboard the data block holds no rows to read anyway: they
+are worked out when someone opens the page and handed to your callback.
 
 ## Migrating a dashboard that has no spec
 

@@ -1162,7 +1162,15 @@ without it is refused on either, since those would ship frozen.
   called with. Carry no `data-dash` attributes and nothing further is asked of your body.
 - **Dashies' bindings** - `data-dash` attributes the runtime fills. Every binding must resolve
   against your declared datasets, checked at publish, and a body with bindings and no marker is
-  refused rather than shipped with frozen numbers.
+  refused rather than shipped with frozen numbers. **A `data-dash="chart"` binding can draw several
+  series**, on every data source, served data included: `data-measures` names two to four measure
+  keys at the same `data-x`, or `data-series` names one dimension beside a `data-measure`, one
+  series per value. A chart split by `data-series` draws at most 5 series (on a warehouse or
+  uploaded-file dataset a missing value is a series of its own and counts): past that, the page
+  shows "Too many series: <dimension> has N values, max 5." in place of the chart when it is viewed,
+  so split by a dimension with at most 5 values, or narrow that dimension in the SQL. A multi-series
+  chart draws no sort or limit controls, so leave `data-controls` off it; the publish warns when
+  one carries it.
 
 ### Assets - images the server fetches for you
 

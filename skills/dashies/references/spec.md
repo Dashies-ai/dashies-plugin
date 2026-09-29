@@ -1246,8 +1246,9 @@ function is handed the same shape either way.
 dashies.data(function (datasets, page) { /* draw */ }, { main: { by: ['month'] } });
 ```
 
-The options object is keyed by dataset name, and the one key it carries today is `by`: a subset
-of that dataset's declared dimension keys. **Naming a dataset is how you ask for it.** With no
+The options object is keyed by dataset name, and each entry carries up to two keys: `by`, a
+subset of that dataset's declared dimension keys, and `unfiltered`, declared dimensions whose page
+filter that subscription is answered without (see "Filters and a coarser grain"). **Naming a dataset is how you ask for it.** With no
 options, or `{}`, you are handed every dataset your markup may read, each at its declared grain;
 name any dataset and the call asks for exactly the datasets it names, each at its `by` or, where
 that entry has no `by`, at its declared grain. **A dataset you leave out of an options object that
@@ -1269,7 +1270,7 @@ Each dataset is an object carrying these ten fields and no others:
 | `error` | `null` unless `status` is `"error"`, and then the reason, in words. |
 | `error_kind` | `null` unless `status` is `"error"`, and then `"refused"` - the service declined this question, so change the question - or `"failed"` - everything else, including the service accepting the question and breaking, where a narrower question fails the same way. |
 | `grain` | The dimension keys `rows` are grouped by, in declared order: the declared keys, or the `by` you asked for. Zip it against a row to read its group. |
-| `filters` | The page filters that APPLIED to this dataset, over the dimensions it declares: a string for one value, an array of strings for a set, `{ from, to }` for a range. A dimension with no filter is ABSENT, never `null`, so `'region' in ds.filters` reads "this number is filtered by region". |
+| `filters` | The page filters that APPLIED to this dataset, over the dimensions it declares and less any dimension this subscription names in `unfiltered`: a string for one value, an array of strings for a set, `{ from, to }` for a range. A dimension with no filter is ABSENT, never `null`, so `'region' in ds.filters` reads "this number is filtered by region". |
 
 **The four states, and what the page says in each:**
 
@@ -1377,10 +1378,12 @@ Everything load-bearing in it, in order. **The data block comes first**, above t
 function is called at all. **The month series is asked for with `by`**, so the runtime hands over
 one row per month and the page adds nothing up across regions. **The control sets the filter and
 reads it back from `page.filters`**, so a shared link opens on the view it names and the select
-agrees with it; its options are the dimension's declared `domains`, written into the markup, because
-a subscription at `by: ['region']` would itself be filtered once a region is chosen and the menu
-would collapse to that one value. **The label reads `ds.filters`**, so it can never claim a filter
-that did not reach the number. **Every branch other than `ready` writes a sentence to the page and
+agrees with it; its options are the dimension's declared `domains`, written into the markup. A
+subscription at `by: ['region']` alone would itself be filtered once a region is chosen, and the
+menu would collapse to that one value; to draw the menu from the data instead, subscribe
+`{ main: { by: ['region'], unfiltered: ['region'] } }`, which is answered without the region filter
+and so keeps every region while one is chosen. **The label reads `ds.filters`**, so it can never
+claim a filter that did not reach the number. **Every branch other than `ready` writes a sentence to the page and
 draws nothing**, so a viewer never sees a number that is not the current answer. **Nothing is added
 up**: `orders` is drawn as it arrived, through `dashies.format(row.orders, orders)`, with `orders`
 the `orders` entry on `ds.measures`, which applies the measure's format and renders `null` as `-`
@@ -1398,11 +1401,15 @@ Two things a page used to have no sanctioned way to do, and now does, through th
 that answers a managed filter tile and a managed chart. Neither adds a request your spec could not
 already cause: a filter names a declared dimension and a value, and `by` names a subset of
 declared dimensions. There is still no way to name a measure, a dataset or a query the spec did
-not declare.
+not declare. `unfiltered` (below) adds none either: it asks at a state the page could reach by
+clearing those filters.
 
 ```js
 // A coarser grain, per dataset, on the subscription. [] is the grand total.
 dashies.data(function (datasets, page) { /* ... */ }, { main: { by: ['month'] } });
+
+// Every region, whatever region the page has chosen: the members a filter menu draws.
+dashies.data(function (datasets, page) { /* ... */ }, { main: { by: ['region'], unfiltered: ['region'] } });
 
 // The page filter on a declared dimension. Returns nothing; the runtime fetches again and
 // calls every subscriber again.
@@ -1425,6 +1432,16 @@ subscribes twice; a page that wants two aggregates of one column declares two me
 dimension the dataset does not declare is `status: "error"` on that dataset for that subscription,
 for good, naming the declared dimensions; there is no silent fall-back to the declared grain,
 because a wrong-shaped answer drawn as a right one is the failure this surface exists to remove.
+
+**`unfiltered`.** Declared dimensions of that dataset whose page filter this subscription is
+answered without; every other page filter still applies, and any declared dimension may be named,
+whether or not it is in `by`. It is what a menu of a dimension's members needs: subscribed at
+`by: ['region']` alone, the rows collapse to the chosen region, while `unfiltered: ['region']`
+keeps every region, on a shared link that opens filtered as much as after a click. That
+subscription's `filters` leaves the named dimensions out, so `'region' in ds.filters` stays true
+exactly when the region filter reached its rows; `page.filters` is the page's state either way. It
+can never show a viewer rows they may not see: it removes only filters the page set. A key the
+dataset does not declare is refused exactly as a bad `by` is.
 
 **`dashies.filter`.** One dimension and a value, or one object of several, which applies all of
 them or none. A value is a string, an array of strings, `{ from, to }` on a `date` dimension, or

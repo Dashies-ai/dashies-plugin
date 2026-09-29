@@ -969,6 +969,12 @@ breakdown from one dataset calls `dashies.data` twice, and each call is handed i
 warehouse dashboard the declared grain is not requested unless something subscribes at it, so a
 wide dataset can serve a narrow view without paying for its width.
 
+**A menu of a dimension's members is asked for without that dimension's own filter.** `unfiltered`
+names declared dimensions whose page filter one subscription is answered without, so
+`{ main: { by: ['region'], unfiltered: ['region'] } }` keeps every region while one is chosen -
+the list a filter menu draws - and every other page filter still applies. That subscription's
+`ds.filters` leaves those dimensions out, so it never claims a filter its rows did not get.
+
 **A CALL ASKS FOR EXACTLY WHAT ITS OPTIONS NAME.** Pass no options, or `{}`, and you are handed
 every dataset your markup may read, each at its declared grain. Name any dataset and you are asking
 for those and no others: a dataset you leave out is not fetched, and reading it in that callback

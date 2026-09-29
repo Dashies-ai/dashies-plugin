@@ -156,7 +156,7 @@ back to Step 3 and ask a narrower question.
 anything the tiles show.** Dashies works those numbers out when someone opens the page rather than
 ahead of time, so there is no set of states to keep small. Declare `domains` there for the ORDER of
 the members, which is the other thing they do: markup you write is handed each grain's rows in that
-order. A filter menu Dashies draws on a warehouse dataset does not follow it yet. **The one
+order, with one exception, which the `rows` entry under "The shape your script is handed" names. A filter menu Dashies draws on a warehouse dataset does not follow it yet. **The one
 exception is a dataset your own markup draws**: it is handed every declared dimension at once, so bound them, and if the page
 reports that the grain is too wide, declare fewer of them on that dataset - see **Writing your own
 markup**.
@@ -1260,7 +1260,7 @@ Each dataset is an object carrying these ten fields and no others:
 | Key | Value |
 |---|---|
 | `status` | `"pending"`, `"loading"`, `"ready"` or `"error"` (below). |
-| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. **Their order:** when a dimension in `grain` declares `domains`, the rows are sorted over the dimensions in `grain` order - on each, the members you listed come first, in your order, then any other value ascending (a number column by value, text character by character), then `null`. A grain with no such dimension arrives in the order it was answered. |
+| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. **Their order:** every grain arrives sorted over the dimensions in `grain` order - on each, the members a `domains` declaration lists come first, in your order, then every other value ascending (a number column by value, text character by character), then `null` - so draw the rows in the order they arrive. One exception: on a dataset whose rows are kept outside the page, a grain over a column whose type Dashies could not tell at publish (every value it sampled there was empty) arrives in the order Dashies answered it, ascending over its dimensions in alphabetical order and without your `domains` order. |
 | `truncated` | `true` when `rows` is not the whole answer. |
 | `dimensions` | `[{ key, label?, type?, domains? }]` - every DECLARED dimension: `label` where you set one, `type` present only when it is `date`, and `domains` exactly as you declared it on a category dimension that has one. |
 | `measures` | `[{ key, agg, format?, scale? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale asks your markup to divide for display. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
@@ -1533,6 +1533,8 @@ if (rows === null) {
   must not hand-write a renderer for.
 - **`type` appears on a dimension only when it is `date`.** A category dimension carries `key`,
   plus `label` and `domains` where you set them, so testing for a `"category"` value finds nothing.
+  A dimension whose column type Dashies knows also carries `numeric`, `true` for a number column:
+  it is how Dashies orders rows, and nothing on your page needs to read it.
 - **Read `as_of` and `error` rather than assuming.** A dataset that failed its last refresh keeps
   its last good rows and carries the reason; one whose `as_of` lags `updated_at` is showing older
   numbers than the rest of the page. Say so on the page instead of drawing them as current.

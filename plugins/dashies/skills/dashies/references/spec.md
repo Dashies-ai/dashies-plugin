@@ -1246,9 +1246,11 @@ function is handed the same shape either way.
 dashies.data(function (datasets, page) { /* draw */ }, { main: { by: ['month'] } });
 ```
 
-The options object is keyed by dataset name, and each entry carries up to two keys: `by`, a
+The options object is keyed by dataset name, and each entry carries up to six keys: `by`, a
 subset of that dataset's declared dimension keys, and `unfiltered`, declared dimensions whose page
-filter that subscription is answered without (see "Filters and a coarser grain"). **Naming a dataset is how you ask for it.** With no
+filter that subscription is answered without (see "Filters and a coarser grain"); and `sort`,
+`limit`, `having` and `other`, which ask for the members in an order, cut, restricted by a
+condition, with the rest as one row (see "An order, a top N and a threshold"). **Naming a dataset is how you ask for it.** With no
 options, or `{}`, you are handed every dataset your markup may read, each at its declared grain;
 name any dataset and the call asks for exactly the datasets it names, each at its `by` or, where
 that entry has no `by`, at its declared grain. **A dataset you leave out of an options object that
@@ -1257,12 +1259,12 @@ dataset and the fix** - never a quietly different answer. The function's own sec
 `page`, carries one field, `filters`: the page's whole filter state, over every dimension any
 dataset on the page declares.
 
-Each dataset is an object carrying these ten fields and no others:
+Each dataset is an object carrying these twelve fields and no others:
 
 | Key | Value |
 |---|---|
 | `status` | `"pending"`, `"loading"`, `"ready"` or `"error"` (below). |
-| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. **Their order:** every grain arrives sorted over the dimensions in `grain` order - on each, the members a `domains` declaration lists come first, in your order, then every other value ascending (a number column by value, text character by character), then `null` - so draw the rows in the order they arrive. One exception: on a dataset whose rows are kept outside the page, a grain over a column whose type Dashies could not tell at publish (every value it sampled there was empty) arrives in the order Dashies answered it, ascending over its dimensions in alphabetical order and without your `domains` order. |
+| `rows` | When `ready`, an array of row objects, one per combination of the dimensions in `grain`, each carrying every declared measure, worked out under the filters in `filters`. **`null` in the other three states, never an empty array.** A measure is a number when a float64 holds it exactly and otherwise its exact digits as a string, `null` where the cell has no value; draw it as text, see the example's closing note. A `min` or `max` over a date is TEXT: `YYYY-MM-DD` for a DATE, `YYYY-MM-DDTHH:MM:SS.sssZ` (ISO 8601, UTC) for a TIMESTAMP. **Their order:** every grain arrives sorted over the dimensions in `grain` order - on each, the members a `domains` declaration lists come first, in your order, then every other value ascending (a number column by value, text character by character), then `null` - so draw the rows in the order they arrive. One exception: on a dataset whose rows are kept outside the page, a grain over a column whose type Dashies could not tell at publish (every value it sampled there was empty) arrives in the order Dashies answered it, ascending over its dimensions in alphabetical order and without your `domains` order. **Asked with `sort`, the rows arrive in that order instead, cut to any `limit`, and each carries `__rank_pos`, its place from 1.** |
 | `truncated` | `true` when `rows` is not the whole answer. |
 | `dimensions` | `[{ key, label?, type?, domains? }]` - every DECLARED dimension: `label` where you set one, `type` present only when it is `date`, and `domains` exactly as you declared it on a category dimension that has one. |
 | `measures` | `[{ key, agg, format?, scale?, currency?, decimals? }]` for an agg measure, then `{ key, ratio: { num, den, num_scope?, den_scope? }, label?, format?, scale?, currency?, decimals? }` for each `ratio` measure - `format` rides on an agg entry when a `unit` was declared, and on a ratio entry it is always present (the declared unit's format, else `percent`); `scale` rides beside it where the declared scale divides for display, and `currency` and `decimals` where the unit declares them. An entry is what you hand `dashies.format(value, measure)`, which applies all four. A ratio's value is on each row under its key, worked out by the runtime; see "How your script gets its numbers" in `SKILL.md`. |
@@ -1271,6 +1273,8 @@ Each dataset is an object carrying these ten fields and no others:
 | `error_kind` | `null` unless `status` is `"error"`, and then `"refused"` - the service declined this question, so change the question - or `"failed"` - everything else, including the service accepting the question and breaking, where a narrower question fails the same way. |
 | `grain` | The dimension keys `rows` are grouped by, in declared order: the declared keys, or the `by` you asked for. Zip it against a row to read its group. |
 | `filters` | The page filters that APPLIED to this dataset, over the dimensions it declares and less any dimension this subscription names in `unfiltered`: a string for one value, an array of strings for a set, `{ from, to }` for a range. A dimension with no filter is ABSENT, never `null`, so `'region' in ds.filters` reads "this number is filtered by region". |
+| `members` | When `ready`, how many members the grain has under the filters and any `having`, BEFORE a `limit` cut them - the "of 12,000" beside a top ten, counted by Dashies. Equal to `rows.length` wherever nothing was cut. `null` in the other three states. Draw it with `dashies.format(ds.members, ds)`, which puts in the page's separators: with the dataset in place of a measure entry, `dashies.format` formats that dataset's `members` and nothing else. |
+| `other` | When the subscription asked `other: true` and a `limit` left members out, those members as ONE row: every declared measure and ratio, worked out exactly over their rows. It carries no dimension value, and reading one throws, so label it yourself. `null` otherwise. |
 
 **The four states, and what the page says in each:**
 
@@ -1495,6 +1499,80 @@ lie, and after boot the callback already has it.
 measured instance under "How your script gets its numbers". A rollup is `by`; a filter state is
 `dashies.filter`; a sentinel value per filter state and a dataset per grain are the same mistake
 in two shapes, and both are paid at extraction as well as at view time.
+
+### An order, a top N and a threshold
+
+A page may not sort, slice or filter its rows by a number, so it asks Dashies for them on the same
+subscription, and Dashies ranks the members the way the query service ranks them: on a warehouse
+dashboard the service answers the question itself, and on the sample connection the page ranks the
+rows it holds by the same rules.
+
+```js
+// The ten largest customers by revenue, the rest as one row, and how many there were.
+dashies.data(function (datasets) {
+  var ds = datasets.sales;
+  if (ds.status !== 'ready') return;
+  ds.rows;      // ten rows, the top one first, each with __rank_pos 1 to 10
+  ds.members;   // 12000
+  'of ' + dashies.format(ds.members, ds);   // 'of 12,000', in the page's own separators
+  ds.other;     // { revenue: ..., orders: ..., aov: ... } for the other 11,990, or null
+}, { sales: { by: ['customer'], sort: 'revenue:desc', limit: 10, other: true } });
+
+// The countries whose average order is over 500, largest first.
+dashies.data(function (datasets) { /* ... */ },
+  { sales: { by: ['country'], sort: 'revenue:desc', having: [{ key: 'aov', op: '>', value: 500 }] } });
+```
+
+**`sort`.** `'<key>:asc'` or `'<key>:desc'`, and the direction is required. The key is a declared
+measure, a declared `ratio`, or a dimension in the grain (`by`, or the declared grain), ordered by
+its value - a `domains` list does not order a sort. A member with no value comes last in both
+directions, and a tie is broken by every dimension of the grain you did not sort on, ascending, in
+key order - on a top N over one dimension, the member's own value - so the order is the same on
+every load. Each row then carries `__rank_pos`, its place from 1: a numbered list reads it, since a
+count the page works out itself (`i + 1`) is refused at publish, and a page highlights the top item
+with `r.__rank_pos === 1` or reads it as `rows[0]`. A grain asked without `sort` carries no
+`__rank_pos` and arrives in its member order.
+
+**`limit`.** A whole number from 1 to 10,000, and only beside `sort`: it keeps the first members of
+that order. `members` says how many there were before the cut. On a warehouse dashboard, without a
+`limit`, a grain whose members pass the 10,000 one answer holds reads `status: "error"`,
+`error_kind: "refused"`, naming `limit`, rather than a first 10,000 drawn as the whole.
+
+**`having`.** A list of conditions a member must ALL meet, checked before it is ordered, counted or
+cut: `{ key, op, value }` with `key` a declared measure or `ratio`, `op` one of `>`, `>=`, `<`, `<=`,
+`=` and `!=`, and `value` a number. A member with no value meets none, `!=` included. A condition on
+a dimension is refused: to keep rows by a category value, pick them by name in your script
+(`rows.filter(function (r) { return r.plan === 'pro'; })`), or set the page filter with
+`dashies.filter`.
+
+**`value` is in the unit the row carries, not the one the page shows.** It is compared BEFORE a
+declared `scale`: on a measure declared `scale: cents`, a $500 threshold is `50000`; a percent
+compares as its rows hold it, `0.25` for 25% under `scale: fraction` and `25` under `scale: points`;
+a `ratio` compares its quotient, so one the page shows as 25% is `0.25`. Writing the figure the page
+shows gives a threshold 100x off, and nothing can tell you so.
+
+**A measure that is a date or a time** - a `min` or `max` over a date column - may be a `sort`:
+`sort: 'last_order:desc'` puts the latest first. A condition on one is refused, since a condition
+compares a number, and so is a `sort` or a condition on a `ratio` over one. To keep the members
+with a row in a range of days, narrow the page with `dashies.filter` on a date dimension.
+
+**`other`.** `true` beside a `limit`: `ds.other` is then every member past the cut as one row, each
+measure and ratio worked out exactly over their rows - a distinct count included - so an "Other" bar
+or slice is Dashies' number, not a sum the page made. It is `null` when nothing fell past the cut.
+One case is refused rather than guessed: a sample-connection dataset that holds only pre-added
+cells cannot gather a measure that does not add up across members, such as a distinct count, into
+one row.
+
+**What is refused**, each as `status: "error"` on that dataset for that subscription, naming the fix,
+while the page's other subscriptions keep their rows: a key the dataset does not declare, a `sort`
+with no direction, a dimension outside the grain, a `limit` with no `sort` or outside 1 to 10,000,
+`other` with no `limit`, a condition on a dimension or with an operator outside the six, a condition
+value that is not a number, any of the four on `by: []`, a `ratio` whose `num_scope` or
+`den_scope` is `all` - a share of the total ranks exactly as its other operand does, and the
+refusal names that operand - a condition on a measure that is a date or a time and a `sort` or
+condition on a `ratio` over one, `other` over a measure that does not add up where the dataset holds
+only pre-added cells, and, where the page ranks the rows it holds, a ranking by a measure whose
+value has more digits than the page holds exactly.
 
 ### Reading the data block directly
 

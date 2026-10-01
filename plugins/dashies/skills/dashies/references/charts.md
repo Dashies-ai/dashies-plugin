@@ -27,7 +27,8 @@ because each one is a rule of this path rather than a taste.
 - **Every number drawn is a delivered value, in the order it was delivered.** The recipes lay out -
   a bar's length, a point's position, a colour - and never work a figure out, or reorder or cut the
   rows: no totals, no differences, no shares, no axis ticks the page invented, no sort, no top N, no
-  threshold on a row. A KPI's delta is a `ratio` you declare in the spec and read off the row. A
+  threshold on a row - an order, a top N and a threshold are asked for with `sort`, `limit` and
+  `having` on `dashies.data`. A KPI's delta is a `ratio` you declare in the spec and read off the row. A
   test on a number may colour something, as the KPI's delta takes its up or down colour, or hide it
   through a class, and never chooses text, a row or an order: no word, sign, unit or other glyph is
   written under an `if` on a number or picked by a ternary on one. A row is picked by a category
@@ -303,9 +304,11 @@ all-caps name advances about 7.7 units a character against the 6.2 the estimate 
 estimating alone cut the head off a label a second time. `capLabels` measures each one with
 `getComputedTextLength()` after it is in the document and compresses only what is over budget.
 Rows draw in the order Dashies delivers them, by value unless the dimension declares `domains`.
-A page never sorts them, so a ranking by a measure is a table or chart widget's `data-sort`. A
-negative value draws as an empty bar: signed data wants a zero line, which neither bar recipe
-draws.
+A page never sorts them: a ranking by a measure is asked for on the subscription, and arrives in
+that order - `{ sales: { by: ['customer'], sort: 'revenue:desc', limit: 10 } }` hands this recipe
+the ten largest, the largest first, and `other: true` adds `ds.other` for an "Other" bar drawn
+after them. A negative value draws as an empty bar: signed data wants a zero line, which neither
+bar recipe draws.
 
 ```js
 function hbar(rows, dim, key, m) {
@@ -373,8 +376,8 @@ day, `YYYY-MM-DD`. **On the sample connection a dimension can instead arrive as 
 statement returned**, numbers staying numbers, which is why `day()` normalizes the axis labels
 rather than trusting the type. The first and last days label the axis and the last point carries
 its delivered value, which is every number the chart shows. **The highest point is not
-labelled**: finding it means comparing the values, which publish refuses, so a chart widget with
-`data-sort` is the way to show the largest. The scale's top and bottom are a `Math.max` and a
+labelled**: finding it means comparing the values, which publish refuses, so the largest is asked
+for with a second subscription, `sort: '<measure>:desc', limit: 1`, whose one row is it. The scale's top and bottom are a `Math.max` and a
 `Math.min`, which only scale the drawing. The baseline is zero, so a flat quarter looks flat
 rather than stretched to fill the box.
 
@@ -508,8 +511,9 @@ fewer columns, or a card given the full row.
   them is what a first page needs, and every one is a place a number can be computed by accident.
 - **A sort, a top N, a threshold or a highest point worked out in the page.** Each chooses or
   orders rows by comparing values, which publish refuses. Dashies delivers a grain in value order
-  (or in the member order a dimension's `domains` declares); a table or chart widget sorts and
-  cuts with `data-sort` and `data-limit`; a threshold on a measure belongs in the dataset's SQL.
+  (or in the member order a dimension's `domains` declares), and in the order a subscription asks
+  with `sort`, cut by its `limit` and restricted by its `having`, each row carrying its
+  `__rank_pos`; a table or chart widget sorts and cuts with `data-sort` and `data-limit`.
 - **Text a number decides**: a word such as "High" or "Above target", a sign, a unit, any glyph,
   whether a ternary picks it or it is written under an `if` on the number. A test on a number may
   colour something, or hide it through a class; text a reader sees is a delivered value drawn

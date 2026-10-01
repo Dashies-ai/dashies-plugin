@@ -901,7 +901,8 @@ of them, or show a measure other than through `dashies.format`. It must not show
 chose - a word such as "High", a sign, a unit, any glyph at all - whether a ternary picks it or it
 is written under an `if` on the number, and it must not sort, cut, threshold or top-N the rows - not
 even to roll them up to a coarser grain, which you ask the runtime for instead (`by`, under "How
-your script gets its numbers"). A number hides or shows something only through a class, a style or
+your script gets its numbers"), as you ask it for an order, a top N or a threshold (`sort`, `limit`
+and `having`, in the same place). A number hides or shows something only through a class, a style or
 geometry: to leave a value label off a bar too short to hold it, write the label's text every time
 and toggle a class by the bar's own size (`el.classList.toggle('is-hidden', h < 14)`, or the class
 written into the markup string, with `.is-hidden { display: none; }` in the page's stylesheet),
@@ -911,12 +912,12 @@ delivered date. Every check this skill spends its length on - the aggregate that
 column, the fan-out cross-check, the disagreeing-totals warning - is applied to the SQL. A number
 worked out in the browser has been through none of them, and nothing will ever check it again.
 Declare it as a measure and let the statement compute it. **Publish refuses a script that crosses
-this line**, naming what to declare instead: a measure or a `ratio` for a figure, `domains` for a
-member order, a table or chart widget's `data-sort` and `data-limit` for a top N, the dataset's SQL
-for a threshold, and a dimension the SQL works out (a `CASE`) for a word a number decides. Rows
-arrive in value order, or in the order a dimension's `domains` declares, with one exception on
-served data that the `rows` entry in `references/spec.md` names, so a page that draws them as handed
-needs no sort.
+this line**, naming what to ask for or declare instead: a measure or a `ratio` for a figure,
+`domains` for a member order, `sort` and `limit` on `dashies.data` for an order or a top N,
+`having` for a threshold, and a dimension the SQL works out (a `CASE`) for a word a number decides.
+Rows arrive in value order, or in the order a dimension's `domains` declares, with one exception on
+served data that the `rows` entry in `references/spec.md` names, or in the order a `sort` asked for,
+so a page that draws them as handed needs no sort.
 
 **2. Your JavaScript never calls out to a server. Not ours, not the warehouse, not anyone's.**
 It draws what the runtime hands it, and every number on the page arrives through the spec's
@@ -952,6 +953,15 @@ dashies.data(function (datasets, page) {
   page.filters;              // the page's whole filter state
 }, { main: { by: ['month'] } });   // optional: a COARSER grain, per dataset
 
+// Ask for a top N: the rows arrive in that order and cut, each with its rank.
+dashies.data(function (datasets) {
+  var ds = datasets.main;
+  ds.rows;                   // the ten largest customers by revenue, the top one first,
+                             // each carrying __rank_pos: 1, 2, 3 ...
+  ds.members;                // how many customers there were before the cut
+  ds.other;                  // every customer past the cut, as one row of measures
+}, { main: { by: ['customer'], sort: 'revenue:desc', limit: 10, other: true } });
+
 // Set, replace or clear the page filter on a declared dimension. It returns nothing;
 // the runtime fetches again and calls your function again.
 dashies.filter('region', 'EMEA');                                   // one value
@@ -974,6 +984,33 @@ names declared dimensions whose page filter one subscription is answered without
 `{ main: { by: ['region'], unfiltered: ['region'] } }` keeps every region while one is chosen -
 the list a filter menu draws - and every other page filter still applies. That subscription's
 `ds.filters` leaves those dimensions out, so it never claims a filter its rows did not get.
+
+**An order, a top N and a threshold are asked for, never worked out.** Publish refuses a script
+that sorts, slices or filters the rows by a number, so these four options are the route, and Dashies
+answers them exactly as it answers `by`:
+
+- **`sort: 'revenue:desc'`** delivers the rows in that order: a declared measure, a declared
+  `ratio`, or a dimension in `by`, and `:asc` or `:desc`, which is required. A member with no value
+  comes last either way, and a tie is broken by the dimensions of the grain you did not sort on (on
+  a top N over one dimension, the member's own value). Each row then carries `__rank_pos`, its place
+  from 1, so a numbered list reads the rank rather than counting.
+- **`limit: 10`** keeps the first ten of that order: 1 to 10,000, and only beside `sort`.
+  `ds.members` says how many there were before the cut - the "of 12,000" - and is always set on a
+  ready dataset. Draw it with `dashies.format(ds.members, ds)`, which puts in the separators: with
+  the dataset in place of a measure entry, `dashies.format` formats that count and nothing else.
+- **`having: [{ key: 'aov', op: '>', value: 500 }]`** keeps the members whose measure or ratio meets
+  every condition, before they are ordered or counted: `>`, `>=`, `<`, `<=`, `=` or `!=`, against a
+  number in the unit the ROW carries, before any `scale`: a `cents` measure's $500 is `50000`, and a
+  percent is `0.25` for 25% under `scale: fraction`. A member with no value meets none. A condition
+  is on a measure; to keep rows by a category value, pick them by name in your script, which is
+  allowed. A measure that is a date (a `min` or `max` of a date) takes `sort`, never a condition.
+- **`other: true`**, beside `limit`, adds `ds.other`: every member past the cut as ONE row of
+  measures, worked out exactly. It is `null` when nothing was cut, and it has no dimension value, so
+  label it yourself ("Other").
+
+A cut is refused rather than guessed: with no `limit`, on a warehouse dashboard, more members than
+the 10,000 one answer holds is `status: "error"` naming `limit`. `references/spec.md` carries the whole surface under
+"An order, a top N and a threshold".
 
 **A CALL ASKS FOR EXACTLY WHAT ITS OPTIONS NAME.** Pass no options, or `{}`, and you are handed
 every dataset your markup may read, each at its declared grain. Name any dataset and you are asking
@@ -1001,8 +1038,9 @@ copy the runtime would have produced on demand, and every one was extracted, sto
 Declare the record grain once. A rollup is `by`; a filter state is `dashies.filter`; a sentinel
 value per filter state and a dataset per grain are the same mistake in two shapes.
 
-Each dataset carries exactly ten fields - `status`, `rows`, `truncated`, `dimensions`, `measures`,
-`as_of`, `error`, `error_kind`, `grain` and `filters` - and nothing else. **`status` is one of
+Each dataset carries exactly twelve fields - `status`, `rows`, `truncated`, `dimensions`,
+`measures`, `as_of`, `error`, `error_kind`, `grain`, `filters`, `members` and `other` - and nothing
+else. **`status` is one of
 four words, and `rows` is `null` in three of them:**
 
 - **`pending`** - no answer yet, and nothing failed. A dataset is here while Dashies is still
@@ -1059,7 +1097,9 @@ and the quotient is already on the row under the key you declared.
 
 **Every refusal is at the declared boundary, and it is loud.** A `by` naming a dimension the
 dataset does not declare is `status: "error"` on that dataset for that subscription, naming the
-declared dimensions, and it stays that way: there is no silent fall-back to the declared grain. A
+declared dimensions, and it stays that way: there is no silent fall-back to the declared grain. So
+is a `sort`, `limit`, `having` or `other` the declaration does not admit - a key it does not
+declare, a `sort` with no direction, a `limit` with no `sort` - each naming the fix. A
 `dashies.filter` naming a dimension no dataset on the page declares, a range on a dimension that
 is not a `date`, or a set larger than a shared link can carry throws a `TypeError` at the call
 site once the page has booted and changes nothing; a call that names several dimensions applies
@@ -1585,8 +1625,9 @@ never a spec edit - do not change `slug` to rename.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls, pick rows by a category value, and colour something by a
   test on a number. It must not work out a number from values it was handed, show text a number
-  chose, or sort, cut or threshold the rows - declare a measure and let the statement compute it;
-  publish refuses a script that does. A coarser grain is asked for with `by` and a filter is set
+  chose, or sort, cut or threshold the rows - declare a measure and let the statement compute it,
+  and ask for an order, a top N or a threshold with `sort`, `limit` and `having`; publish refuses a
+  script that does. A coarser grain is asked for with `by` and a filter is set
   with `dashies.filter`; never roll up or filter by a number in the browser, and never duplicate
   records with sentinel values to precompute either. And it takes its numbers from what the runtime
   hands it, never from a call of its own.

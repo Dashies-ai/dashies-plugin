@@ -144,15 +144,15 @@ back to Step 3 and ask a narrower question.
 **On a dashboard that reads a warehouse, a bound buys nothing and narrowing is not the remedy for
 anything the page shows.** Dashies works those numbers out when someone opens the page rather than
 ahead of time, so there is no set of states to keep small. Declare `domains` there for the ORDER of
-the members, which is the other thing they do: page code is handed each grain's rows in that order,
-with one exception, which the `rows` entry under "The shape your script is handed" names. A widget
-on a warehouse dataset does not follow it yet (`references/widgets.md`, "Member order on an axis").
+the members, which is the other thing they do: every widget draws the members in that order, and page
+code is handed each grain's rows in it, with one exception, which the `rows` entry under "The shape
+your script is handed" names (`references/widgets.md`, "Member order on an axis").
 **The one exception is a dataset your page code draws at its declared grain**: it is handed every
 declared dimension at once, so bound them, and if the page reports that the grain is too wide,
 declare fewer of them on that dataset - see **The page: `look`**.
 
-Where Dashies works out every state a dataset's filters can be in ahead of time, `domains` also
-fixes the ORDER of a filter widget's menu - see `references/widgets.md`, "Member order on an axis".
+On every connection `domains` also fixes the ORDER every widget draws the members in, and page code
+is handed them in - see `references/widgets.md`, "Member order on an axis".
 
 **measure** - exactly one of:
 
@@ -1164,7 +1164,7 @@ draw what it was asked for says why in its own place when the page is viewed
 
 | warning | what it found | what to do |
 |---|---|---|
-| `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. The runtime filter drops it |
+| `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. Widgets list it after the declared members, but the publish sized the dataset from the declared members alone, so it is larger than it was checked at |
 | `null_leading_dimension` | a declared dimension is NULL across the whole leading head of the dataset | a null dimension cell renders as a blank label, so a table leads with unlabelled rows. The warning names the column and how many of the dataset's rows carry the null, so you can tell a handful to label from a broken join. Label it in SQL (`coalesce(...)` to an explicit value) if the null is meaningful, or filter it out if it is not |
 | `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | declare `scale: points`, and page code is handed the value with `scale: 100` beside it. A widget is handed the raw value, so for a measure a widget draws, divide by 100.0 in the SQL and keep `scale: fraction` instead (the scale rules under the field table) |
 | `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |

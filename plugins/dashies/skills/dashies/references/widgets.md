@@ -394,35 +394,33 @@ One dimension (`data-dim`), single-select unless `data-multi` or `data-range` sa
 
 ## Member order on an axis
 
-**This was measured on a page whose numbers travel inside it - the sample connection - where a widget
-is handed the rows in the order your SQL returned them.** There, end the `sql` in an explicit
-`ORDER BY`: without one the order is whatever the warehouse produced, it can change between refreshes,
-and nothing warns you, since an axis in some order looks deliberate. Each row was measured by drawing
-the widget twice, once with the data reversed:
+**Every widget puts a dimension's members in one order, the same order page code is handed rows in:**
+the members the dimension declares in `domains`, in that order; then every other member, by its value
+(a number column numerically, a text column by character code, so capitals come before lower case);
+then the member with no value, where the widget draws one. It is the same on every connection, so
+**`domains` is the one lever: declare it for the order you want.** Your statement's `ORDER BY` does not
+decide it on any connection, and a member the data carries that `domains` does not list is never
+dropped: it comes after the declared ones. The member-order rows were measured by drawing each widget
+over rows that arrive in neither the declared order nor value order:
 
 | Widget | A category dimension | A date dimension |
 |---|---|---|
-| `matrix`, `heatmap` | your row order (it has no sort, so the SQL is the only lever) | calendar order |
-| `chart` (`data-x`) | your row order, unless `data-sort` | calendar order |
+| `chart` (`data-x`), and its series | member order, unless `data-sort` | calendar order |
+| `matrix`, `heatmap` | member order, on both axes | calendar order |
+| `pie`, `donut` | member order | calendar order |
+| `stacked`, `combo` | member order, on the x axis and the series | calendar order on the x axis |
+| `filter`, and a `data-xfilter` selection | member order, listing every declared member even where no row carries it, and never the member with no value | calendar order |
+| `table` with `data-group` | the rows' own order, unless `data-sort`: your SQL's on a dataset whose rows travel in the page, the order Dashies answers in on one it keeps | the rows' own order |
 | `waterfall` | its own: largest contribution first | calendar order |
-| `table` with `data-group` | your row order, unless `data-sort` | your row order |
-| `pie`, `donut` | your row order | your row order |
-| `filter`, and a `data-xfilter` selection | your row order, first seen | your row order |
-| `stacked`, `combo` | your row order (no sort, so the SQL is the only lever) | calendar order on the x axis |
 | `treemap` | its own: largest share first | its own: largest share first |
 | `drilldown` | its own: ranked by its measure | its own: ranked by its measure |
 | `funnel` | the `data-stages` you write | the `data-stages` you write |
 
-Where Dashies works out every state a dataset's filters can be in ahead of time, a filter's menu follows
-the dimension's `domains` array instead, and an `ORDER BY` cannot reach it, so list `domains` in the
-order you want the menu.
+**One exception, on a warehouse or uploaded-file dashboard:** a dimension whose column type Dashies
+could not tell when you published - every sampled value empty, and no type from the warehouse - keeps
+the order Dashies' answer arrives in, `domains` and all. Republish once the column carries values.
 
-**On a warehouse or uploaded-file dashboard a widget is handed Dashies' own answer rather than your
-rows**, so an `ORDER BY` does not reach it at all, and neither does a `domains` order yet. The levers
-that do are the ones a widget owns: `data-sort` on a chart or a table, a role that orders itself, and
-a funnel's `data-stages`.
-
-A `matrix` or `heatmap` cuts its rows from the FRONT of that order (`data-limit`), so the order decides
+A `matrix` or `heatmap` cuts its rows from the FRONT of that order (`data-limit`), so `domains` decides
 which members are on screen at all, not just their sequence; every total is still worked out over the
 whole selection.
 

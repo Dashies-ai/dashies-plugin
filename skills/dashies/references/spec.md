@@ -2,18 +2,18 @@
 
 You author a dashboard by writing a **spec** - one small YAML document - and passing it to
 `publish_dashboard`'s `spec` argument. The server does the rest: it builds the dashboard from the
-spec, checks the whole thing, and runs each dataset's `sql` once, live, so the published bytes
-carry real numbers. **You need not write any markup or styling** - a `tiles` layout costs twenty
-lines and the server draws the page from it. **And you may write all of it**: the spec carries
-your own CSS, one hand-written tile, or the whole page body, on the same path with the same
-checks, on every connection; see **Writing your own markup**. **Which one you reach for is the
-user's call rather than a default of ours**, and if they have not said, `SKILL.md` Step 4 says to
-ask and wait. A binding that names a column the SQL never returns, or a tile with
-no type, is a **pointed publish error naming the exact field**, not a blank tile or a silently
-wrong number that ships and rots.
+spec, checks the whole thing, and runs each dataset's `sql` once, live, so the published page
+carries real numbers. **The spec carries the page too**: `look: { html }` is the page body you
+write - your markup and CSS, the widgets the runtime draws (`references/widgets.md`) and your own
+page code - on every connection; see **The page: `look`**. A widget naming a dimension or a measure
+that neither the spec nor the SQL has is a **pointed publish error naming the exact field**, not a
+blank chart or a silently wrong number that ships and rots. Name a measure by its own key, never by
+the column it reads: on a warehouse a column the SQL returns passes that check too
+(`references/widgets.md`, "What publish checks").
 
-So Step 4 is mechanical: turn the statements you wrote in Step 3 into datasets plus tiles. The
-hard part - the grain and the correctness of the SQL - is already done.
+So the YAML is mechanical: turn the statements you wrote in Step 3 into datasets, and put the page in
+`look`. The hard part - the grain and the correctness of the SQL - is already done, and how the page
+looks is the style question's (`SKILL.md` Step 4).
 
 The full field contract is the JSON Schema at `https://dashies.ai/schema/dash/v1.json` (`$id`,
 draft 2020-12) and it is the exhaustive source of truth. This reference is its readable form: the
@@ -34,47 +34,36 @@ ignored.
   (`publish_dashboard({ path: "<slug>", spec })`). Omit it and the path slug is used. A mismatch
   is an `[identity]` error at `/slug`.
 - **Every publish runs the SQL live.** The server executes each dataset's `sql` through the same
-  confined read-only path `validate_cube_sql` uses, then binds the tiles against the ACTUAL
-  result columns. A dataset whose SQL fails, returns zero rows, or whose bindings do not match
-  the columns it returned, cannot publish - so a spec that would render fake zeros never reaches
-  the URL.
+  confined read-only path `validate_cube_sql` uses, then checks the declared dimensions and measures
+  against the ACTUAL result columns. A dataset whose SQL fails, returns zero rows, or whose
+  declarations do not match the columns it returned, cannot publish - so a spec that would render
+  fake zeros never reaches the URL.
 - **Numeric honesty is automatic.** Every value renders exactly or shows `-` (unavailable), never
   a rounded-wrong number. You do not manage precision.
-- **Declare only what a tile uses.** A measure or dimension no tile reads raises
-  ``[L3] /datasets/<ds>/measures/<key>: measure `<key>` is not referenced by any tile.`` (and the
-  same wording for a dimension). This is a WARNING, not a blocking error: a spec whose only issues
-  are these still publishes, and the advisory arrives on the SUCCESS report prefixed `warning:`. A
-  FAILED publish lists only real errors, so its count is the number of things you actually have to
-  fix. Two things that are NOT unreferenced: a measure used only as a ratio's `num` / `den` (the
-  ratio is the reference), and a dimension in a dataset with no tile that could have shown it (a
-  KPI-only dataset never warns about its grain). **A `look` spec has no tiles at all, so where
-  this rule fires on one it is noise rather than a finding** - the page reads its data through
-  your own code, which this rule cannot see. **Do not delete a measure your own renderer reads in
-  order to silence one.** A
-  `custom` tile is the opposite case: its `reads` marks every measure and dimension of the
-  datasets it names as referenced, so it silences them properly.
-- **No em or en dashes** in any spec string - titles, notes, labels, text tiles. Plain ASCII
+- **Declare what the page draws.** A declared dimension or measure can be handed to any viewer's
+  browser whether or not your page shows it, and publish cannot tell which ones your page code
+  reads, so it does not warn about one nothing reads. It warns once if the page has no way to read
+  its data at all - no `dashies.data` call and no widget. A warning never blocks: the advisory
+  arrives on the SUCCESS report prefixed `warning:`, and a FAILED publish lists only real errors, so
+  its count is the number of things you actually have to fix.
+- **No em or en dashes** in any spec string - titles, labels, and the text of your page. Plain ASCII
   hyphens only.
 
 ## Top level
 
-Required: `dashies`, `title`, `source`, `datasets`, plus EITHER `tiles` OR `look` - exactly one
-of those two, never both and never neither.
+Required: `dashies`, `title`, `source`, `datasets` and `look`.
 
 | Key | Type | Notes |
 |---|---|---|
 | `dashies` | `1` | Format version. Always `1`. |
 | `title` | string (1-120) | The dashboard name (also the default display name). |
 | `slug` | kebab-case, `^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$` (1-64 chars, alphanumeric first and last) | Optional; must equal the publish path slug when set. |
-| `description` | string (<=4000) | Optional prose shown in the header. |
-| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` is accepted on a dataset (<=2000) and on a dimension, a measure and a tile (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
+| `description` | string (<=4000) | Optional prose about the dashboard. Your page shows only what its own markup writes. |
+| `intent` | string (<=2000) | Optional semantic hint (what this dashboard is for) - guidance for tooling, not shown to viewers. The same optional `intent` is accepted on a dataset (<=2000) and on a dimension and a measure (**<=1000 each** - the tighter limit, so budget a measure's against 1000). It is the field that carries a measure's **provenance** - see **Provenance** below. |
 | `source` | object | The one connection and schedule the whole dashboard refreshes on (below). |
 | `datasets` | map, 1-8 | Named datasets; each key `^[a-z][a-z0-9_]{0,31}$`. First declared is the default. |
-| `assets` | map, 1-8 | Optional. Images the SERVER fetches, checks and inlines for you: each key `^[a-z][a-z0-9_]{0,31}$` names an `{ url }` (https only), referenced from your markup as `asset:<name>`. Never type image bytes into a spec. See **Assets** under **Writing your own markup**. |
-| `tiles` | array, 1-64 | The tiles, in document order (below). Exclusive with `look`. |
-| `look` | object | The whole page body, yours. Exclusive with `tiles`, `theme` and `layout`. Your script is handed its numbers by the runtime on every connection. See **Writing your own markup**. |
-| `layout` | object | Optional: `columns: 12`, `max_width` (640-1920). Refused beside `look`. |
-| `theme` | object | Optional: `accent`, `font`, `density`, `mode`, and your own `css`. Refused beside `look`. See **Writing your own markup**. |
+| `assets` | map, 1-8 | Optional. Images the SERVER fetches, checks and inlines for you: each key `^[a-z][a-z0-9_]{0,31}$` names an `{ url }` (https only), referenced from your page as `asset:<name>`. Never type image bytes into a spec. See **Assets** under **The page: `look`**. |
+| `look` | object | The page body, yours: your markup and CSS, the runtime's widgets and your page code, on every connection. See **The page: `look`**. |
 | `entitlement` | object | Optional, and only alongside a dataset that declares one: `admins: "filtered" \| "unfiltered"`. Absent means `filtered`, and `unfiltered` exempts admins of the dashboard's own workspace from the filter once the dashboard is published carrying it. Declaring it with no dataset-level `entitlement` is refused. See **Row-level security**. |
 | `row_level_security_removed` | boolean | Optional, and written by hand or not at all: `true` says a per-viewer filter this dashboard used to carry is gone on purpose. A republish that drops the `entitlement` block is refused without it, and declaring it beside an `entitlement` block is refused too. See **Row-level security**. |
 
@@ -153,16 +142,17 @@ cheaply and answer exactly under every filter, and a dimension you cannot bound 
 back to Step 3 and ask a narrower question.
 
 **On a dashboard that reads a warehouse, a bound buys nothing and narrowing is not the remedy for
-anything the tiles show.** Dashies works those numbers out when someone opens the page rather than
+anything the page shows.** Dashies works those numbers out when someone opens the page rather than
 ahead of time, so there is no set of states to keep small. Declare `domains` there for the ORDER of
-the members, which is the other thing they do: markup you write is handed each grain's rows in that
-order, with one exception, which the `rows` entry under "The shape your script is handed" names. A filter menu Dashies draws on a warehouse dataset does not follow it yet. **The one
-exception is a dataset your own markup draws**: it is handed every declared dimension at once, so bound them, and if the page
-reports that the grain is too wide, declare fewer of them on that dataset - see **Writing your own
-markup**.
+the members, which is the other thing they do: page code is handed each grain's rows in that order,
+with one exception, which the `rows` entry under "The shape your script is handed" names. A widget
+on a warehouse dataset does not follow it yet (`references/widgets.md`, "Member order on an axis").
+**The one exception is a dataset your page code draws at its declared grain**: it is handed every
+declared dimension at once, so bound them, and if the page reports that the grain is too wide,
+declare fewer of them on that dataset - see **The page: `look`**.
 
 Where Dashies works out every state a dataset's filters can be in ahead of time, `domains` also
-fixes the ORDER of that dataset's filter menu - see "Member order" below.
+fixes the ORDER of a filter widget's menu - see `references/widgets.md`, "Member order on an axis".
 
 **measure** - exactly one of:
 
@@ -183,8 +173,8 @@ fixes the ORDER of that dataset's filter menu - see "Member order" below.
   `intent`.
 
   **`min` and `max` over a DATE or TIMESTAMP column - a "last order date" - are available where
-  Dashies keeps the dataset's data** (a warehouse connection or an uploaded file). A tile prints the
-  value as its day; your markup receives it as TEXT, a DATE as `YYYY-MM-DD` and a TIMESTAMP as its
+  Dashies keeps the dataset's data** (a warehouse connection or an uploaded file). A widget prints the
+  value as its day; page code receives it as TEXT, a DATE as `YYYY-MM-DD` and a TIMESTAMP as its
   ISO 8601 UTC instant, `YYYY-MM-DDTHH:MM:SS.sssZ` - and on Oracle Database a DATE arrives as that
   instant, because Oracle's DATE carries a time. On the sample connection it is refused. **On SQL
   Server it is refused too**: the publish there cannot read a column's type, so it cannot tell a date
@@ -220,7 +210,7 @@ fixes the ORDER of that dataset's filter menu - see "Member order" below.
   from the unfiltered total instead of the filtered one. Optional `label` (<=80), `unit`, `intent`.
 
   **This is how you carry a rate or a percentage, and it is the exact way to carry an AVERAGE**:
-  `num` is the sum measure, `den` is a `count(*)` measure, which makes the tile exactly sum
+  `num` is the sum measure, `den` is a `count(*)` measure, which makes the figure exactly sum
   divided by count - the true weighted mean over the source rows, correct under every filter. It
   is strictly better than a stored average, because a stored average cannot be re-derived once a
   viewer filters.
@@ -233,32 +223,32 @@ no `scale`. Optional `decimals` (0-6), `compact`. **Pick `scale` to match what y
 The wrong scale is a 100x display error nothing can catch for you, because it is a display choice
 rather than a structural fault.
 
-**`cents` and `points` depend on WHICH PAGE you are writing, and the schema accepts them either
-way, so the refusal comes at publish rather than at validation.**
+**`cents` and `points` depend on WHO DRAWS the figure, and the schema accepts them either way, so
+the refusal comes at publish rather than at validation.**
 
-- **On a `tiles` page they are REFUSED.** A managed tile has no display divisor, so the figure
-  would render 100x. Divide in SQL and declare what the column then holds: an integer-cents
-  column becomes `amount_cents / 100.0` and `scale: units`, a 0-to-100 percent becomes
-  `pct / 100.0` and `scale: fraction`. The compiler steers you the same way.
-- **On a `look` page they are ACCEPTED, and the runtime applies the divisor.** On a `cube`,
-  `rows` or `resolved` dataset, a measure you read through `dashies.data` arrives UNDIVIDED with
+- **Page code is handed the divisor, so there they are ACCEPTED.** On a `cube`, `rows` or
+  `resolved` dataset, a measure you read through `dashies.data` arrives UNDIVIDED with
   `scale: 100` beside its `format`, and `dashies.format(value, measure)` divides and formats it
-  where you draw it; your own division is refused at publish. Two cases are still refused
-  there. **A dataset in any OTHER mode**, because its data block carries no format and no
-  divisor, so your callback would get the 100x value with nothing beside it saying so. You do
+  where you draw it; your own division is refused at publish.
+- **A widget is handed the raw value with no divisor, so a measure a widget draws is REFUSED**,
+  naming the widget, because the figure would render 100x. A `table` widget that names no
+  `data-columns` draws every measure of its dataset, and so does any widget carrying `data-group`
+  without `data-columns`, and so does a `data-drill` for every measure of the dataset it names; a
+  table that names columns draws the measures it names, grouped or not. For a measure a widget
+  draws, divide in SQL and declare what the column then holds: an integer-cents column becomes
+  `amount_cents / 100.0` and `scale: units`, a 0-to-100 percent becomes `pct / 100.0` and
+  `scale: fraction`.
+- **A dataset in any OTHER mode refuses them too**, because its data block carries no format and
+  no divisor, so your callback would get the 100x value with nothing beside it saying so. You do
   not choose the mode and you do not have to work out which one you got, with one exception: a
   dataset that declares an `entitlement` declares `mode: resolved` itself (see **Row-level
   security**), and `resolved` is one of the three modes named above. Otherwise the publish report
-  says what the server chose for each dataset, and the refusal names it. **And a
-  measure your own markup draws through a managed binding** rather than reading it yourself: a
-  `data-dash` binding is handed the raw value. A table binding that names no columns draws every
-  measure of its dataset, and so does any binding carrying `data-group` without `data-columns`, so
-  either one is enough; a table that names columns draws the measures it names, grouped or not.
+  says what the server chose for each dataset, and the refusal names it.
 
 **A worked line, because the rule "the browser draws, it never computes" is easy to over-read
 here.** A `percent` measure declared `scale: fraction` arrives as `0.42`; drawing it as `42%` is
 presentation, and it is Dashies' to do: `dashies.format(value, measure)` formats it the way the
-runtime's own widgets do, and divides a `scale: 100` value on the way. Your page does neither
+runtime's own widgets do, and divides a `scale: 100` value on the way. Your page code does neither
 step itself, because publish cannot tell a unit conversion from a number worked out, and refuses
 both. What the rule is about is a number worked out of two values: `r.discount / r.revenue` is a
 `ratio` you declare, `r.a + r.b` a measure you declare, and a rollup is `by`. A value that arrived
@@ -266,17 +256,14 @@ as its exact digits in a string is one the runtime could not hand over as a Numb
 `dashies.format` draws those digits as they came, moving the decimal point for a declared
 `scale` rather than dividing, which would round it.
 
-**Known gap - `decimals` on a non-currency unit is not reliably applied.** The `kind` always
-reaches the tile (a `percent` measure renders as a percent, a `count` as an integer), but
-`decimals` currently rides the dashboard's CURRENCY descriptor: it is emitted only as an override
-against the first `currency` unit found. So in a dashboard with no `currency` measure at all
-there is nothing to override, and `decimals: 1` on a `percent` or `number` measure is dropped -
-while adding an unrelated `currency` measure somewhere else makes that same `decimals` start
-applying. Separately, on a `combo` tile the SECONDARY measure never carries its own `decimals` or
-`currency`: the runtime reads one unsuffixed pair and applies it to both axes. This is a known
-gap rather than intended behaviour - treat `decimals` as a hint, and do not restructure a spec
-around it. (`scale` is not part of this gap: `fraction` and `units` are the identity, so there is
-nothing for them to emit.)
+**A unit's `kind` reaches most widgets; its `currency` and `decimals` reach page code alone.**
+`dashies.format(value, measure)` applies each measure's own format, currency code and decimal places.
+A widget drawing one measure draws the kind the `unit` declares wherever Dashies carries the format
+with the data, but a ratio a widget draws is a percent and a chart of several measures draws plain
+numbers, whatever their units say, until the widget's `data-format` says otherwise. Every widget prints
+currency in one page-wide currency and precision taken from the first currency measure the spec
+declares, so declare that measure first. `references/widgets.md`, under Display, says which widgets
+`data-format`, `data-currency` and `data-decimals` override that on.
 
 ## Provenance - say where each definition came from
 
@@ -290,12 +277,12 @@ measure's definition came from, in the spec.
 spec's schema is `additionalProperties: false` everywhere, so an invented key is an `[L2]`
 publish error, and `intent` is exactly the sanctioned slot: free text, "guidance for
 tooling, not shown to viewers", already accepted on the dashboard root, every dataset,
-every dimension, every measure and every tile. It is stored **verbatim** as part of the
+every dimension and every measure. It is stored **verbatim** as part of the
 spec bytes, so `get_dashboard_spec` hands it back unchanged and an editor sees it before
 touching the measure. Nothing renders it to a viewer, so it costs the dashboard nothing.
 
 **Limits, which differ by level:** root and dataset `intent` are **<=2000** chars; a
-**dimension, a measure and a tile are <=1000 each**. Provenance goes on the measure, so
+**dimension and a measure are <=1000 each**. Provenance goes on the measure, so
 budget against 1000 - a citation and a sentence, not a pasted model file.
 
 Three cases, and write the one that is true:
@@ -336,486 +323,6 @@ reads, to someone who did not author it, as though it were the company's - so an
 "authored here, unverified" is more valuable than a confident sentence, and it is what
 tells the next reader which measures to check first.
 
-## tiles
-
-A CLOSED set, and the table below is every type - `type` is REQUIRED (a tile with no type is a
-`[L2]` error, because it can never blank-render). Some optional fields are common but are NOT on
-every type; each tile's schema is closed, so an unaccepted key is a `[L2]` error naming it. **No
-count is given here on purpose: the schema at the top of this file decides the set, and a number
-written beside it goes stale the day a type is added, with nothing to show it.**
-
-- `intent` and `w` (1-12 grid columns) are accepted on EVERY type.
-- `dataset` (which dataset it reads; omit for the first, which is the default) on every type
-  EXCEPT `text`, which has no data, and `custom`, which names its datasets with `reads` instead.
-- `title` (<=120 chars) and `note` (<=1000) on every type that carries data - so on all of them
-  EXCEPT `filter` and `text`, which is easier to remember as the exception than as a list.
-
-The per-type "Key fields" column lists each type's own fields. A tile binding that names a
-measure/dimension no dataset declares is an `[L3]` reference error.
-
-| `type` | Required | Key fields |
-|---|---|---|
-| `kpi` | `measure` | `measure` (a measure key); `drill` (a dataset to drill into). |
-| `chart` | `chart`, `x` | `chart` = `bar`/`hbar`/`line`/`area`; `x` (a dimension); then EXACTLY ONE of `measure` OR `measures` (2-4 unique, multi-series). A single `measure` may ADDITIONALLY take `series` (a dimension that splits that one measure into series) - `series` accompanies `measure`, it is not a third alternative and cannot be combined with `measures`. Optional `sort` (`value-desc`/`value-asc`), `limit` (1-100), `height` (120-800), `cross_filter` (bar/hbar single-measure only), `viewer` (`["sort","limit"]`, 1-2 unique, single-measure only), `drill`. |
-| `table` | - | `columns` (1-12 unique measure/dim keys), `group` (a dimension), `sort` (`col:asc`/`col:desc`), `limit` (1-500), `viewer` (`["sort","limit"]`, 1-2 unique), `drill`. |
-| `matrix` | `rows`, `cols`, `measure` | A pivot: two dimensions crossed, one measure, with margins. `rows` and `cols` are DIFFERENT dimensions of the tile's dataset; `measure` is one measure key (a `ratio` measure works, and renders the ratio per cell). Optional `subtotals` (`both` (default) / `row` / `col` / `none` - the token names the axis whose members get a total, so `row` adds the per-row Total COLUMN and `col` adds the per-column Total ROW; the grand total sits at their intersection and so appears only under `both`), `limit` (1-1000, rendered rows before truncation; default 200), `color` (`heat` / `diverging` - conditional formatting, off by default). See "The matrix" below. |
-| `heatmap` | `rows`, `cols`, `measure` | The matrix with a colour scale. Every `matrix` field means the same thing here; the only difference is that `color` defaults to `heat` instead of off. See "The heatmap" below. |
-| `drilldown` | `levels`, `measure` | A ranked breakdown of ONE dimension at a time, with an optional exact residual. `levels` is the hierarchy outermost-first (1-6 DIFFERENT dimensions of the tile's dataset) - one level is a plain Top-N list, two or more make each row a drill target. `measure` is one measure key (a `ratio` measure works). Optional `top_n` (1-1000, show only the top N by that measure), `other` (boolean, add the residual row - REQUIRES `top_n`), `total` (boolean, add the total row). See "The drill-down" below. |
-| `scatter` | `point`, `x_measure`, `y_measure` | An AGGREGATE scatter: one point per member of `point` (a dimension), positioned by two measures. `x_measure` and `y_measure` are DIFFERENT declared agg measures (not ratios). Optional `limit` (1-2000, plotted points; default 500), `height` (120-800), `drill`. See "The scatter and the treemap" below. |
-| `treemap` | `x`, `measure` | One rectangle per member of `x` (a dimension), its AREA being that member's share of the total. `measure` must DECOMPOSE - `sum` or `count` only. Optional `limit` (1-200, rectangles; default 24), `height` (120-800), `drill`. See below. |
-| `stacked` | `x`, `series`, `measure` | A stacked column or area: `x` (a dimension), `series` (a DIFFERENT dimension whose values are the segments, at most 5 declared `domains`), `measure` (one measure key, which must be a `sum` or a `count` - see "Stacked charts" below). Optional `stack` (`normal` (default) / `percent` for the 100% stack), `chart` (`bar` (default) / `area`), `limit` (1-400 x categories; default 60), `height` (120-800). |
-| `combo` | `x`, `measure`, `measure2` | A dual-axis chart: `x` (a dimension), `measure` on the LEFT axis and `measure2` on the RIGHT, two DIFFERENT measure keys (either may be a `ratio`). Optional `chart` (`bar` (default) / `line` / `area`), `chart2` (`line` (default) / `bar` / `area`), `axis_sync` (boolean - put both on one shared scale), `limit` (1-400), `height` (120-800). See "Dual-axis (combo) charts" below. |
-| `pie` / `donut` | `x`, `measure` | A share of a whole. `x` is the slice dimension (at most 5 members); `measure` must be one whose parts add up to its whole (`sum` or `count`) - a ratio, a `min` / `max` or any other aggregate is refused, because its parts do not. Optional `height` (120-800). No `limit`: a wider dimension is refused, not truncated. `pie` and `donut` differ only in the hole. See "Pie, donut and gauge" below. |
-| `gauge` | `measure`, `max` | One value against a declared scale. `max` is required (and > `min`); optional `min` (default 0), `target` (must lie within the scale, marked on the arc), `height` (120-800). A ratio measure is allowed here. See "Pie, donut and gauge" below. |
-| `waterfall` | `x`, `measure` | Contributions that build to a total: each bar starts where the previous ended, closed by the total. `measure` must DECOMPOSE - `sum` or `count` only. Optional `limit` (1-200, contribution bars; default 40), `height` (120-800), `drill`. See "The waterfall and the funnel" below. |
-| `funnel` | `x`, `measure`, `stages` | Stage sizes in an order YOU declare: `stages` lists the dimension VALUES, 2-12, no repeats. It shows sizes only - it does NOT compute conversion between stages. Optional `height` (120-800), `drill`. See below. |
-| `filter` | `dimension` | `dimension`; `label` (<=80); optional `multi` / `range` (booleans, mutually exclusive - set at most one; a filter is single-select when neither is set). A `multi` or `range` filter asks more of the dataset than a single-select one, because it has to answer combinations rather than one value at a time; where a measure cannot answer them, publish refuses and says what to change. |
-| `text` | `body` | `body` (markdown, <=4000) - static prose, no data. |
-| `custom` | `reads`, and at least one of `html` / `js` | One tile you draw yourself, mounted in the managed grid. `reads` is 1-8 declared dataset names; `html` (<=100000) is mounted verbatim; `js` (<=200000) runs against that mount. It takes no `dataset`. Reach for it when the tile types do not draw the picture you need, on any connection: its `js` is handed the datasets named in `reads` by the runtime. See **Writing your own markup** below. |
-
-## Member order on an axis - your ROW ORDER is the default
-
-No tile has an `order` field, and most draw a dimension's members in **the order the dataset's
-rows arrive** - the order your `sql` returned them in. So **end the `sql` in an explicit
-`ORDER BY`**. Without one the sequence is whatever the warehouse happened to produce, and it can
-change between refreshes with nothing in the spec changing.
-
-**Nothing warns you when this is wrong.** There is no publish error and no advisory: the axis or
-the menu simply comes out in some order, looks deliberate, and may not be the same order next
-month. That is the whole reason this section exists.
-
-**Do not assume a `date` dimension is exempt.** Some tiles put it in calendar order and some
-treat it exactly like a category - a month `filter` menu is one of the latter, so it still needs
-the `ORDER BY`. Which is which is the DATE column below, and it does not track the kind of tile:
-a `matrix` sorts a date, a grouped `table` does not, and both are grids of cells.
-
-Read the row you need. The table is the source of truth here - it was derived one tile at a time,
-twice per tile, and it has survived independent re-measurement. The prose summaries that used to
-sit here, restating it in sentence form, kept turning out wrong; that is why they are gone rather
-than corrected, and why a future edit should add a column instead of a sentence.
-
-| Tile | CATEGORY dimension | DATE dimension |
-|---|---|---|
-| `matrix`, `heatmap` | **Your row order.** No `sort` field exists on these two, so the SQL is the only lever. | Calendar ascending |
-| `chart` (`x` axis) | Your row order, unless you set `sort: value-desc` / `value-asc`. | Calendar ascending |
-| `waterfall` | **Its own: largest contribution first.** | Calendar ascending |
-| `table` (with `group`) | Your row order, unless you set the tile's own `sort`. | **Your row order** |
-| `pie` / `donut` | Your row order. | **Your row order** |
-| `filter` menu, and a `cross_filter` selection | Your row order (first-seen). | **Your row order** |
-| `stacked`, `combo` | Your row order. **Neither has a `sort` field** (only `chart` and `table` do), so the SQL is the only lever. | Calendar ascending on the `x` axis |
-| `treemap` | Its own: largest share first. | Its own: largest share first |
-| `drilldown` | Its own: ranked by the measure. | Its own: ranked by the measure |
-| `funnel` | The `stages` list you declare on the tile. | The `stages` list |
-
-**ONE EXCEPTION, and it is under your control rather than the server's.** Where a dimension
-declares `domains` on a dataset whose filter states Dashies works out ahead of time, the filter menu
-is built from that ARRAY and an `ORDER BY` cannot reach it.
-So **list `domains` in the order you want the menu**. Measured with a control that isolates the
-cause rather than merely observing it: strip `domains` and the menu starts following row order
-again, so it is the declaration doing the work.
-
-Two consequences that are easy to miss:
-
-- **`matrix` / `heatmap` `limit` truncates from the FRONT of that order.** The tile renders the
-  first `limit` rows and says so ("Showing the first N of M rows"), so your row order decides
-  which members are on screen at all, not just their sequence. Totals are unaffected - every
-  margin is re-evaluated over the whole selection, not over what is displayed.
-- **If a tile's row says it sorts itself, there is no way to override it** - not from the spec
-  (those tiles have no `sort` field) and not from the SQL. For a `waterfall` specifically, when
-  the bar SEQUENCE is the point of the chart, use a `funnel` instead: you list its members in
-  `stages`, in the order you want them drawn.
-
-Every row above was measured against the runtime rather than read out of it: each tile rendered
-twice, once with the data in one order and once reversed, reading the DOM back - for a category
-dimension and again for a date one.
-
-## The matrix
-
-The pivot table - two dimensions crossed, one measure per cell, with row totals, column
-totals and a grand total. It needs no new SQL and no new dataset: whatever dataset you already
-wrote for the KPIs answers it, as long as it groups by both axes.
-
-```yaml
-- type: matrix
-  rows: region        # the row axis (a dimension of this tile's dataset)
-  cols: month         # the column axis (a DIFFERENT dimension)
-  measure: customers  # one measure per cell
-  subtotals: both     # both (default) | row | col | none
-  title: Customers by region and month
-```
-
-Three things worth knowing, because they change what you can put in one:
-
-- **Both axes draw in your ROW ORDER** (a date dimension excepted - it sorts ascending), and
-  `limit` truncates from the front of that order. A matrix has no `sort` field, so give its
-  dataset's `sql` an explicit `ORDER BY`. See "Member order on an axis" above.
-- **Every total is the measure RE-EVALUATED at that total's grain, never a sum of the cells on
-  screen.** So **a distinct-count or median subtotal is EXACT** - the thing Tableau and Power BI
-  cannot answer off a pre-aggregate - and truncating a long axis cannot corrupt a total (the tile
-  truncates at 200 rows / 100 columns and says so).
-- **Two blanks that mean different things.** An empty body cell means there are no rows at that
-  intersection (the usual pivot convention). A `-` means the value cannot be shown exactly. If
-  the DATASET cannot answer the tile at all, the whole tile refuses with the reason instead of
-  filling itself with dashes.
-
-Rules the validator enforces, so none of these can reach a published dashboard:
-
-- `rows` and `cols` must be declared dimensions of the tile's dataset, and must differ.
-- A ratio measure with `num_scope` / `den_scope: all` (percent of total) cannot go in a matrix: a
-  cell has three totals - its row, its column and the grand - and the scope names none of them.
-  Put that measure on a `kpi` instead.
-
-**Bound both axes.** A matrix crosses two dimensions, so its cost is the product of their two
-member counts and it is the tile most likely to ask for something that cannot be prepared. Declare
-`domains` or `buckets` on both and keep them small; if the combination is too wide, publish says
-so and says what to change.
-
-## The heatmap, and conditional formatting
-
-A heatmap is the matrix with a colour scale. It takes every matrix field and adds `color`:
-
-```yaml
-- type: heatmap
-  rows: region
-  cols: month
-  measure: revenue
-  color: heat         # heat (default) | diverging
-  title: Revenue by region and month
-```
-
-The same `color` field works on a plain `matrix`, where it is OFF unless you set it - that is
-the "conditional formatting" case, when you want a table that is still primarily read as
-numbers with the magnitudes shaded in behind them. Use `type: heatmap` when the colour IS the
-point and `type: matrix` with `color:` when the numbers are.
-
-- **`heat`** is a sequential ramp, palest at the lowest visible value and deepest at the
-  highest. Reach for it on a quantity - revenue, users, orders.
-- **`diverging`** is red-neutral-blue and **pivots at ZERO**, always. Reach for it on a signed
-  measure - margin, variance to target, week-over-week change. There is no midpoint option on
-  purpose: a midpoint parked at the average moves every time a viewer filters, so half the
-  cells change colour for reasons that have nothing to do with the data. If you want to
-  diverge around something other than zero, subtract it in SQL and the measure *is* the
-  deviation (`sum(actual) - sum(target) as variance`).
-
-Three things about the colouring that are worth knowing when you author one:
-
-- **The scale is computed from the cells ON SCREEN, every time the view changes.** Filter the
-  dashboard and the ramp re-derives over what is left, so the colours always describe what the
-  viewer is actually looking at. The legend prints the two endpoints, so the domain is visible
-  rather than implied.
-- **Totals are never coloured.** A row total is a much bigger number than any cell under it,
-  so colouring it would make it the darkest thing on screen and squash the whole body into the
-  palest band. The margins render as ordinary numbers.
-- **A cell that has no exact value is never given a colour.** It renders `-` on a hatched
-  background, which is deliberately not a colour on the ramp: in a heatmap an uncoloured cell
-  reads as "the smallest value here", and that would be a claim about a number that does not
-  exist. An EMPTY cell (no rows at that intersection) stays empty, as in any pivot.
-
-Everything the matrix refuses, a heatmap refuses identically and for the same reason - the two
-share a resolver - so the axis and percent-of-total rules above both apply unchanged, as does
-the advice to bound both axes.
-## The scatter and the treemap
-
-Two more objects that need no new SQL and no new dataset shape: both read ONE grouping set -
-the same one a bar chart of that dimension reads - and differ only in how they draw it.
-
-```yaml
-- type: scatter
-  point: product        # one point per PRODUCT
-  x_measure: revenue    # two measures, re-evaluated at that member
-  y_measure: margin
-  title: Revenue against margin by product
-
-- type: treemap
-  x: product            # one rectangle per PRODUCT
-  measure: revenue      # area = that product's share of total revenue
-  limit: 20
-  title: Revenue share by product
-```
-
-**The scatter is the AGGREGATE form, and that is the whole thing to understand about it.**
-One point per dimension MEMBER, not one point per source row - "revenue vs margin by product",
-which is what most enterprise scatters actually are. The chart says so in its own accessible
-name ("one point per Product"), so nobody reads it as a cloud of observations.
-
-A **raw-observation** scatter (one point per row) is a different object and does not exist.
-A scatter always plots one point per member of `point`, never one per source row, and asking
-for the second is refused at publish with the reason. There is no way to ask for it and get
-something that looks right but is not.
-
-Two more scatter rules, both refused at publish:
-
-- `x_measure` and `y_measure` must be DIFFERENT measures. The same measure on both axes draws
-  a perfect diagonal whatever the data says - every number in it exact, and the picture a lie.
-- Both must be plain agg measures. A `ratio` measure cannot go on an axis (the markup carries
-  one num/den pair and a scatter has two axes); put it on a `kpi`.
-
-At view time, a point whose coordinate cannot be computed exactly is **not plotted at all**,
-and the tile says how many were dropped. It is never placed at the origin - that would claim a
-value of zero on both axes.
-
-**The treemap's denominator is the resolver's total, never the sum of the rectangles.** The
-consequence is worth knowing before you set `limit`: if you show the largest 20 of 137
-products, the rectangles fill 20-products' worth of the box and **the rest stays empty**,
-rather than being stretched to fill it. A truncated treemap therefore LOOKS truncated, and the
-tile says so. That is deliberate - the alternative is a picture claiming those 20 products are
-the whole business.
-
-Because area asserts part-of-whole, a treemap refuses anything that would make that assertion
-false, at publish:
-
-- `measure` must DECOMPOSE: `sum` or `count`. A distinct count's parts overlap, a median's do
-  not combine, and a `min` of the parts is just the smallest part - in each case the areas
-  would claim a decomposition the data does not have. Use a `chart` (a bar chart compares the
-  values without claiming they are shares of a total).
-- No `ratio` measure: a share of a rate is not a part of a whole.
-
-At view time it also refuses a negative value (an area cannot show one) and a total that is
-not positive (there is no whole to be a part of). No percentage is drawn anywhere - the area
-carries the proportion, and each rectangle is labelled with its own exact value.
-
-## The drill-down
-
-A ranked breakdown of one dimension, where each row can open the next level down. It needs no
-new SQL and no new dataset: drilling asks the same dataset for a different grouping at a
-narrower filter state, and it is answered exactly rather than by re-adding what is on screen.
-
-```yaml
-- type: drilldown
-  levels: [category, subcategory]   # outermost first; 1-6 dimensions
-  measure: revenue                  # ranks the rows, and is what each row shows
-  top_n: 5                          # show only the top 5
-  other: true                       # ... plus an exact residual row
-  total: true                       # ... plus the total for the current filters
-  title: Revenue by category
-```
-
-One level (`levels: [customer]`) is the plain "Top 10 customers" tile. Two or more make it a
-drill-down: click a row to go a level deeper, and a breadcrumb walks back out.
-
-Three things worth knowing, because they change what you can put in one:
-
-- **Drilling filters the WHOLE dashboard.** A drilled member becomes a normal single-select
-  filter on that level's dimension, so every other tile follows it, the URL carries it, and
-  Back undoes it. The tile says so on its face. If a sibling tile's dataset does not declare
-  that dimension it cannot follow, and that tile shows its usual "not filtered by X" note - so
-  a broader number sitting next to a drilled one is always labelled.
-- **"Other" is RE-EVALUATED, not subtracted.** It is the measure computed over the members you
-  cut, not the total minus the rows on screen. For a measure whose parts add up the two agree; for
-  a `min` / `max` measure only the first means anything. And for one whose parts do not (a distinct
-  count, a median, a true average) there is no honest residual at all - "distinct customers in
-  Other" cannot be derived from anything on screen - so that row renders `-` and says why. The
-  rows you DID show stay exact.
-  If the breakdown does not add up to the total at all (a dataset missing a member at that
-  grain), the residual refuses too rather than quietly coming up short - it is the one number
-  on the tile you could not otherwise check.
-- **The total is re-evaluated too**, so cutting the list to the top 5 cannot corrupt it. It is
-  the total for the current filters, never the whole dataset and never the sum of the visible
-  rows.
-
-Rules the validator enforces, so none of these can reach a published dashboard:
-
-- Every `levels` entry must be a declared dimension of the tile's dataset, and they must all
-  differ. At most 6.
-- `other` requires `top_n`. With every member on screen there is no residual, so the row would
-  be an empty claim.
-- A ratio measure with `num_scope`/`den_scope: all` (percent of total) cannot go in one: a row
-  has three candidate denominators - the rows shown, the residual and the total - and the scope
-  names none of them. Put that measure on a `kpi` instead.
-
-A measure whose parts do not add up is answered exactly here too: every member is then one
-precomputed cell and therefore exact at any depth. The residual still refuses honestly, which
-is the point.
-
-## Stacked charts
-
-One measure, one category axis, and a series dimension whose values are the segments.
-
-```yaml
-- type: stacked
-  x: month            # the category axis
-  series: channel     # a DIFFERENT dimension - its values are the segments (max 5)
-  measure: sessions   # must be a sum or a count
-  stack: normal       # normal (default) | percent (the 100% stack)
-  chart: bar          # bar (default) | area
-  title: Sessions by channel
-```
-
-**Bound the `series` dimension, and the reason is not performance.** A stacked bar needs two
-grains: the `(x, series)` grouping for its segments and the `x`-only grouping for its total.
-Where the dataset can answer both - which is what declaring the bounds on both dimensions buys -
-the tile renders each column's total from its own answer rather than by adding up the segments,
-and then **asserts that the segments agree with that total**, refusing the tile with the reason
-if they do not. Tableau and Power BI have no second grain to check against. Where the dataset can
-only answer one grain there is nothing to check the total against; the tile is still exact for a
-measure whose parts add up, but the cross-check is what you give up.
-
-**The measure must ADD across the segments** - a `sum` or a `count`. This is checked at
-publish, and it is a separate rule from the assertion above rather than a duplicate of it: a
-`ratio` measure is composable, so the two grains agree with each other while the segments
-being drawn are ratios, which do not add to the ratio of the whole. The assertion cannot see
-that. A `min`, a `max`, a distinct count, a median or a percentile is refused for the same
-reason. To show a rate over a stacked chart, put it on a `combo` tile's secondary axis.
-
-Three things the renderer refuses at VIEW time, because they depend on what the data turns
-out to be rather than on what the spec says:
-
-- **A negative segment is never stacked.** Bar length stops being the sum of the parts, so
-  the tile falls back to GROUPED bars over the same exact values and says why. (Power BI
-  renders the misleading version.)
-- **A 100% stack refuses a column that mixes positive and negative segments**, because no
-  share of it is a true proportion.
-- **A 100% stack shows nothing for a column whose total is zero** (every share would be 0/0)
-  and names it under the chart.
-
-None of these can be prevented in the spec, so a stacked chart is one of the few tiles whose
-tile-level state can change on a refresh. If your measure can go negative, prefer
-`stack: normal` (which degrades gracefully) over `percent` (which refuses).
-
-## Dual-axis (combo) charts
-
-Two measures at one grain, drawn against two scales - revenue columns with a margin line is
-the canonical shape.
-
-```yaml
-- type: combo
-  x: month
-  measure: revenue      # the LEFT axis
-  measure2: margin      # the RIGHT axis - a DIFFERENT measure; a ratio works here
-  chart: bar            # bar (default) | line | area
-  chart2: line          # line (default) | bar | area
-  title: Revenue and margin
-```
-
-Each measure resolves exactly as a single-measure chart of it would, so a combo series equals
-the chart you would have drawn on its own. Any aggregate works on either side, including one
-whose parts do not add up to its whole - a combo never claims the two series make a whole,
-which is why it needs no rule about that at all.
-
-Dual axis is criticised for letting two arbitrary scales imply a relationship. Three things
-are built in rather than left to the author:
-
-- `axis_sync: true` puts both measures on ONE shared scale (Tableau's Synchronize Axis). Use
-  it when the two measures share a unit; leave it off when they do not.
-- **Both axes are always drawn and always labelled**, each in its own measure's format, and
-  the legend names which axis each measure is read against. There is no configuration in
-  which a second scale is present and unlabelled.
-- A standing note under the chart states either that the two scales are not comparable by
-  height, or that they have been synchronised.
-
-A `ratio` measure with `num_scope`/`den_scope: all` (percent of total) cannot go on a combo:
-the two sides share one binding, so a scope on one would be ambiguous about the other. Put
-that measure on a `kpi`.
-## Pie, donut and gauge
-
-Two shapes, three types. A `pie` / `donut` shows how ONE decomposable measure splits across a
-small dimension; a `gauge` shows one number against a declared target.
-
-```yaml
-- type: donut          # or: pie - identical, the donut just has a hole
-  x: channel           # the slice dimension (<= 5 members)
-  measure: sessions    # one DECOMPOSABLE measure (sum or count)
-  title: Share of sessions by channel
-
-- type: gauge
-  measure: sessions
-  min: 0               # optional, default 0
-  max: 5000            # REQUIRED - the arc has to be a fraction of something
-  target: 4000         # optional, marked on the arc
-  title: Sessions against target
-```
-
-Three things decide whether a pie is possible at all, and it is worth knowing them before you
-write one, because each is refused at publish rather than at view time:
-
-- **The measure's parts must add up to its whole - `sum` or `count`.** This is stricter than everywhere else
-  in the format, and the reason is that a pie claims its parts compose into its whole. A
-  distinct count, a median, a percentile, a **min**, a **max** and a ratio can all be computed
-  exactly per slice and still not add up to anything: five exact regional medians do not
-  compose into the overall median. So they are refused with the aggregate named. Show that
-  measure on a `chart` (bar) instead, which compares values without claiming they compose.
-- **At most 5 slices.** The mark palette is five colours wide (every one contrast-validated),
-  so a sixth slice would repeat one and two members would read as one. If a dimension declares
-  more than 5 `domains` the spec is rejected; if it turns out wider at refresh, the tile
-  refuses and says so. There is no top-N and no "Other" slice - use a bar chart, or filter the
-  dimension down.
-- **The slice dimension has to be something the dataset groups by**, like any other binding, and
-  the measure has to be one it declares. A binding naming something the dataset does not have is
-  a pointed publish error rather than an empty ring.
-
-**What a pie shows, and what it deliberately does not.** Each slice states its own value and
-the tile states the TOTAL - in the hole for a donut, in the legend for a pie. It never prints a
-percentage. That is not an omission: a rendered "24%" is a number the renderer would have
-divided into existence, and the wedge already carries the proportion exactly. The same rule is
-why a gauge shows the value and the target but no "% of target".
-
-**Why the total is worth trusting.** It is computed SEPARATELY - the dataset's own
-rolled-up figure for the current filters - not by adding up the slices being drawn. So if
-anything cannot be shown, the circle is left visibly OPEN and the tile says why, instead of the
-remaining wedges quietly growing to fill it. On a well-formed dataset this never happens and
-the circle closes.
-
-**Gauge specifics.** `max` is required and has no default: deriving one from the value would
-make the picture a function of the number it is describing. A value outside `min..max` pins the
-arc to its end and says so - the printed figure stays exact, and the note tells the reader which
-to trust. A value that cannot be computed exactly draws no arc at all and prints `-`, never a
-needle sitting at the minimum. A ratio measure IS allowed on a gauge (a conversion rate against
-a target is one number against another), unlike on a pie.
-
-
-## The waterfall and the funnel
-
-Two more objects on the same one grouping set, both about SEQUENCE rather than shape.
-
-```yaml
-- type: waterfall
-  x: reason            # one bar per reason
-  measure: delta       # each bar is that reason's contribution
-  title: What moved the net change
-
-- type: funnel
-  x: step
-  measure: people
-  stages: [visited, signed_up, activated, paid]   # the order YOU declare
-  title: Journey by stage
-```
-
-**A waterfall orders its own bars, and you cannot change that from the spec or the SQL.** A
-category `x` reads largest contribution first; a date `x` reads in calendar order. An `ORDER
-BY` in the dataset's `sql` does not reach it, and there is no `sort` field. If the sequence is
-the point of the chart, use a `funnel` - its `stages` is a declared order.
-
-**A waterfall decomposes only, and it is all-or-nothing.** Its bars claim to compose into its
-total, one after another, so `measure` must be `sum` (or `count`, which folds to sum). A
-distinct count's parts overlap, a median's do not combine, a `min` of the parts is just one
-part - and a `ratio` composes, so nothing downstream would catch it while the bars drawn were
-rates that do not add. All of those are refused at publish.
-
-The part worth knowing before you build one: **if any single contribution cannot be shown
-exactly, the whole chart is withheld.** That is deliberate. Every later bar is positioned where
-the previous one ended, so one missing contribution moves all of them - and the chart would
-still reconcile start-to-end, because the total is read separately. A zero-height step would
-read as "no change this period", which is a confident claim about the business made out of
-missing data. The Total bar is always the resolver's own total, never the sum of the bars.
-
-**A funnel shows stage sizes. It does not compute conversion.** This is the one to read twice,
-because it is the thing people expect a funnel to do.
-
-Nothing in the data can show that your stages are **nested cohorts** - that everyone who
-reached `paid` also appears in `signed_up`. They might be disjoint groups, or overlapping
-ones, or the same people counted on different days. So a "42% conversion" between two stages is
-a number the data cannot justify, and there is no field to ask for one: no rate option, no
-percentage is drawn, and a `ratio` measure on a funnel is refused at publish.
-
-If you want a conversion rate, declare it as a `ratio` measure - where the numerator, the
-denominator and therefore the cohort claim are yours - and put it on a `kpi`.
-
-**A stage with no data is "-", never 0.** A stage you declared that the dataset says nothing
-about (most often a typo) draws no bar and reads "-". Rendering it as 0 would show a 100%
-drop-off that only ever existed in the missing data. The validator also checks every stage
-against the dimension's declared `domains`, so the usual way to reach that state is caught
-before you publish.
-
 ## Worked example
 
 ```yaml
@@ -838,8 +345,8 @@ datasets:
         -- `select` or `with`: a leading comment is refused.
         date_trunc('month', o.placed_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/New_York')::date as month,
         o.region                                                                                  as region,
-        -- Money divided here: a managed tile has no display divisor, so a
-        -- `scale: cents` declaration is refused on a tiles page.
+        -- Money divided here: the page's widgets draw revenue, and a widget is
+        -- handed the raw value, so `scale: cents` is refused for a measure one draws.
         o.amount_cents / 100.0                                                                    as amount
       from analytics.fct_orders o
       -- Anchored to the data's own newest COMPLETE month, never to the wall clock. A
@@ -857,7 +364,7 @@ datasets:
       revenue:
         agg: sum
         column: amount
-        unit: { kind: currency, scale: units, currency: USD }
+        unit: { kind: currency, scale: units, currency: USD, decimals: 0 }
         intent: >-
           dbt semantic layer, metric `revenue` (models/marts/metrics.yml). Definition taken from
           dbt, not re-derived.
@@ -868,12 +375,107 @@ datasets:
         ratio: { num: revenue, den: orders }
         label: Average order value
         unit: { kind: currency, scale: units, currency: USD }
-tiles:
-  - { type: filter, dimension: region, label: Region }
-  - { type: kpi, measure: revenue, title: Revenue }
-  - { type: kpi, measure: aov, title: Average order value }
-  - { type: chart, chart: line, x: month, measure: revenue, title: Revenue by month }
-  - { type: table, columns: [region, revenue, orders], group: region, title: By region }
+look:
+  html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orders overview</title>
+    <style>
+    /* The full token block (references/style.md), every value set to this page's style. */
+    :root {
+      --drt-blue: #0f766e;
+      --drt-blue-700: #115e59;
+      --drt-blue-soft: #f0fdfa;
+      --drt-accent: #0f766e;
+      --drt-on-blue: #fff;
+      --drt-ink: #1c1917;
+      --drt-muted: #57534e;
+      --drt-subtle: #78716c;
+      --drt-faint: #a8a29e;
+      --drt-surface: #fff;
+      --drt-sunken: #fafaf9;
+      --drt-line: #e7e5e4;
+      --drt-line-strong: #d6d3d1;
+      --drt-grid: #f5f5f4;
+      --drt-shadow: #1c1917;
+      --drt-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --drt-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+      --drt-ease: ease;
+      --drt-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%2378716c' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'><path d='M4 6l4 4 4-4'/></svg>");
+      --drt-series0: #0f766e;
+      --drt-series1: #b45309;
+      --drt-series2: #4338ca;
+      --drt-series3: #be185d;
+      --drt-series4: #4d7c0f;
+      --drt-warn-ink: #7c2d12;
+      --drt-warn-soft: #fff7ed;
+      --drt-warn-line: #fed7aa;
+      --drt-error-ink: #991b1b;
+      --drt-error-soft: #fef2f2;
+      --drt-error-line: #fecaca;
+      --drt-heat-1: #ccfbf1;
+      --drt-heat-2: #99f6e4;
+      --drt-heat-3: #5eead4;
+      --drt-heat-4: #2dd4bf;
+      --drt-heat-5: #14b8a6;
+      --drt-heat-6: #0f766e;
+      --drt-diverging-1: #b91c1c;
+      --drt-diverging-2: #fca5a5;
+      --drt-diverging-3: #fee2e2;
+      --drt-diverging-4: #f5f5f4;
+      --drt-diverging-5: #ccfbf1;
+      --drt-diverging-6: #5eead4;
+      --drt-diverging-7: #0f766e;
+      --drt-status-ink: #44403c;
+      --drt-status-soft: #f5f5f4;
+      --drt-status-line: #d6d3d1;
+      --drt-status-font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+    body { margin: 0; background: #fafaf9; color: var(--drt-ink); font: 14px/1.45 var(--drt-sans); }
+    .top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; padding: 24px 24px 8px; }
+    .top h1 { margin: 0; font-size: 24px; }
+    .top .sub { margin: 0; flex: 1; color: var(--drt-subtle); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 16px 24px; }
+    .card, .panel { background: var(--drt-surface); border: 1px solid var(--drt-line); border-radius: 8px; padding: 16px; }
+    .card .label { display: block; font-size: 12px; color: var(--drt-subtle); }
+    .card .value { display: block; margin-top: 4px; font: 600 28px/1.2 var(--drt-mono); font-variant-numeric: tabular-nums; }
+    .panel { margin: 0 24px 16px; }
+    .panel h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--drt-subtle); }
+    </style>
+    </head>
+    <body>
+    <script type="application/json" id="dashies-data">{}</script>
+    <header class="top">
+      <h1>Orders overview</h1>
+      <p class="sub">Updated <span data-dash="updated-at"></span></p>
+      <div data-dash="filter" data-dim="region" data-label="Region"></div>
+    </header>
+    <section class="cards">
+      <div class="card" data-dash="metric" data-measure="revenue">
+        <span class="label">Revenue</span><span class="value" data-dash-value></span>
+      </div>
+      <div class="card" data-dash="metric" data-measure="orders">
+        <span class="label">Orders</span><span class="value" data-dash-value></span>
+      </div>
+      <div class="card" data-dash="metric" data-num="revenue" data-den="orders" data-format="currency"
+           data-decimals="2">
+        <span class="label">Average order value</span><span class="value" data-dash-value></span>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Revenue by month</h2>
+      <div data-dash="chart" data-type="line" data-x="month" data-measure="revenue"></div>
+    </section>
+    <section class="panel">
+      <h2>By region</h2>
+      <div data-dash="table" data-group="region" data-columns="revenue,orders" data-sort="revenue:desc"></div>
+    </section>
+    <script data-dashies-runtime></script>
+    </body>
+    </html>
 ```
 
 **This example reads a WAREHOUSE, so its statement returns one row per order and declares how
@@ -885,20 +487,35 @@ and region pairs.
 
 **Two things in that statement are there to get past a guard, and both are worth copying.**
 
-- **The money is divided in SQL and declared `scale: units`, because this page is `tiles`.**
-  A managed tile has no display divisor, so `scale: cents` is refused on this path and the
-  compiler's steer is `divide in SQL (sum(amount_cents)/100.0 as revenue) and declare scale:
-  units`. Dividing at the row, as here, is the same move one level down. The percent equivalent
-  is `divide in SQL (avg(pct)/100.0 as share) and declare scale: fraction`. **Do not reach for
-  `kind: number` instead**: that publishes and throws the currency away, so the figure renders as
-  a bare number rather than money. **Markup you write yourself is the exception, not this page** -
-  see the scale rules under the field table.
+- **The money is divided in SQL and declared `scale: units`, because widgets draw it.** A widget
+  is handed the raw value with no display divisor, so `scale: cents` is refused for a measure a
+  widget draws. Dividing at the row, as here, is the move; the percent equivalent is
+  `pct / 100.0` declared `scale: fraction`. **Do not reach for `kind: number` instead**: that
+  publishes and throws the currency away, so the figure renders as a bare number rather than money.
+  A measure only your page code draws may keep `scale: cents` - see the scale rules under the field
+  table.
 - **The comments sit inside the statement, under `select`.** The first token has to be `select`
   or `with`, so a statement that OPENS with `--` is refused before anything else is read.
   Comments anywhere after that first token are fine.
 
 **A dataset on the sample connection groups to the grain it reports at instead**, and then every
 field somebody filters on has to be in the `GROUP BY`. Same spec vocabulary, different statement.
+
+**The page is one `look` body, and it is the same shape on every connection.** The `<style>` opens
+with the full token block from `references/style.md`, every value set to this page's style, so every
+widget takes it; the page's own rules come after it and are scoped to its own classes. The data block
+comes first in the body and the runtime marker after the markup. Then the widgets
+(`references/widgets.md`): a `filter` on `region`, whose menu lists the regions the data holds; three
+`metric` cards, each putting its figure in a `data-dash-value` child so the card's label is yours, the
+third dividing `revenue` by `orders` under every filter with `data-num` and `data-den`, since no widget
+reads a `ratio` by its own key; a `line` chart over `month`; and a `table` rolled up by `region`,
+largest revenue first. Each figure's format comes from its measure's `unit`, and the page's currency
+and precision from `revenue`, the first currency measure declared: US dollars, no cents. So the widgets
+carry no format attributes but one card's: a metric showing a ratio draws a percent unless told
+otherwise, so the average-order card writes `data-format="currency"`, and `data-decimals="2"` gives
+it cents. Nothing on the page is a number the page worked out, and a
+picture no widget draws would be page code reading the same dataset, as in the example under **The
+shape your script is handed**.
 
 Note what is NOT in it: nothing about how the data will be prepared or where it will be kept.
 The publish report says what the server chose for `main` and why.
@@ -911,10 +528,10 @@ what answers whether this space has it. **Ask the user about it once when that f
 and never raise it when it does not** - `SKILL.md` Step 1 carries that rule and it is the load
 bearing half.
 
-The filter is applied where the data is queried rather than in the page, on every tile and on every
-number a page you wrote asks for. So a dataset that declares an entitlement declares `mode:
-resolved` beside it, and a page you wrote is handed the viewer's own rows through `dashies.data`
-with nothing further to do.
+The filter is applied where the data is queried rather than in the page, on every widget and on every
+number your page code asks for. So a dataset that declares an entitlement declares `mode:
+resolved` beside it, and the page is handed the viewer's own rows, by its widgets and through
+`dashies.data` alike, with nothing further to do.
 
 A dataset-level `entitlement`:
 
@@ -1002,79 +619,27 @@ appears on more than one row, read the sentence as well as the path:
 | `row_level_security_removed` | Dashies could not read whether the dashboard filters, so the publish is refused rather than admitted. Publish again; do not declare the removal to get past it. |
 | `row_level_security_removed` | The document declares an `entitlement` block AND the removal, which cannot both be true of one dashboard. Delete one of them. |
 
-## Writing your own markup
+## The page: `look`
 
-Three surfaces, and every one of them is part of the spec: the pointed refusals, the seeding, the
-correctness checks and the schedule all still apply, and the data still never enters your context.
-**`SKILL.md`, under "When you write the markup yourself", carries the decision - when to reach for
-these, and the two rules that govern all three. This section is the mechanics.**
+**Every dashboard's page is one body you write, and it is part of the spec**: the pointed refusals,
+the seeding, the correctness checks and the schedule all still apply, and the data still never enters
+your context. **`SKILL.md` Step 4 carries the decisions - the style question, and the two rules that
+govern every script on the page. This section is the mechanics.** Three kinds of thing go in it: your
+markup and CSS (`references/style.md` restyles what the runtime draws), the widgets the runtime draws
+(`references/widgets.md`), and your page code.
 
-**Your script is handed its numbers; it never reads them out of the page and never asks a server
-for them.** Two calls, on every connection, for a `custom` tile and a `look` body alike:
-`dashies.data` subscribes, and `dashies.filter` sets a page filter. The shape and the example are
+**Your page code is handed its numbers; it never reads them out of the page and never asks a server
+for them.** Two calls, on every connection: `dashies.data` subscribes, and `dashies.filter` sets a
+page filter. The shape and the example are
 under **The shape your script is handed** below, and the two calls' full surface under **Filters
 and a coarser grain**. The publish report's `Datasets:` sentence and its one-per-dataset
 "publishes with NO data" note say whether a dataset publishes empty and fills in after a refresh -
 which your script sees as `status: "pending"` - and they no longer decide whether your page can work.
 A republish whose `First data:` line says `unchanged` has no such wait and prints no such note.
 
-### `theme` - your own CSS over the managed page
+### `look` - the page body
 
-Tiles mode only; `look` owns the page and refuses `theme`.
-
-| Key | Type | Notes |
-|---|---|---|
-| `accent` | `#RRGGBB` | One brand colour. Hash plus six hex digits; a 3-digit or named colour is refused. |
-| `font` | `sans` / `serif` / `mono` | |
-| `density` | `compact` / `comfortable` / `spacious` | |
-| `mode` | `light` / `dark` / `auto` | |
-| `css` | string (<=50000) | Your own stylesheet, emitted verbatim into `<head>` LAST, after the managed style blocks, so it wins on equal specificity. |
-
-`css` is refused if it contains `</style` (it would break out of its own element) or an `id=`
-ATTRIBUTE carrying the reserved id below. A CSS SELECTOR is not an attribute, so
-`#dashies-data { display: none }` compiles clean: what the gate is for is a stray element carrying
-that id, not a rule that styles the real one.
-
-### A `custom` tile - one tile you draw yourself
-
-| Key | Required | Notes |
-|---|---|---|
-| `type` | yes | `custom`. |
-| `reads` | yes | 1-8 declared dataset names, no repeats. A name you did not declare is an `[L3]` error with a nearest-match suggestion. |
-| `html` | one of the two | <=100000 chars, mounted verbatim. |
-| `js` | one of the two | <=200000 chars. |
-
-At least one of `html` and `js` is required. `title`, `note`, `intent` and `w` all work here and
-mean what they mean elsewhere; `dataset` is not accepted at all (`dataset: main` beside a `reads`
-is an `[L2]` error: "`dataset` is not a recognized field here.").
-
-**What `reads` actually does.** It names the datasets your `js` is handed - `dashies.data` calls
-your function with exactly those, keyed by name - and it marks every measure and dimension of the
-datasets it names as referenced, which is what stops the unused-field warnings. It is a
-declaration checked against your declared dataset names, not a request: it cannot name a dataset
-the spec did not declare, and it does not change what any dataset computes.
-
-**The mount contract, exactly:**
-
-- Your `html` goes verbatim inside `<div class="dsh-custom-mount" id="dsh-c<N>">`, `N` being the
-  tile's index. It is written into the served page as literal markup, not assigned later.
-- **Put your script in `js`, not in a `<script>` inside `html`.** `js` is the field the compiler
-  positions and hands the datasets named in `reads`; a `<script>` in `html` runs earlier, before
-  the data block and outside that scope, and the report warns about it. **If that warning tells
-  you the script is "inert", disregard the reason and keep the advice** - the script DOES run.
-  Measured in a browser under the real serving rules, so do not plan around it failing to run.
-- Your `js` runs inside a function that is handed `mount`, that div, and a `dashies` scoped to the
-  datasets named in `reads`. Draw into `mount`; subscribe with `dashies.data` exactly as a `look`
-  body would, and your function is handed those datasets and no others. `dashies.filter` from a
-  tile sets the PAGE's filter, exactly as a managed filter tile does: `reads` narrows what a tile
-  may read, not what it may set.
-- `js` is refused if it contains `</script`.
-- It runs BEFORE the runtime boots. Do not look for `window.__dashiesRuntime` and do not read the
-  page for numbers; subscribe and wait to be called.
-
-### `look` - the whole page body
-
-A top-level key, exclusive with `tiles`, `theme` and `layout`. Exactly one of:
+A top-level key, and every spec carries it. Exactly one of:
 
 | Key | Notes |
 |---|---|
@@ -1120,7 +685,7 @@ rows, so the body is the only lever there and the ceiling is one you can work ou
 the page publishes empty until its first refresh, and the one that says the runtime marker is
 missing.
 
-**The contract between your markup and refresh is two elements.** The first is the data block, and
+**The contract between your page and refresh is two elements.** The first is the data block, and
 a `look` body is refused unless it satisfies it:
 
 ```html
@@ -1138,10 +703,9 @@ a `look` body is refused unless it satisfies it:
   emitted exactly as you sent them. That is why your design survives a refresh, and it is also why
   nothing is added to your page that you did not write: **a `look` body gains no runtime marker of
   its own**, which is why the second element below is yours to place.
-- **`dashies-data` is a RESERVED id.** Do not put it on anything else, in a `look` body, in
-  `theme.css`, or in a custom tile's HTML. It is refused, because a decoy is either read instead
-  of the real block or rewritten by the refresh instead of it, and the second one freezes the
-  numbers silently.
+- **`dashies-data` is a RESERVED id.** Do not put it on anything else anywhere in your page. It is
+  refused, because a decoy is either read instead of the real block or rewritten by the refresh
+  instead of it, and the second one freezes the numbers silently.
 
 **The second element is the runtime marker, and every `look` body carries it:**
 
@@ -1149,34 +713,27 @@ a `look` body is refused unless it satisfies it:
 <script data-dashies-runtime></script>
 ```
 
-It is what calls the function you hand `dashies.data`, and what fills any `data-dash` binding;
-without it neither happens, on any connection. On a warehouse dashboard a `look` body without it
-gets a warning on the report whatever the body calls, because nothing else can put numbers on it;
-on the sample connection the warning comes only when the body calls `dashies.data`. (A page that
-read the data block directly used to work there without it; publish now refuses a script that
-looks the data block up, under **Reading the data block directly** below.) A body that carries
-`data-dash` bindings without it is refused on either, since those would ship frozen.
+It is what calls the function you hand `dashies.data`, and what draws every widget; without it
+neither happens, on any connection. On a warehouse dashboard a `look` body without it gets a warning
+on the report whatever the body calls, because nothing else can put numbers on it; on the sample
+connection the warning comes only when the body calls `dashies.data`. (A page that read the data
+block directly used to work there without it; publish now refuses a script that looks the data block
+up, under **Reading the data block directly** below.) A body that carries widgets without it is
+refused on either, since those would ship frozen.
 
-**Two ways to get numbers onto a page you wrote, and a body picks one:**
+**Two ways to get numbers onto the page, and a page uses either or both:**
 
-- **Your own renderer** - a `<script>` that hands `dashies.data` a function and draws what it is
-  called with. Carry no `data-dash` attributes and nothing further is asked of your body.
-- **Dashies' bindings** - `data-dash` attributes the runtime fills. Every binding must resolve
-  against your declared datasets, checked at publish, and a body with bindings and no marker is
-  refused rather than shipped with frozen numbers. **A `data-dash="chart"` binding can draw several
-  series**, on every data source, served data included: `data-measures` names two to four measure
-  keys at the same `data-x`, or `data-series` names one dimension beside a `data-measure`, one
-  series per value. A chart split by `data-series` draws at most 5 series (on a warehouse or
-  uploaded-file dataset a missing value is a series of its own and counts): past that, the page
-  shows "Too many series: <dimension> has N values, max 5." in place of the chart when it is viewed,
-  so split by a dimension with at most 5 values, or narrow that dimension in the SQL. A multi-series
-  chart draws no sort or limit controls, so leave `data-controls` off it; the publish warns when
-  one carries it.
+- **Widgets** - elements carrying `data-dash`, which the runtime draws (`references/widgets.md`).
+  Every name a widget uses must resolve against your declared datasets, checked at publish, and a
+  page with widgets and no marker is refused rather than shipped with frozen numbers. Reach for one
+  first wherever one draws what you need.
+- **Page code** - a `<script>` that hands `dashies.data` a function and draws what it is called with,
+  for a picture no widget draws. The recipes in `references/charts.md` are a starting point.
 
 ### Assets - images the server fetches for you
 
 A logo or a mark never reaches the page as bytes you typed. Declare it once, at the top level of
-the spec, by URL, and reference it by name from any surface you write:
+the spec, by URL, and reference it by name from your page:
 
 ```yaml
 assets:
@@ -1192,11 +749,10 @@ assets:
 | `sha256` | 64 hex chars | **Written by the server, never by you.** The pin of what was fetched, recorded into the stored spec on publish and read back on the next one. Delete the line to take a file the URL has since changed. |
 | `intent` | string (<=1000) | Optional note, as elsewhere. |
 
-**Reference syntax:** `src="asset:logo"` on any element in `look.html` or a `custom` tile's `html`
-or `js`, and `url(asset:logo)` in `theme.css` or inside a `<style>` block. Both are rewritten to the
-fetched bytes when the page is built, so the stored page is self-contained and nothing loads from
-outside at view time. A reference to a name you did not declare is refused at that surface, naming
-the byte; a declared asset nothing references is a warning.
+**Reference syntax:** `src="asset:logo"` on any element of your page, and `url(asset:logo)` in its
+CSS. Both are rewritten to the fetched bytes when the page is built, so the stored page is
+self-contained and nothing loads from outside at view time. A reference to a name you did not declare
+is refused, naming the byte; a declared asset nothing references is a warning.
 
 **What is checked, per asset:** the bytes are an SVG, PNG, JPEG, WebP or GIF by their content -
 not the URL's extension nor the origin's header, so a `.svg` URL serving a PNG is inlined as a
@@ -1233,11 +789,10 @@ invented path - which is why the rule is to declare rather than to type.
 ### The shape your script is handed
 
 `dashies.data` takes a function, and an optional options object, and calls the function with the
-datasets THIS CALL ASKED FOR, keyed by name. What your markup is entitled to is the CEILING on what
-a call may ask for - every dataset for a `look` body, the `reads` list for a `custom` tile - and the
-options object is how a call asks for less: name any dataset and you are handed those and no
+datasets THIS CALL ASKED FOR, keyed by name. Your page may read every dataset the spec declares,
+and the options object is how a call asks for less: name any dataset and you are handed those and no
 others. It calls it again whenever any of the state it asked for changes, so a filter change
-reaches your page as `ready`, then `loading`, then `ready` - whether a managed control, a shared
+reaches your page as `ready`, then `loading`, then `ready` - whether a filter widget, a shared
 link or your own `dashies.filter` call caused it. On a warehouse dashboard the numbers are worked
 out by Dashies when someone opens the page; on the sample connection they travel inside it; your
 function is handed the same shape either way.
@@ -1292,12 +847,12 @@ Each dataset is an object carrying these twelve fields and no others:
 - **`error`** - draw `error`. One case to recognise: an answer refused because the grain you draw
   is too wide, which arrives with `error_kind: "refused"`. It is refused on the subscriptions at
   that grain only: your other subscriptions on the same dataset still receive their rows, and the
-  managed tiles on that dataset stop. The remedy is to subscribe at the grain you draw with `by` so
+  widgets on that dataset stop. The remedy is to subscribe at the grain you draw with `by` so
   the wide one is never requested, to bound the dataset's dimensions, or to declare fewer of them:
   the width is what was requested, never which columns you draw.
 
 **Want a different grain? Ask for it with `by`.** `rows` are grouped by exactly what you asked for,
-by the same machinery that answers a managed chart; adding rows up in the page to reach a coarser
+by the same machinery that answers a chart widget; adding rows up in the page to reach a coarser
 grain is rule 1 broken, and nothing will ever check the number it produces. Declaring a second
 dataset over the same records at the coarser grain is the same mistake at publish time: it extracts
 and stores a second copy of those records to precompute rows the runtime produces on demand.
@@ -1401,8 +956,8 @@ which is rule 1 broken whatever its type.
 
 ### Filters and a coarser grain
 
-Two things a page used to have no sanctioned way to do, and now does, through the same machinery
-that answers a managed filter tile and a managed chart. Neither adds a request your spec could not
+Two things page code does through the same machinery that answers the filter widget and the chart
+widget. Neither adds a request your spec could not
 already cause: a filter names a declared dimension and a value, and `by` names a subset of
 declared dimensions. There is still no way to name a measure, a dataset or a query the spec did
 not declare. `unfiltered` (below) adds none either: it asks at a state the page could reach by
@@ -1449,7 +1004,7 @@ dataset does not declare is refused exactly as a bad `by` is.
 
 **`dashies.filter`.** One dimension and a value, or one object of several, which applies all of
 them or none. A value is a string, an array of strings, `{ from, to }` on a `date` dimension, or
-`null` to clear. It sets the same state a managed filter control sets, and **the URL hash carries
+`null` to clear. It sets the same state the filter widget sets, and **the URL hash carries
 the page's WHOLE filter state whenever that state differs from the page's default view; the page
 rewrites it to a bare URL as soon as the state returns to that default.** So the hash is
 all-or-nothing rather than per dimension: once anything differs, every dimension travels in the
@@ -1488,7 +1043,7 @@ declare the dimension.** On a warehouse dashboard that dataset goes `loading` th
 rows it had, and its `filters` does not carry the dimension - which is how a page labels a number honestly: read
 `'region' in ds.filters` to say "filtered by region", and its absence to say the filter did not
 reach this number. Do not remember what you asked for and label from that: a shared link changes the
-state without going through your call, and on a tiles page so does a managed control.
+state without going through your call, and so does a filter widget.
 
 **`page.filters` is for drawing controls.** It carries the whole page state on every delivery, so
 a control drawn inside the callback is right after a reload from a shared link and after every
@@ -1593,48 +1148,39 @@ A dashboard published before specs existed has nothing for `get_dashboard_spec` 
 read-only, storing nothing. The draft references the dashboard's CURRENT published page with
 `look: { from: <slug> }` rather than inlining it, so the tool response and the eventual stored
 spec both stay small; republishing resolves that page from storage and re-runs every dataset
-live, so the layout stays byte for byte while the numbers update. A `look` spec declares
-`datasets` and `source` and carries no `tiles` or `layout`.
+live, so the page stays byte for byte while the numbers update, and every later edit is a spec edit.
 
-Where the old page has recognizable tiles, the draft also returns a ready-to-paste `tiles:`
-block. Take it if the user wants the managed layout: the server then owns the rendering. Keep
-`look: { from: <slug> }` when the page's own design is the point. Either way every later edit is a
-spec edit.
+**If the draft also carries a ready-to-paste block meant to replace its `look`, leave it out and keep
+`look: { from: <slug> }`.**
 
 ## What a publish WARNING means
 
 Errors block; warnings do not. A warning on the publish report is the server telling you it
-seeded the dashboard, looked at the REAL values that came back, and found something that will
-read wrong at view time. Read them - they are the cheapest signal you will get, and several
-describe a tile that publishes clean and then refuses to draw.
+seeded the dashboard, looked at the REAL values that came back, or read your page, and found
+something that will read wrong at view time. Read them - they are the cheapest signal you will get.
+**A widget's own rules are not among them**: publish does not draw the page, so a widget that cannot
+draw what it was asked for says why in its own place when the page is viewed
+(`references/widgets.md`, "What publish checks, and what waits until the page draws").
 
-| warning | what the seed found | what to do |
+| warning | what it found | what to do |
 |---|---|---|
-| `slice_cardinality` | the `pie`/`donut` slice dimension seeded more than 5 distinct members | declare `domains` to pick 5, or use a `chart` (bar), which has no colour limit. The renderer REFUSES a wider set rather than dropping a slice, so this tile would show its reason instead of your data |
-| `series_cardinality` | a `chart`/`stacked` `series` dimension seeded more than 5 | declare `domains` to pick 5. A `chart` reuses a colour; a `stacked` refuses outright |
-| `funnel_stage_absent` | a `stages` entry is not one of the seeded values of the funnel's `x` | fix the spelling, or drop the stage. An absent stage renders as `-`, which reads like a 100% drop-off |
-| `stack_percent_mixed_sign` | a `stack: percent` column seeded both positive and negative segments | use `stack: normal` (same exact values, signed axis) or a `chart`. No share of a mixed-sign column is a true proportion, and the runtime refuses that column |
 | `domain_drift_at_publish` | a seeded value is outside the dimension's declared `domains` | add it to `domains`, or narrow the SQL. The runtime filter drops it |
 | `null_leading_dimension` | a declared dimension is NULL across the whole leading head of the dataset | a null dimension cell renders as a blank label, so a table leads with unlabelled rows. The warning names the column and how many of the dataset's rows carry the null, so you can tell a handful to label from a broken join. Label it in SQL (`coalesce(...)` to an explicit value) if the null is meaningful, or filter it out if it is not |
-| `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | on a `tiles` page, divide by 100.0 in SQL and keep `scale: fraction` (a managed tile has no display divisor, so `scale: points` is refused there); on a `look` body, declare `scale: points` and your markup is handed the value with `scale: 100` beside it, subject to the two look-page refusals under the field table |
+| `percent_points_suspect` | a `percent`/`fraction` measure seeded values that look like 0..100 | declare `scale: points`, and page code is handed the value with `scale: 100` beside it. A widget is handed the raw value, so for a measure a widget draws, divide by 100.0 in the SQL and keep `scale: fraction` instead (the scale rules under the field table) |
 | `rate_shaped_sum` | a `sum` measure seeded values all between 0 and 1 | summing rates is usually wrong - declare a ratio, or sum the underlying counts |
+| `sum_over_stock` | the SQL sums a measure declared `stock: true` across the grain | for the level, read the latest period or use `max`; for a trend, a per-period `avg`, `min` or `max`. If the rows really do not overlap, ignore it (`stock`, under the measure fields) |
 | `date_dim_not_iso` | a `date` dimension seeded values that are not ISO | bucket to `YYYY`, `YYYY-MM` or `YYYY-MM-DD` in SQL |
 | `col_extra` | the query outputs a column nothing declared reads, so it reaches every viewer and is read by nothing | drop it from the `select`, or declare it. (An undeclared column that would ship real data is an ERROR, not this warning) |
-| `is not referenced by any tile` | a declared dataset, measure or dimension no tile reads | delete it, or bind it. See "House rules" for the two cases that are NOT unreferenced. On a `look` spec this rule cannot see your renderer, so where it fires there it is noise; see "House rules" again before acting on one |
-| `publishes with NO data` | the dataset's rows are kept OUTSIDE the page, so it publishes empty and its tiles read "Updating". The report says so ONCE per dataset, on one routine note that also says how a page you wrote reads the rows; the JSON part keeps the separate warnings that note stands for, `publishes pending` among them | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the tiles in. **If you wrote the markup, your script is handed `status: "pending"` for exactly this wait** - see "Writing your own markup" - so draw "no data yet" and stay until the refresh lands (`SKILL.md` Step 7). A publish whose `First data:` line says the rows are already served prints no such note, and counts the notes it left out |
+| `look.html has no way to read its data` | the page neither calls `dashies.data` nor carries a widget, so every number on it is one you typed | read the data with `dashies.data(callback)` after the runtime marker, or put a widget on the page |
+| `multi_series_controls` | a chart with several series (`data-measures` or `data-series`) carries `data-controls` | remove `data-controls`: such a chart draws no sort or limit controls. Chart a single measure if the reader needs to reorder it |
+| `page_network_call` | your page code calls the network (`fetch`, `XMLHttpRequest`, `WebSocket` and the like) | remove the call: a published dashboard reaches only Dashies, so it fails in the viewer's browser (`SKILL.md` rule 2). Numbers come from `dashies.data`, a logo from `assets`, a font from a `data:` URI |
+| `publishes with NO data` | the dataset's rows are kept OUTSIDE the page, so it publishes empty: its widgets read "Updating" and your page code is handed `status: "pending"`. The report says so ONCE per dataset, on one routine note that also says how page code reads the rows; the JSON part keeps the separate warnings that note stands for, `publishes pending` among them | usually nothing: this is the normal first-publish state for a dataset Dashies holds the data for, and a refresh fills the page in. Draw "no data yet" for `pending` in your page code - see "The shape your script is handed" - and stay until the refresh lands (`SKILL.md` Step 7). A publish whose `First data:` line says the rows are already served prints no such note, and counts the notes it left out |
 
 **A line opening `Since the dry run of` is a count, not a warning.** A publish that passes a dry run's
 `spec_hash` and the `report_id` that same dry run returned counts, on that line, the warnings and
 obligations that dry run printed in full or itself counted, instead of printing them again. What prints under it is new,
 or was last printed in full more than about an hour ago; the JSON part still lists every one. `SKILL.md`
 Step 6 says when it applies.
-
-The member-bound four (`slice_cardinality`, `series_cardinality`, `funnel_stage_absent`,
-`stack_percent_mixed_sign`) are warnings rather than errors ON PURPOSE: they are judged against
-the data as it was AT PUBLISH, and the next refresh can move it. Where you declare `domains`,
-the same rules become blocking errors - a declared bound is a claim you wrote down, so the
-server holds you to it. That is the tradeoff: declare `domains` and get a hard gate, leave it
-off and get an advisory plus the runtime's own refusal as the backstop.
 
 ## Publish and edit
 

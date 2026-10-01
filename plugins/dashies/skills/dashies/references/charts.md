@@ -6,6 +6,10 @@ a small plain function that takes rows exactly as `dashies.data` delivers them a
 markup. There is no library to load and nothing to configure: paste the shared block once, paste
 the recipes you use, and wire each one to a subscription.
 
+**First check whether a widget draws it**: the runtime draws figures, bars, lines, stacks, tables
+and more for you (`references/widgets.md`), and a widget is the first thing to reach for. These
+recipes are for the picture no widget draws.
+
 **They exist because a hand-written page otherwise re-derives the same hundred-odd lines of
 SVG scaling code for every chart**, and a first-time author should not have to. They are a starting point you own
 and restyle, not a component library, so change anything - but keep the six properties below,
@@ -16,8 +20,8 @@ because each one is a rule of this path rather than a taste.
 - **Nothing loads from outside the page.** No `<script src>`, no stylesheet, no font, no image
   URL. Every dashboard is served under a `sandbox allow-scripts` content security policy, which
   runs your script on an opaque origin with no storage and no session; `SKILL.md` rule 2 says
-  your script never calls out, and its **Make it good** closes with inlining everything so the
-  page depends on nothing that can change underneath it. A page whose chart code is inline
+  your script never calls out, and that a published dashboard loads nothing from outside Dashies,
+  so the page depends on nothing that can change underneath it. A page whose chart code is inline
   renders the same in a year.
 - **Responsive through `viewBox`.** Every SVG declares a `viewBox` and `preserveAspectRatio`,
   and the stylesheet gives it `width: 100%; height: auto`, so one drawing fits a phone and a
@@ -67,7 +71,8 @@ inside the callback costs the whole region rather than one card.
 ## The shared block, pasted once
 
 The stylesheet. The four `--ch-s*` variables are tints of the one accent, for a stacked bar's
-segments; everything else is neutral, per **Make it good** in `SKILL.md`.
+segments; everything else is neutral. Set the palette to the page's style, as you set the token
+block for the widgets (`references/style.md`).
 
 ```html
 <style>
@@ -232,13 +237,14 @@ function draw(id, ds, render) {
 // By month: the trend, and the KPI reads the latest month off the same rows. A grain arrives in
 // value order, so the months arrive oldest first and the latest is the last row CARRYING a month:
 // a row whose month is null sorts after every dated one, so the last row outright can be the one
-// with no date at all. Keeping the dated rows is a null test, which is a pick a page may make.
+// with no date at all. `findLast` with a null test is a pick a page may make, and it stops at the
+// one row the card shows, where keeping every dated row would hold months the card never draws.
 dashies.data(function (d) {
   var ds = d.sales;
   draw('trend', ds, function (rows) { return line(rows, 'month', 'revenue', measure(ds, 'revenue')); });
   draw('kpi', ds, function (rows) {
-    var dated = rows.filter(function (r) { return r.month !== null && r.month !== undefined; });
-    return dated.length ? kpi(ds, dated[dated.length - 1], 'revenue', 'change', 'prior_revenue', 'the month before')
+    var latest = rows.findLast(function (r) { return r.month != null; });
+    return latest ? kpi(ds, latest, 'revenue', 'change', 'prior_revenue', 'the month before')
       : '<p class="state">No dated rows.</p>';
   });
 }, { sales: { by: ['month'] } });

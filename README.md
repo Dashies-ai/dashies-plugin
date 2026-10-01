@@ -29,7 +29,7 @@ Publish AI-built HTML dashboards to a shareable URL and keep them refreshing on 
 
 </div>
 
-<a href="https://dashies.ai"><img src="assets/hero.png" alt="A Dashies dashboard served at nocturne.dashies.ai: five KPI tiles, a monthly demand chart and a channel breakdown" width="100%"></a>
+<a href="https://dashies.ai"><img src="assets/hero.png" alt="A Dashies dashboard served at nocturne.dashies.ai: five headline figures, a monthly demand chart and a channel breakdown" width="100%"></a>
 
 <p align="center"><sub>Built by an AI agent from a BigQuery warehouse and published through this plugin. Every number on it is the output of saved SQL that Dashies re-runs without the AI.</sub></p>
 
@@ -111,7 +111,7 @@ The model runs once, at authoring time. After that, refresh is a server-side sch
 ```mermaid
 flowchart LR
   subgraph once["Authored once, with AI"]
-    A["You describe<br/>the dashboard"] --> B["Your AI writes a spec:<br/>connection, SQL, columns,<br/>layout, cadence"]
+    A["You describe<br/>the dashboard"] --> B["Your AI writes a spec:<br/>connection, SQL, columns,<br/>page, cadence"]
     B --> C["publish_dashboard"]
   end
   C --> D[("workspace.dashies.ai/slug")]

@@ -154,7 +154,7 @@ moving; the two anchored to `max(month_start_on)` were the ones that were right.
 
 ## Aggregate away anything sensitive
 
-**Everyone who can open the dashboard can read everything it carries.** What a tile shows and
+**Everyone who can open the dashboard can read everything it carries.** What the page shows and
 what a filter hides do not narrow that. The audience is the dashboard's owner, or the workspace's
 members, and never the public - dashboards are access-gated and there is no anonymous viewing.
 
@@ -238,11 +238,11 @@ headcount, an ARR snapshot is a stock, and summing twelve monthly snapshots give
 times too big that looks entirely plausible.
 
 This is not hypothetical. A real dashboard summed a point-in-time ARR snapshot across 24 tenure
-months and put **$596,348,393** on a card against a real **$36,384,217**. The publish report now
-warns when two datasets compute the same measure the same way, their fully rolled-up values
-disagree, and a tile actually shows the differing one - but the warning is information, not a
-verdict, and the fix is yours: take the latest snapshot rather than the sum, or give the stock
-its own dataset that recomputes it under filters.
+months and put **$596,348,393** on a card against a real **$36,384,217**. Declare such a measure
+`stock: true` and the publish report warns when the SQL sums it across the grain
+(`sum_over_stock`), but the warning is information, not a verdict, and the fix is yours: take the
+latest snapshot rather than the sum, or give the stock its own dataset that recomputes it under
+filters.
 
 ---
 

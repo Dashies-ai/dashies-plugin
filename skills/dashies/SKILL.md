@@ -39,29 +39,22 @@ legitimately move - which is why the publish report tells you what it decided ev
 than only when you changed something.
 **You do not choose it and you do not need a vocabulary for it.**
 
-**What the page is BUILT OUT OF is a separate question, and the answer is the USER'S.** Give the
-server a `tiles` layout and it draws the page; write the markup and the page is yours, styling and
-all. Both are this path. **A spec needs one of them, so the page is required too, alongside the
-four above.** The line that matters is not between those two - it is between ASSEMBLING a
-dashboard and WRITING its markup.
+**The page is the fifth thing every spec carries, and you write it.** `look: { html }` is the page
+body: your markup and CSS, the widgets the runtime draws for you (elements carrying `data-dash` - a
+figure, a chart, a table, a filter and more), and your own page code where no widget draws what you
+need. It is the same on every connection. The line that matters is not inside the page - it is
+between WRITING the page inside the spec and ASSEMBLING a dashboard outside it.
 
 **You never ASSEMBLE the dashboard.** You do not build a page OUTSIDE the spec, wire up its
 refresh, or hand a user a file you put together yourself. If you find yourself doing that, you
 have left this path.
 
-**Writing MARKUP is a different thing, and it ships.** The spec carries your own CSS, one
-hand-written tile, or the whole page body, and all three stay on this path with every check and the
-schedule intact, on every connection. **A tile or a body you write is handed its numbers by the
-runtime**, through one call your script makes (`dashies.data`), on a warehouse dashboard exactly as
-on the sample connection. **What the user asked for decides which you reach for, and if they have
-not said, you ask and wait.** Any word about how it should LOOK - a layout, sections, colours, a
-dark background, typography, a brand, a logo, "beautiful", "like our site" - is an instruction to
-design the page and write it, and doing that is the product working rather than an escape hatch. The
-word "html" is the same instruction, and it is not a question to ask back. Asked only for the
-numbers and nothing at all about how they should look, ask before you choose - and recommend the
-page you design, saying that managed tiles are the option without design. A `tiles` layout costs
-twenty lines, and it is theirs to take rather than yours to assume. "When you write the markup
-yourself", under Step 4, is where that decision lives.
+**Writing the page is the job, and it ships.** Every check and the schedule stay intact, on every
+connection, and the data never enters your context: a widget is drawn from the numbers by the
+runtime, and page code is handed them through one call (`dashies.data`). **How the page looks is the
+user's call, and if they have not named a style, you ask before you design** - offering first the
+style you can infer from what you already know. "The style question", under Step 4, is where that
+decision lives.
 
 ---
 
@@ -82,8 +75,8 @@ your context. That is not hypothetical - a real session did it after a single sc
 spent seven rounds deleting real content to make the payload fit. **Fix the refusal.**
 
 **Read that paragraph for the verb, which is ASSEMBLE and not WRITE.** The wrong turn is leaving
-the spec, never writing markup. Markup inside the spec keeps the refusals, the seeding and the
-schedule, and the data still never enters your context. Choosing it is a design decision; it is
+the spec, never writing markup. The page inside the spec keeps the refusals, the seeding and the
+schedule, and the data still never enters your context. Writing it is the job; leaving the spec is
 never an answer to an error.
 
 ---
@@ -190,12 +183,12 @@ Which state the connection is actually in, and therefore whether the cheaper fix
 
 | `action` | What to do |
 |---|---|
-| `connect_a_warehouse` | There are no connections of the user's own, and no READY Dashies sample data connection (below) - a ready one is named under `start_authoring` instead, and one that is present but not ready is listed and not offered. Send them to the link in `next_step.url`, and offer the built-in sample (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the design question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. **The answer's own text names a THIRD option beside those two, here and on the try-sample branch alike**: if the user has the numbers in a CSV or Excel file rather than in a warehouse, offer uploading the file in that same message - see "A spreadsheet instead of a warehouse". |
+| `connect_a_warehouse` | There are no connections of the user's own, and no READY Dashies sample data connection (below) - a ready one is named under `start_authoring` instead, and one that is present but not ready is listed and not offered. Send them to the link in `next_step.url`, and offer the built-in sample (below) - the answer does not mention it, so the offer is yours to make. Taking the sample data leads straight into authoring, so the style question (Step 4) is owed there exactly as it is under `start_authoring` - ask it in the SAME message as the offer, not in a round trip after it. **The answer's own text names a THIRD option beside those two, here and on the try-sample branch alike**: if the user has the numbers in a CSV or Excel file rather than in a warehouse, offer uploading the file in that same message - see "A spreadsheet instead of a warehouse". |
 | `fix_a_connection` | A credential is not working and nothing else is ready. **Say so before authoring anything**, name the error, send them to the app. |
 | `finish_setup_in_the_app` | A connection exists but was never tested. They finish setting it up, then call again. |
 | `choose_data_in_the_app` | A connection is verified and exposes nothing readable. They choose what to expose and check the login can read it. Both are app settings; **no query works around either**. |
-| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** This message is also where the design question goes: if the request said nothing about how the dashboard should look, ask both here, in one message that recommends the page you design, says tiles are the option without design, and ends on a question mark (Step 4). If the request carries any design language, or the word "html", there is no design question - say in the same message that you will design and write the page. **Measured: a session whose request said "html" asked which connection and which slug here and never said it would design the page, so design could only come up in a second round trip.** |
-| `start_authoring` | Exactly one is ready. Go - unless the request said nothing about how it should look, in which case the design question (Step 4) is the one round trip you owe first, and it ends on a question mark. A request carrying design language or "html" has already answered it: you write the page. **If the one ready connection is the Dashies sample data** (`shared_sample: true`, and the text says so), the user has no warehouse of their own: say plainly that it is sample data, offer the connect link from `next_step.url` in the SAME message, and then go - see "The user with no warehouse". |
+| `ask_which_connection` | More than one is ready. **Ask the user. Do not pick for them.** This message is also where the style question goes: if the request named no style, ask both here, in one message that offers the style you can infer first and ends on a question mark (Step 4). If the request names a style - a brand, colours, a look to match - there is no style question; say in the same message that you will design the page to it. **Measured: a session whose request said "html" asked which connection and which slug here and never mentioned the design, so the design could only come up in a second round trip.** |
+| `start_authoring` | Exactly one is ready. Go - unless the request named no style, in which case the style question (Step 4) is the one round trip you owe first, and it ends on a question mark. A request that names a style has already answered it: you design the page to it. **If the one ready connection is the Dashies sample data** (`shared_sample: true`, and the text says so), the user has no warehouse of their own: say plainly that it is sample data, offer the connect link from `next_step.url` in the SAME message, and then go - see "The user with no warehouse". |
 
 **A broken connection beside a working one still says `start_authoring`.** `fix_a_connection` is
 the answer only when *nothing* is ready. Read `connections[]` before telling a user everything is
@@ -220,7 +213,7 @@ their own rows, in `row_level_security`.** Branch on the tokens, never on the pr
 their own rows, and default to no.** Keep it to one sentence, let a plain "no" be one word of
 theirs - most dashboards want everyone who can open them to see the same numbers - and **put it in
 a message you are already sending rather than spending a round trip on it**: where the table above
-already owes the connection question or the design question, this rides along in that same
+already owes the connection question or the style question, this rides along in that same
 message. If they say yes, Step 4's "When each viewer should see only their own rows" is where the
 block is written. Ask on a NEW dashboard, not again on every edit. **The block persists only
 because the document still carries it**: an edit through `spec_edits` (Step 8) leaves it alone,
@@ -390,7 +383,7 @@ sends you for anything past a bare frequency word, so the two together are the n
 user armed a cadence that way, say so and re-arm it after replacing.
 
 **It checks before it changes anything, and the check is the publish itself.** Every dashboard on
-the file is run against the new upload first - its datasets, its tiles, the lot - and if any one of
+the file is run against the new upload first - its datasets, its page, the lot - and if any one of
 them cannot read it, the whole call is refused naming the dataset and the column and nothing is
 changed. A column the new file drops that no dataset reads is not a problem and does not refuse. So
 the answer to "will this month's file still work" is the tool's rather than yours to predict, and
@@ -669,20 +662,16 @@ are right.
 ## Step 4 - Write the spec
 
 Turn the statement into the spec: **`datasets`** (each one's `sql`, its `dimensions`, its
-`measures`) under one `source` (connection plus schedule), plus the page itself - **exactly one of
-`tiles` or `look`, never both and never neither.** `tiles` hands the drawing to the server (kpi,
-chart, table, matrix, heatmap, scatter, treemap, waterfall, funnel, drilldown, stacked, combo,
-pie, donut, gauge, filter, text, and `custom` for one you draw yourself); `look` is your own page
-body. Each data tile names its dataset with `dataset:`, except `custom`, which uses `reads:`.
+`measures`) under one `source` (connection plus schedule), plus the page, **`look: { html }`** - the
+page body you write. The YAML's field tables and the provenance convention are in
+**`references/spec.md`**; the widgets in **`references/widgets.md`**; restyling them in
+**`references/style.md`**; and recipes for page code in **`references/charts.md`**.
 
-Field tables, the tile types and their options, and the provenance convention are in
-**`references/spec.md`**.
-
-**One shape rule worth carrying in your head: a table tile is for reading.** Ask for the columns
-a person will actually look at. What costs is the number of cells, which is rows TIMES columns -
-so a wide table of few rows and a narrow table of many rows cost the same, and "keep it under N
-rows" is the guidance that gets this wrong. If a table is over the budget the server says so and
-says what to change; you do not need to compute it.
+**One shape rule worth carrying in your head: a table is for reading.** Ask for the columns a person
+will actually look at. What costs is the number of cells, which is rows TIMES columns - so a wide
+table of few rows and a narrow table of many rows cost the same, and "keep it under N rows" is the
+guidance that gets this wrong. If the page asks for more than its data can hold, the server says so
+and says what to change; you do not need to compute it.
 
 ### When each viewer should see only their own rows
 
@@ -690,9 +679,9 @@ says what to change; you do not need to compute it.
 answered `available: true`: it needs a workspace dashboard on an Enterprise plan, reading a
 warehouse. It is the only thing in this document that makes what a viewer receives depend on WHO
 they are rather than on what the page asks for. The rows are filtered where the data is queried,
-per viewer, for every tile and for every number a page you wrote asks for, so two people open the
-same URL and see different numbers. A page you wrote needs no special handling: `dashies.data`
-hands your script the viewer's own rows and never anybody else's.
+per viewer, for every widget and for every number your page code asks for, so two people open the
+same URL and see different numbers. The page needs no special handling: its widgets and
+`dashies.data` alike are handed the viewer's own rows and never anybody else's.
 
 Declare it on the DATASET whose rows it filters:
 
@@ -819,74 +808,66 @@ cardinality, which is measured on the first refresh. **Do not carry a number for
 advisory names the threshold when it fires, and a figure written down here would be a second copy
 of a constant that moves.
 
-### When you write the markup yourself
+### The style question
 
-**THE USER'S OWN BRIEF DECIDES THIS. There is no default of ours in either direction, and there
-are two cases. Which one you are in is decided by whether the request says ANYTHING about how the
-dashboard should look, and the bar for "anything" is low on purpose.**
+**How the page looks is the user's call, and the rule turns on one thing: did they name a style?**
 
-**If they have said nothing about how it should look, STOP AND ASK, and wait for the answer.** Do
-not pick for them, and do not announce a choice and carry on in the same message. A real session
-did exactly that - it wrote "let them choose" and published tiles without waiting - and the user's
-words on finding them were "I said no tiles". The question costs a few sentences, and it is not a
-neutral one: **recommend the page you design for them, and say that managed tiles are the option
-without design** - Dashies lays the charts, cards and tables out in its own look, and nothing about
-the page is designed for them. Recommended option first, then the other with the one sentence on
-what it gives up, then the question. A recommendation and not a default: they choose. If Step 1
-also leaves you asking which connection, ask both in the same message; two questions in two round
-trips is a worse experience than one message carrying both. **And end the message on the
-question.** "Confirm the connection (and slug, if you care) and I'll go from there" is a plan
-announced, not a decision handed over: a real session asked three times that way, with no question
-mark in the whole message, and it read as if the choice had already been made. Managed tiles cost
-twenty lines and are theirs to take if they want them; they are never yours to assume.
+**If they named one, design to it, and ask nothing.** A style is anything that says what the page
+should look like: a brand or a product to look like ("in Tesla's style", "like our app"), colours, a
+dark or a light page, typography, a layout ("four big figures across the top, one chart underneath"),
+a logo to carry. Each is an instruction to design the page to it, and asking back which they meant
+spends their turn on a thing they already said.
 
-**If they have said anything, DO WHAT THEY SAID, and anything means any design language at all:**
-a layout ("four big KPI cards across the top, one full-width chart underneath"), sections, colours,
-a dark background, a single accent, typography ("big type on the numbers"), a brand, a logo,
-"beautiful", "like our site". Every one of those is an instruction to design the page and write
-the markup, not a preference to be traded for a `theme` over tiles. **A layout alone is design
-language too.** Measured: a brief carrying a dark background, one accent, four big KPI cards, one
-full-width chart and big type went to managed tiles and a `theme`, with a page of your own never
-considered in the whole session. A brief is a request for a page that follows it, never for our
-tile vocabulary.
+**If they named none, ask before you design, and wait for the answer.** Words that praise without
+describing - "beautiful", "nice", "professional" - name no style, and neither does "html", which
+names what every page already is. Offer three options, in this order, and end the message on the
+question:
 
-**The word "html" is the same instruction, and it is not a question.** "Beautiful HTML dashboards"
-means you design and write the page; do not ask back which of the two they meant. A real session
-did - told "html", it asked whether html was what the user meant - and spent the user's turn
-confirming a thing they had already said. Handing somebody who asked for HTML the tile vocabulary
-instead is how a dashboard ends up reading like a template with their title on it, which is the
-one outcome this product exists to avoid.
+1. **The style you can infer from what you already know**, named and described in a phrase: the
+   company the user works for (their email's domain, the repo's name, the names in their warehouse),
+   a brand the repo you sit in carries (a `brand/` directory, a logo, a design system, a `README.md`
+   beside the mark that names the palette and the type), or a product they named. For example,
+   someone who works at Tesla is offered a page in Tesla's style first. When nothing points
+   at a brand, say so in one sentence and lead with the next option.
+2. **A clean, neutral style** you design: one accent, quiet greys, the figures large.
+3. **"Describe it"**: their own words, a site to match, a screenshot.
 
-**So the "managed tiles, or a page I design?" question is for a request that says nothing about
-design at all** - "make me a dashboard of ARR growth" and no more. Anything past that about how
-it should look, you design.
+Ask it in the SAME message as any other question you owe - which connection (Step 1), whether viewers
+should see only their own rows - because two round trips are a worse experience than one message
+carrying both. **And end the message on the question.** "Confirm the connection (and slug, if you
+care) and I'll go from there" is a plan announced, not a decision handed over: a real session asked
+three times that way, with no question mark in the whole message, and it read as if the choice had
+already been made.
 
-**Do not weigh the two answers, managed tiles or a page you write, by how common they are.**
-Nobody knows, and a count taken over the dashboards that already exist would measure only what
-the tool made easy.
+**Then design to the answer.** Set the full token block in `references/style.md` to the style, so
+every widget takes it, and write your own CSS from the same palette and type, so the page reads as one
+design rather than a template with their title on it. A logo reaches the page only through `assets`
+(below), never drawn or typed by you.
 
-**Three surfaces, from the least you own to the most, and all three stay on the spec path on every
-connection.** You keep the pointed refusals, the seeding, the correctness checks and the schedule,
-and the data still never enters your context. You give up only the part you opt out of.
+### The page: `look: { html }`
 
-| Surface | What you own | What the server still owns |
+**Every dashboard's page is a `look` body you write**, and three kinds of thing go in it:
+
+| Part | What it is | Where it is described |
 |---|---|---|
-| `theme` | Accent, font, density, light or dark, and your own CSS over the managed page | Every tile it drew |
-| a `custom` tile | One tile's HTML and JavaScript, mounted inside the managed grid | Every other tile, the layout, the filters |
-| `look: { html }` | The whole page body, byte for byte | The datasets, the seeding, the refresh |
+| Your markup and CSS | The layout, the headings, the copy and the style: byte for byte what you write | `references/style.md`, for restyling what the runtime draws |
+| Widgets | Elements carrying `data-dash`, which the runtime draws from the numbers under every filter: a figure, a chart, a table, a cross-tab, a filter and more | `references/widgets.md` |
+| Page code | Your own script, handed its numbers by `dashies.data`, for a picture no widget draws | "How your script gets its numbers", below, and `references/charts.md` |
 
-`look` is exclusive with `tiles`, and with `theme` and `layout` too, because it owns the page.
-`source`, `datasets` and the schedule are written exactly as they always are. The fields, the
-mount contract, and the shape your script is handed are in **`references/spec.md`** under
-**Writing your own markup**. **`references/charts.md`** carries copy-paste recipes for the charts a
-page you write most often needs - a KPI card with a delta, bars, a line over time, a stacked bar, a
-table - each drawn from what `dashies.data` hands you, inline, with nothing loading from outside
-the page.
+**Prefer a widget wherever one draws what you need.** A widget already handles every filter, every
+state of its data, exact totals and every refusal its picture needs, and it cannot show a figure
+Dashies did not deliver. Page code has to do each of those by hand, and publish reads it line by line
+against rule 1 below. Reach for page code for the picture no widget draws, and keep it to that.
 
-**`look: { from: <slug> }` is the same surface without the bytes.** It means "keep the body this
-dashboard already has", so you can change a dataset or a schedule on a hand-authored dashboard
-without re-sending its markup. It must name the slug you are publishing to, and
-`derive_dashboard_spec` emits it for a dashboard that has no spec yet.
+**Write the style's full token block on every page** (`references/style.md`), so no widget is left at
+a runtime default by omission. `source`, `datasets` and the schedule are written exactly as they always
+are. The page's mechanics - its size ceilings, and the data block and the runtime marker every page
+carries - are in **`references/spec.md`** under **The page: `look`**, with a worked example.
+
+**`look: { from: <slug> }` is the same page without the bytes.** It means "keep the body this
+dashboard already has", so you can change a dataset or a schedule without re-sending its markup. It
+must name the slug you are publishing to, and `derive_dashboard_spec` emits it for a dashboard that has
+no spec yet.
 
 #### Two rules, and both are about correctness rather than taste
 
@@ -909,7 +890,7 @@ written into the markup string, with `.is-hidden { display: none; }` in the page
 never an `if` around the label and never an early return out of the row. The viewer's clock is not a
 constant: a value worked out from it and a delivered one ("3 years ago") is refused, so show the
 delivered date. Every check this skill spends its length on - the aggregate that has to match its
-column, the fan-out cross-check, the disagreeing-totals warning - is applied to the SQL. A number
+column, the fan-out cross-check, the sum-over-a-stock warning - is applied to the SQL. A number
 worked out in the browser has been through none of them, and nothing will ever check it again.
 Declare it as a measure and let the statement compute it. **Publish refuses a script that crosses
 this line**, naming what to ask for or declare instead: a measure or a `ratio` for a figure,
@@ -927,6 +908,17 @@ number your page fetched for itself has neither property - it was not checked at
 refresh maintains it, and it will go stale or wrong on its own. Declare the data as a dataset and
 let the spec carry it.
 
+**And the page cannot reach anything outside Dashies, which is enforced rather than asked.** A
+published dashboard is locked to Dashies' own origins, so no script, stylesheet, font or image loads
+from another host when someone opens it. Write your CSS and your script inline, bring an image in
+through `assets` (below), and use a system font stack, or a font file the user hands you embedded as a
+`data:` URI - never one you type. Publish refuses markup that would reach another host before anyone
+asks (`page_markup_egress`: a `<script type="speculationrules">`, or a `<link>` whose `rel` is
+`prefetch`, `prerender`, `preconnect`, `dns-prefetch` or `modulepreload` pointing off Dashies) and any
+use of WebRTC (`page_webrtc_egress`). A network call in your script (`fetch`, `XMLHttpRequest`,
+`WebSocket` and the like) is a dry-run warning (`page_network_call`), and it fails in the viewer's
+browser.
+
 **This is a rule, not a performance note.** If a design seems to need a call, what it needs is a
 filter or a coarser grain, which the runtime answers through `dashies.filter` and `by` (below), or
 another dataset.
@@ -935,9 +927,8 @@ another dataset.
 
 **The runtime fetches; you draw.** Your script asks for nothing and reads nothing out of the page.
 It hands the runtime one function, and the runtime calls it with the datasets THAT CALL ASKED FOR,
-and calls it again whenever their state changes. What your markup may read is the ceiling on what a
-call can ask for - every dataset for a `look` body, the `reads:` list for a `custom` tile - and the
-options object below is how a call asks for less. That holds on a warehouse dashboard exactly as on the sample
+and calls it again whenever their state changes. Your page may read every dataset the spec
+declares, and the options object below is how a call asks for less. That holds on a warehouse dashboard exactly as on the sample
 connection. The surface is two calls, and it is closed: there is no way to name a query, a measure
 or a dataset the spec did not declare, nor a grain or a filter outside the dimensions it declares,
 so a script that takes its numbers from these calls and nowhere else is keeping rule 2.
@@ -973,7 +964,7 @@ dashies.filter({ region: 'EMEA', channel: null });                  // several a
 
 **A coarser grain is asked for, never worked out.** `by` names a subset of that dataset's declared
 dimensions, and `rows` come back grouped by exactly those, one row per combination, every measure
-worked out by the same machinery that answers a managed chart. `by: []` is the grand total. One
+worked out by the same machinery that answers a chart widget. `by: []` is the grand total. One
 subscription carries one grain per dataset; a page that wants a month series AND a region
 breakdown from one dataset calls `dashies.data` twice, and each call is handed its own rows. On a
 warehouse dashboard the declared grain is not requested unless something subscribes at it, so a
@@ -1020,8 +1011,8 @@ costs one dataset. **Measured: a page whose every call named only the dataset it
 asking for an eleven-dimension dataset nobody drew, which was refused on every page load, silently,
 because no callback read it.**
 
-**A filter is set, never simulated.** `dashies.filter` sets the same page state a managed filter
-control sets: it lands in the URL hash, so a shared link opens on the same view, and every dataset
+**A filter is set, never simulated.** `dashies.filter` sets the same page state a filter widget
+sets: it lands in the URL hash, so a shared link opens on the same view, and every dataset
 a call asked for is fetched again under it. Draw your own controls and have them call `dashies.filter`; never
 filter `rows` in the browser. `ds.filters` says which filters reached that dataset - a dimension
 it does not declare is absent from it, so `'region' in ds.filters` is the honest test for "this
@@ -1106,7 +1097,7 @@ site once the page has booted and changes nothing; a call that names several dim
 all of them or none.
 
 **When the grain you draw is too wide for one answer, the page reports `status: "error"` naming
-the refusal, with `error_kind: "refused"`, on the subscriptions at that grain, and the managed tiles
+the refusal, with `error_kind: "refused"`, on the subscriptions at that grain, and the widgets
 on that dataset stop with it** - your other subscriptions on the same dataset still receive their
 rows, so a page never waits on a question that was refused. **The remedy is yours: subscribe at the grain you actually
 draw with `by`, so the wide one is never requested; bound the dimensions that dataset declares,
@@ -1114,10 +1105,10 @@ with `domains` or `buckets`; and if the page still reports that the grain is too
 fewer of them.** `truncated` is a field a producer may set when `rows` is not the whole answer;
 when it is `true`, say so on the page rather than drawing a complete picture.
 
-**A page that draws its own markup carries `<script data-dashies-runtime></script>`.** That marker
-is what calls your function; without it nothing does, on any connection. A `tiles` page gets it
-for free; a `look` body writes it, and the publish report warns when it is missing on a warehouse
-dashboard, or when a body that calls `dashies.data` has none.
+**Every page carries `<script data-dashies-runtime></script>`, and you write it.** That marker is
+what calls your function and draws every widget; without it neither happens, on any connection. A
+page with widgets and no marker is refused, and the publish report warns when the marker is missing on
+a warehouse dashboard, or when a body that calls `dashies.data` has none.
 
 **Before its first refresh a warehouse dashboard is `pending` on every dataset, and the publish
 report tells you in two places**: the `Datasets:` sentence says its data stays with Dashies, and the
@@ -1127,43 +1118,34 @@ it publishes empty, which is Step 7's wait. A republish whose `First data:` line
 no such wait, and its report prints no such note. Otherwise say it to the user, follow Step 7, and
 stay until `status` turns `ready`.
 
-The example that handles all of this, the mount contract and the field tables are in
-**`references/spec.md`** under **Writing your own markup**.
+The example that handles all of this and the field tables are in **`references/spec.md`** under
+**The page: `look`**.
 
-#### Make it good
+#### Say only what the data says
 
-A page you write is what the user sees of the product, so a bare template is a failure even when
-every number on it is right. Short rules, and each one separates designed from generated:
+How the page looks is the style question's. What it CLAIMS is not a matter of style:
 
-- **One thing is biggest.** Pick the metric that matters most, make it the hero - about three
-  times the size of its label, with room around it - and demote the rest to a quieter row. Four
-  equal KPIs give the eye nowhere to land.
-- **One surface treatment, one accent.** Cards on a lightly tinted canvas with a hairline border
-  and no shadow, or cards on white with one soft shadow: pick one and use it everywhere. Spend one
-  accent colour on the primary series and the hero, and keep everything else neutral. No different
-  hue per bar, no gradient fills, no glow.
-- **Real typography.** A display size for the title and the hero, quiet uppercase labels with
-  letter-spacing, and every number in a monospace stack with `font-variant-numeric: tabular-nums`,
-  right-aligned so digits line up. Timid 14/16/18 steps read as a template.
-- **Dense and legible.** Tight rhythm inside a block, air between blocks, on an 8px grid. No chart
-  junk: no 3D, no gridlines that carry nothing, no shadows on bars.
-- **Both colour schemes**, through `prefers-color-scheme`, with real contrast in each and a visible
-  focus ring.
-- **No unstyled table, ever.** Hairline rules, a quiet header, numbers right-aligned. A table that
-  reads as a browser default throws the whole advantage away.
-- **Their brand, not ours.** If the user named a company or a look, derive the palette and the type
-  from it; a page that is supposed to be theirs does not ship Dashies' own blue.
+- **Every figure on the page is one the data delivered.** No figure, tick, label or annotation the
+  data did not deliver: no invented delta, trend arrow, target, benchmark or axis tick, and no copy
+  that characterises the numbers ("a record month", "healthy growth"). A sentence about scope - what
+  the numbers cover, which filter applies, that they are sample data - is fine; a sentence about what
+  they mean is a claim nothing checks. A scale or a target the user gave you, such as a gauge's
+  `data-max` or `data-target`, is theirs to show; one you made up is invented. Rule 1 is the same
+  principle applied to code.
+- **Escape every value from the data before it reaches the page.** A dimension value is text
+  somebody typed into a source system, so a delivered string goes in through `textContent`, or
+  through an `esc()` like the one in `references/charts.md` before it reaches `innerHTML` - never
+  raw. A value carrying `<` must be drawn, never parsed.
 - **A logo the repo already carries is used without being asked.** Before you write the header,
   look at the repo the session sits in: a `brand/` or `assets/brand/` directory, a `logo*.svg` or
   `logo*.png` at the root or under `public/`, or a `CLAUDE.md` that names one. If any of those
   exists, the page uses it - in the header beside the title, sized as a mark and not a banner, the
   light or dark variant matching the page's colour scheme (both, when the repo carries both, each
-  under its own `prefers-color-scheme` rule so each scheme shows its own) - and takes its accent
-  colour and its type from the `README.md` beside the mark (`brand/README.md`) when there is one,
-  so the page is set in their palette rather than a guess at it, unless the user named a look of
-  their own. **How a mark reaches the page is the `assets` block in the next bullet, by URL, never
-  bytes you type**: a file in the repo is usable when it is also hosted at an https URL (the
-  project's own site, its CDN, a public git host's raw file), and you declare that URL. When it
+  under its own `prefers-color-scheme` rule so each scheme shows its own). The same brand is the
+  style question's first option. **How a mark reaches the page is the `assets` block in the next
+  bullet, by URL, never bytes you type**: a file in the repo is usable when it is also hosted at
+  an https URL (the project's own site, its CDN, a public git host's raw file), and you declare that
+  URL. When it
   exists only as a local file, say so in one sentence and ask for a hosted URL - that is the current
   limit, and a page with no mark beats a page with a mark you reproduced. Say in one sentence to
   the user where the logo came from. When nothing is found, the page carries no mark unless they
@@ -1199,12 +1181,12 @@ every number on it is right. Short rules, and each one separates designed from g
   logo later, send the body (`look: { html }`): a `look: { from }` republish keeps the stored page
   byte for byte, so it is refused when an asset's bytes would change. The field table and the
   checks are in `references/spec.md` under **Assets**.
-- **Say only what the data says.** No invented deltas, trend arrows or filler copy.
 
 Inline everything - your CSS, your script - so the page depends on nothing that can change
-underneath it; an image comes through `assets`, which inlines it for you. Storage APIs
-(`localStorage`, cookies) throw in a published page, so keep state in memory and in the URL hash.
-And never replace `document.body` wholesale: fill your own elements.
+underneath it, and nothing outside Dashies can load in it anyway (rule 2); an image comes through
+`assets`, which inlines it for you. Storage APIs (`localStorage`, cookies) throw in a published page,
+so keep state in memory and in the URL hash. And never replace `document.body` wholesale: fill your
+own elements.
 
 ---
 
@@ -1261,26 +1243,27 @@ miss, never a wrong publish. **Pass back the `report_id` the dry run returned be
 printing them again, and without it every warning prints.**
 
 **Re-sending a whole spec to change one line is the single most common waste on this path.** A
-45-tile spec is around 28,500 characters; a session doing two dry runs plus four corrections used
-to put roughly 171,000 characters on the wire, and about 29,600 by hash and edits.
+spec carries its whole page, so every full re-send puts the page on the wire again; a dry run, a
+publish by hash and corrections sent as edits put it there once.
 
 ### Read the report back in plain words
 
 - **`Datasets:`** - one sentence per dataset saying what will happen to it and why. Every dataset
   is listed, including the unremarkable ones. Relay it; it is the honest answer to "how will this
   stay current". A dataset whose sentence says its data stays with Dashies publishes empty and
-  fills in after the first refresh; if you wrote the markup, that is the `pending` state your
-  script is handed (Step 4, "How your script gets its numbers").
-- **`warnings`** - non-blocking advisories. **Two are worth reading closely.** The first: when two
-  datasets compute the same measure the same way and their fully-rolled-up values disagree, and a
-  tile actually SHOWS the differing one, the report says so with four facts per dataset. This is
-  information, not a verdict - a month-to-date figure beside a year-to-date one legitimately
-  disagrees - so read the scope fact and decide. It caught a real playtest error that put
-  $596,348,393 on a card against a real $36,384,217. The second, a routine note per dataset that it
-  **"publishes with NO data"**, is the same first-refresh wait stated as a warning: the tiles the
-  server drew read "Updating", and a script you wrote is handed `status: "pending"` until the
-  refresh lands. It is one line per dataset, and a publish whose `First data:` line says the rows are
-  already served prints none, counting the notes it left out instead.
+  fills in after the first refresh; that is the `pending` state your page code is handed (Step 4,
+  "How your script gets its numbers").
+- **`warnings`** - non-blocking advisories. **Two are worth reading closely.** The first,
+  `sum_over_stock`: the SQL sums a measure declared `stock: true` - a balance, a headcount, an ARR
+  snapshot - across the grain, which recounts the same entities in every period. Summing a snapshot
+  is the error that once put $596,348,393 on a card against a real $36,384,217, so declare every
+  level `stock: true` and read the warning when it comes: take the latest period, or use `max`. It is
+  information, not a verdict, because rows that do not overlap legitimately add up. The second, a
+  routine note per dataset that it **"publishes with NO data"**, is the same first-refresh wait
+  stated as a warning: the page's widgets read "Updating", and your page code is handed
+  `status: "pending"` until the refresh lands. It is one line per dataset, and a publish whose
+  `First data:` line says the rows are already served prints none, counting the notes it left out
+  instead.
 - **`Since the dry run of ...`** - on a publish that passed a dry run's `spec_hash` and `report_id`,
   the count of unchanged warnings and checks that dry run printed or counted, and when the oldest of
   them was last printed in full. They are not printed again. What prints below that line is new, or
@@ -1391,11 +1374,10 @@ a clean dry run is not evidence the connection is bindable in the scope you are 
 
 ## Step 7 - Stay until the numbers land
 
-**A dashboard whose data is kept with Dashies publishes empty by design**, and the tiles the
-SERVER drew read "Updating" until the first refresh lands. **A page you wrote yourself is handed
-`status: "pending"` for the same wait**, and says "no data yet" only if you drew that state.
-**Handing a user either page is the opposite of the effect you are trying to produce.** So after
-publishing:
+**A dashboard whose data is kept with Dashies publishes empty by design**: its widgets read
+"Updating" until the first refresh lands, and your page code is handed `status: "pending"` for the
+same wait, so it says "no data yet" only if you drew that state. **Handing a user that page is the
+opposite of the effect you are trying to produce.** So after publishing:
 
 1. Say what is happening, in one plain sentence. **Do not give a duration** - say what has to
    happen, not how long it takes.
@@ -1501,7 +1483,7 @@ not failures at all**, and the rest are:
 
 - **A plan waiting on its first extraction is the first-refresh wait, and needs no action but
   patience.** The dataset is declared and nothing has failed; the tool reports it apart from a
-  failure, and a page you wrote is handed `status: "pending"` for it. Poll
+  failure, and your page code is handed `status: "pending"` for it. Poll
   `get_refresh_status` until `last_successful_run` moves, then verify again.
 - **`reshaping` is the NORMAL state during a republish, and needs no action.** The data was
   extracted under the previous spec, the extraction under the new one is already dispatched,
@@ -1509,8 +1491,8 @@ not failures at all**, and the rest are:
   so do not read it against the verdict, do not report the dashboard broken, and **do not
   retry in a loop** - poll `get_refresh_status` until a newer successful run, then verify again.
 - **`refused` is not `failed`.** A refusal is the service declining the DECLARED GRAIN as too
-  wide. It is a real finding about what a page you wrote can receive, and it says nothing about
-  the narrower grains managed tiles ask for.
+  wide. It is a real finding about what your page code can receive at that grain, and it says
+  nothing about the narrower grains your widgets and other subscriptions ask for.
 - **`failed` and `unavailable` are worse than a refusal**: every narrower question fails the
   same way.
 - **`not_run` is neither a pass nor a fail.** The verification's own budget ran out before it
@@ -1544,7 +1526,7 @@ fails, say what failed and what it points at rather than continuing to poll.
 
 ## Step 8 - Edit a published dashboard
 
-To change a published dashboard - a new tile, a renamed measure, a different chart - **edit the
+To change a published dashboard - a new chart, a renamed measure, a different layout - **edit the
 spec, never the served page**.
 
 1. **`get_dashboard_spec({ slug })`** returns the stored spec **verbatim**, comments and
@@ -1583,9 +1565,15 @@ started no extract, because the rows already served were extracted under exactly
 definition, so verifying it has no extraction to wait for.
 
 **A dashboard with no stored spec** - published before specs existed - has nothing for
-`get_dashboard_spec` to read. Call **`derive_dashboard_spec({ slug })}`** first: a read-only aid
+`get_dashboard_spec` to read. Call **`derive_dashboard_spec({ slug })`** first: a read-only aid
 that reconstructs a draft from what the dashboard already carries, and stores nothing. Review the
-draft, publish it, and from there this loop applies.
+draft, publish it, and from there this loop applies. **If the draft also carries a ready-to-paste
+block meant to replace its `look`, leave it out** and keep `look: { from: <slug> }`.
+
+**A stored spec with no `look` carries top-level keys that are not in the field table in
+`references/spec.md`.** Do not edit them: rewrite the page as a `look` body, with widgets for what it
+showed (`references/widgets.md`), remove those keys, ask the style question if the user has not named
+a style, and publish the whole spec.
 
 **Renaming the slug is `update_dashboard`'s job** (it preserves the old URL with a redirect),
 never a spec edit - do not change `slug` to rename.
@@ -1616,12 +1604,12 @@ never a spec edit - do not change `slug` to rename.
 - **You write the spec; the server writes the dashboard.** A structural fault is a pointed
   publish error naming the exact field, not a rendering surprise. Dry-run first, fix the pointed
   errors, then publish the hash.
-- **Never leave the spec because a publish was refused.** Fix the refusal. Writing your own markup
-  INSIDE the spec is supported and is a design decision; it is never a response to an error.
-- **If the user has said nothing about how it should look, ask and wait, recommending the page
-  you design and ending on the question; if they have said anything - a layout, colours, type, a
-  brand, "html" - design and write the page.** Managed tiles are the option without design, never
-  the default, and "html" is an instruction rather than a question to ask back.
+- **Never leave the spec because a publish was refused.** Fix the refusal. The page you write
+  INSIDE the spec is the job; leaving the spec is never a response to an error.
+- **If the user named no style, ask before you design, with the style you can infer offered first
+  and the message ending on the question; if they named one - a brand, colours, a look to match -
+  design to it without asking.** Write the full token block on every page, set to that style, and
+  prefer a widget wherever one draws what you need.
 - **All calculation is server-side. The browser draws; it never computes.** Markup you write may
   render, lay out and drive controls, pick rows by a category value, and colour something by a
   test on a number. It must not work out a number from values it was handed, show text a number
@@ -1630,7 +1618,10 @@ never a spec edit - do not change `slug` to rename.
   script that does. A coarser grain is asked for with `by` and a filter is set
   with `dashies.filter`; never roll up or filter by a number in the browser, and never duplicate
   records with sentinel values to precompute either. And it takes its numbers from what the runtime
-  hands it, never from a call of its own.
+  hands it, never from a call of its own: a published page reaches nothing outside Dashies.
+- **Say only what the data says, and escape what it delivers.** No figure, tick or label the data
+  did not deliver, and every delivered string goes in through `textContent` or an escape, never raw
+  into `innerHTML`.
 - **Validate proves it RUNS; you prove it is CORRECT.** The cross-check in Step 3 is a required
   gate, not a nicety.
 - **Everything the dashboard carries is visible to everyone who can open it, unless it declares
@@ -1672,8 +1663,10 @@ Load the one you need for the step you are on; do not front-load them.
 | Reference | Covers | Load for |
 |---|---|---|
 | `references/sql.md` | Introspection; the statement shape each kind of connection needs; choosing the grain and keeping what you group by small, which is the sample-connection shape; timezone bucketing; sensitivity; writing and validating the read-only `SELECT`; the correctness cross-check; the per-engine dialects, and the one an uploaded file uses | Steps 2-3 |
-| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, every tile type, `layout`, `theme`, `look`), **Row-level security**, **Provenance**, **Writing your own markup** (the `custom` tile, `look`, `theme.css`, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain), the schema URL, and what a publish warning means | Step 4 and 0.5 |
-| `references/charts.md` | Copy-paste inline-SVG chart recipes for a page you write: a shared stylesheet and helpers, then a KPI card with a delta, horizontal and vertical bars, a line over time, a stacked bar and a compact table, each drawn from what `dashies.data` hands you | Step 4, when you write the markup |
+| `references/spec.md` | The spec itself: house YAML rules, the full field tables (top level, `source`, `datasets`, `dimensions`, `measures`, `unit`, `look`), **Provenance**, the worked example, **Row-level security**, **The page: `look`** (its size ceilings, the data block and the runtime marker, assets, `dashies.data` and `dashies.filter`, with the example that handles every state, a filter control and a coarser grain, and an order, a top N and a threshold), the schema URL, and what a publish warning means | Step 4 and 0.5 |
+| `references/widgets.md` | The seventeen widget roles the runtime draws and every attribute they read: what publish checks and what each role refuses when the page draws, viewer controls, time intelligence, member order, and where each stops | Step 4, writing the page |
+| `references/style.md` | The style contract: the full token block to write on every page, every token and what it paints, every class the runtime styles, and the states it keys on | Step 4, after the style question |
+| `references/charts.md` | Copy-paste inline-SVG chart recipes for page code, for a picture no widget draws: a shared stylesheet and helpers, then a KPI card with a delta, horizontal and vertical bars, a line over time, a stacked bar and a compact table, each drawn from what `dashies.data` hands you | Step 4, when no widget draws it |
 
 The tool calls named here - `check_readiness`, `list_connections`, `introspect_schema`,
 `explore_data`, `validate_cube_sql`, `publish_dashboard` with `spec` / `dry_run` /

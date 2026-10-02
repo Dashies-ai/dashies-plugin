@@ -33,7 +33,7 @@ line against `SKILL.md` rule 1. One page can carry both, side by side.
   <div class="card" data-dash="metric" data-measure="revenue">
     <span class="label">Revenue</span><span class="value" data-dash-value></span>
   </div>
-  <div class="card" data-dash="metric" data-num="revenue" data-den="orders" data-format="currency">
+  <div class="card" data-dash="metric" data-num="revenue" data-den="orders">
     <span class="label">Average order</span><span class="value" data-dash-value></span>
   </div>
 </section>
@@ -45,7 +45,8 @@ line against `SKILL.md` rule 1. One page can carry both, side by side.
 
 That page reads the worked example's dataset in `references/spec.md`: `month` and `region`, and the
 measures `revenue` and `orders`. The second card divides them under every filter, which is how a
-widget shows a `ratio` (below).
+widget shows a `ratio` (below), and draws the result in the `unit` the dataset's `aov` ratio declares,
+so it needs no format attribute.
 
 ## What publish checks, and what waits until the page draws
 
@@ -126,9 +127,11 @@ them and ignored by the rest.
 **A `ratio` goes on a widget as its two operands.** A `ratio` you declared is worked out for page code
 on every row, but no widget reads it by its own key: write `data-num` and `data-den` naming the two
 measures it divides. A ratio draws on a `metric`, a `matrix`, a `heatmap`, a `drilldown`, either side of
-a `combo`, and a `gauge`; every other role draws plain measures only. **Every one of them draws a ratio
-as a percent unless `data-format` says otherwise** (`data-format2` on a combo's right side), whatever
-the ratio's `unit` declares, so write `data-format` on a widget showing a ratio of another kind.
+a `combo`, and a `gauge`; every other role draws plain measures only. **Each of them draws it in the
+`unit` the ratio declares**, which the widget finds by those two measures, with `data-num-scope` and
+`data-den-scope` matching the ratio's own `num_scope` and `den_scope` (a `combo` side takes no scope).
+Two measures no ratio of yours divides draw as a percent. `data-format` overrides either
+(`data-format2` on a combo's right side).
 
 ## Shape and size
 
@@ -156,37 +159,43 @@ the ratio's `unit` declares, so write `data-format` on a widget showing a ratio 
 | Attribute | Value | Read by |
 |---|---|---|
 | `data-label` | a string | `filter`: its visible label. |
-| `data-format` | `currency`, `percent`, `integer`, `decimal`, `compact` | How a figure is drawn. `combo` reads `data-format2` for its right side. On `updated-at`, `absolute` draws the date and time instead of "3 hours ago". |
-| `data-currency` | an ISO 4217 code | The currency of a `currency` figure. |
+| `data-format` | `currency`, `percent`, `integer`, `decimal`, `compact` | How a figure is drawn, over what its `unit` declares (below). `combo` reads `data-format2` for its right side. On `updated-at`, `absolute` draws the date and time instead of "3 hours ago". |
+| `data-currency` | an ISO 4217 code | The currency of a `currency` figure whose `unit` names none. |
 | `data-decimals` | 0 to 6 | Decimal places. |
 | `data-dash-value` | present, on an element INSIDE a `metric` | Where the figure goes. Without one the metric replaces its own text, so a card that carries a label of yours puts the figure in a child marked `data-dash-value`. |
 
-**Declare a figure's format on its measure, in the `unit`, and most widgets draw it.** A widget
-drawing one measure - the table's columns included - draws it in the kind its `unit` declares
-(currency, percent, a count) wherever Dashies carries the format with the data. Two kinds of dataset do
-not carry it: where the publish report's `Datasets:` sentence says the answers are worked out for each
-state its filters can be in, or that its filter combinations travel inside the page, a widget draws a
-plain number unless it says otherwise. **And two shapes never take the `unit`:**
+**Declare a figure's format on its measure, in the `unit`, and every widget draws it.** A widget draws
+each figure in what its own measure's or ratio's `unit` declares: the kind (currency, percent, a count),
+the currency and the decimal places. It does so figure by figure, so each column of a `table`, each axis
+of a `scatter`, each series of a `chart` with `data-measures` and each side of a `combo` takes its own,
+wherever Dashies carries the format with the data. Two kinds of dataset do not carry a measure's: where
+the publish report's `Datasets:` sentence says the answers are worked out for each state its filters
+can be in, or that its filter combinations travel inside the page, a measure draws as a plain number
+unless the widget says otherwise. A declared `ratio` carries its `unit` on every dataset.
 
-- **A ratio drawn through `data-num` and `data-den`** draws as a percent on every role that takes
-  one, whatever the ratio's `unit` declares.
-- **A `chart` with `data-measures`** draws plain numbers.
+**What a widget's own attributes do depends on how many figures it draws.**
 
-**`data-format` overrides all of that.** Write it where the data carries no format, on a widget
-showing a ratio of any kind but a percent, on a chart with `data-measures` (where it covers every
-series), and wherever a widget should draw a measure differently from its `unit`. Two roles differ: a
-`table` reads no `data-format` at all, and a `scatter` applies its one `data-format` to both axes, so
-leave it off a scatter whose two measures differ in kind. A `combo` reads `data-format2` for its right
-side.
+- **A widget drawing one figure**: a `metric`, a `gauge`, a `chart` of one measure (with or without
+  `data-series`), a `pie`, a `donut`, a `treemap`, a `waterfall`, a `funnel`, a `drilldown`, a
+  `matrix`, a `heatmap`, a `stacked` chart, and each side of a `combo`. `data-format` and
+  `data-decimals` override what the `unit` declares, and the `unit`'s currency and decimal places do
+  not follow `data-format` into a different kind. **`data-currency` never relabels a figure whose
+  `unit` names a currency, and publish refuses a page where it would, naming that currency.** A
+  `currency` unit with no `currency` of its own names USD. It fills in a figure whose `unit` names
+  none, such as a count drawn as money with `data-format="currency"`.
+- **A `table`, a `scatter` and a `chart` with `data-measures`.** Each figure keeps what its own measure
+  declares, and each of the three attributes fills in only what that measure leaves out, since one
+  attribute on the tag cannot be every measure's format: a column declaring a currency but no decimal
+  places takes `data-decimals`. On the two kinds of dataset above a measure declares nothing, so one
+  `data-format` there covers every column, both axes or every series: give measures of different kinds
+  a widget each, or draw them in page code.
 
-**Currency and decimal places are page-wide, not per measure.** No widget reads the currency code or
-the decimal places a measure's `unit` declares. Every widget prints currency in one currency and
-precision, which Dashies takes from the first currency measure the spec declares, so declare first the
-currency measure whose currency and precision the page should print. `data-currency` and
-`data-decimals` override that on every role that draws a figure but two: a `table` reads neither, and a
-`chart` reads `data-currency` for its axis and neither for the values it prints. A `combo` reads one
-`data-currency` and one `data-decimals` for both of its sides. A figure in a second currency, or at a
-precision of its own, is drawn exactly by page code, where `dashies.format` reads each measure's own.
+**A figure that names no currency of its own prints in the page's default currency and precision**,
+which Dashies takes from the first currency measure the spec declares. On the two kinds of dataset
+above, declare first the currency measure whose currency and precision the page should print, or write
+`data-currency` on the widget. A chart's shared axis reads in the currency every series on it draws
+in, and in plain numbers when they differ. Page code draws any figure exactly with `dashies.format`,
+which reads each measure's own.
 
 ## Viewer controls
 
@@ -246,8 +255,8 @@ draws `-` where the value cannot be shown exactly, never a rounded-wrong number.
 `data-type` picks bars, horizontal bars, a line or an area over `data-x`. It draws one measure, or
 several series in either of two ways: `data-measures` names two to four measures at the same `data-x`,
 or `data-series` beside one `data-measure` splits it into one series per value. **Five series at most**:
-on a warehouse or uploaded-file dataset a missing value is a series of its own, labelled `-`, and counts
-toward the five, and past five the chart shows `Too many series: <dimension> has N values, max 5.` in
+a missing value is a series of its own, drawn last and labelled `-`, and counts toward the five, and
+past five the chart shows `Too many series: <dimension> has N values, max 5.` in
 place of the chart. Split by a dimension with at most five values, or narrow it in the SQL. A chart of
 one measure also takes `data-controls` and `data-xfilter`; a chart with several series takes neither.
 
@@ -330,7 +339,8 @@ One level is a plain top-N list.
 
 ### The stacked chart
 
-One measure over `data-x`, split into the segments of `data-series`, which has at most 5 values.
+One measure over `data-x`, split into the segments of `data-series`, which has at most 5 values. A
+missing value is a segment of its own, drawn last and labelled `-`, and counts toward the five.
 
 - **The measure has to add up across the segments: a `sum` or a `count`.** A `ratio`, a `min`, a `max`,
   a distinct count, a median and a percentile are refused. To show a rate beside a stack, use a `combo`.

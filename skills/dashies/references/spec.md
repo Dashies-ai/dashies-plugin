@@ -256,14 +256,14 @@ as its exact digits in a string is one the runtime could not hand over as a Numb
 `dashies.format` draws those digits as they came, moving the decimal point for a declared
 `scale` rather than dividing, which would round it.
 
-**A unit's `kind` reaches most widgets; its `currency` and `decimals` reach page code alone.**
-`dashies.format(value, measure)` applies each measure's own format, currency code and decimal places.
-A widget drawing one measure draws the kind the `unit` declares wherever Dashies carries the format
-with the data, but a ratio a widget draws is a percent and a chart of several measures draws plain
-numbers, whatever their units say, until the widget's `data-format` says otherwise. Every widget prints
-currency in one page-wide currency and precision taken from the first currency measure the spec
-declares, so declare that measure first. `references/widgets.md`, under Display, says which widgets
-`data-format`, `data-currency` and `data-decimals` override that on.
+**A unit reaches page code and every widget alike: its `kind`, its `currency` and its `decimals`.**
+`dashies.format(value, measure)` applies each measure's own format, currency code and decimal places,
+and a widget draws each figure it shows the same way, a declared `ratio` included, wherever Dashies
+carries the format with the data. A widget's `data-currency` never relabels a figure whose `unit` names
+a currency, and publish refuses a page where it would. Where a dataset does not carry the format, a
+figure with no currency of its own prints in the page's default currency and precision, taken from the
+first currency measure the spec declares, so declare that measure first. `references/widgets.md`, under
+Display, says what `data-format`, `data-currency` and `data-decimals` do on each widget.
 
 ## Provenance - say where each definition came from
 
@@ -374,7 +374,7 @@ datasets:
       aov:
         ratio: { num: revenue, den: orders }
         label: Average order value
-        unit: { kind: currency, scale: units, currency: USD }
+        unit: { kind: currency, scale: units, currency: USD, decimals: 2 }
 look:
   html: |
     <!doctype html>
@@ -460,8 +460,7 @@ look:
       <div class="card" data-dash="metric" data-measure="orders">
         <span class="label">Orders</span><span class="value" data-dash-value></span>
       </div>
-      <div class="card" data-dash="metric" data-num="revenue" data-den="orders" data-format="currency"
-           data-decimals="2">
+      <div class="card" data-dash="metric" data-num="revenue" data-den="orders">
         <span class="label">Average order value</span><span class="value" data-dash-value></span>
       </div>
     </section>
@@ -509,11 +508,10 @@ comes first in the body and the runtime marker after the markup. Then the widget
 `metric` cards, each putting its figure in a `data-dash-value` child so the card's label is yours, the
 third dividing `revenue` by `orders` under every filter with `data-num` and `data-den`, since no widget
 reads a `ratio` by its own key; a `line` chart over `month`; and a `table` rolled up by `region`,
-largest revenue first. Each figure's format comes from its measure's `unit`, and the page's currency
-and precision from `revenue`, the first currency measure declared: US dollars, no cents. So the widgets
-carry no format attributes but one card's: a metric showing a ratio draws a percent unless told
-otherwise, so the average-order card writes `data-format="currency"`, and `data-decimals="2"` gives
-it cents. Nothing on the page is a number the page worked out, and a
+largest revenue first. Each figure's format comes from its own measure's or ratio's `unit`, its
+currency and decimal places included, so the widgets carry no format attributes: the average-order card
+draws `aov` in dollars and cents because `aov` declares them, and the card finds `aov` by the two
+measures it divides. Nothing on the page is a number the page worked out, and a
 picture no widget draws would be page code reading the same dataset, as in the example under **The
 shape your script is handed**.
 

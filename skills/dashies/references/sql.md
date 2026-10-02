@@ -622,11 +622,11 @@ absent scale is not the same as a scale of zero: `decimal(38,0)` is a legitimate
 a choice to make deliberately rather than a defect to avoid.
 
 Every SQL Server measured defaults to the collation `SQL_Latin1_General_CP1_CI_AS`, under which
-`acme` and `ACME` are THE SAME VALUE. Dashies compares text by its bytes, under which they are TWO.
+`north` and `NORTH` are THE SAME VALUE. Dashies compares text by its bytes, under which they are TWO.
 So one source column gives two different answers depending on WHO does the grouping, and the
 difference is a row count rather than an ordering:
 
-| Where the grouping happens | `acme` and `ACME` |
+| Where the grouping happens | `north` and `NORTH` |
 |---|---|
 | your own `GROUP BY`, run by SQL Server | ONE group |
 | your own `GROUP BY` with a binary collation forced on the key | TWO groups |
